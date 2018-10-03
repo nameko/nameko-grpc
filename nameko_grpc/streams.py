@@ -1,30 +1,19 @@
 from eventlet.queue import Queue
 import struct
 
-# main changes are to move the buffer manipulation out of here.
 
-# Stream object is:
-# somewhere to store incoming data
-# some iterator of messages, for the client to consume
-# somewhere to store outgoing messages
-# some iterator for chunks of data to send?
-
-# perhaps the iterators should be separate.
-
-
-class Stream:
-    def __init__(self, stream_id, request_type):
+class ReceiveStream:
+    def __init__(self, stream_id, message_type):
         self.stream_id = stream_id
-        self.request_type = request_type
+        self.message_type = message_type
 
-        self._requests = Queue()
-        self._responses = Queue()
+        self.message_queue = Queue()
         self.buffer = bytearray()
 
     def close(self):
-        self._requests.put(None)
+        self.message_queue.put(None)
 
-    def put_data(self, data):
+    def write(self, data):
         self.buffer.extend(data)
 
         if len(self.buffer) < 5:
@@ -42,32 +31,40 @@ class Stream:
 
         limit = 5 + message_length
 
-        message = self.request_type()
+        message = self.message_type()
         message.ParseFromString(bytes(self.buffer[5:limit]))
         self.buffer = self.buffer[limit:]  # or reset?
 
-        self._requests.put(message)
+        self.message_queue.put(message)
 
-    def requests(self):
+    def messages(self):
         while True:
-            message = self._requests.get()
+            message = self.message_queue.get()
             if message is None:
                 break
             yield message
 
 
-class ResponseStream:
-    # TODO: rename: not a stream
+class SendStream:
     def __init__(self, stream_id):
         self.stream_id = stream_id
-        self.queue = Queue()
+        self.message_queue = Queue()
 
-    def put(self, response):
-        self.queue.put(response)
+    def close(self):
+        self.message_queue.put(None)
 
-    def responses(self):
+    def put(self, message):
+        self.message_queue.put(message)
+
+    def messages(self):
         while True:
-            message = self.queue.get()
+            message = self.message_queue.get()
             if message is None:
                 break
             yield message
+
+    def read(self):
+        for message in self.messages():
+            body = message.SerializeToString()
+            data = struct.pack("?", False) + struct.pack(">I", len(body)) + body
+            yield data

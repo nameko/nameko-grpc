@@ -3,7 +3,6 @@ from nameko.constants import WEB_SERVER_CONFIG_KEY
 from nameko.exceptions import ConfigurationError
 from collections import namedtuple, OrderedDict
 import re
-import struct
 from h2.errors import PROTOCOL_ERROR
 from h2.events import RequestReceived, DataReceived, StreamEnded
 from h2.config import H2Configuration
@@ -12,7 +11,7 @@ import eventlet
 from functools import partial
 from nameko.exceptions import ContainerBeingKilled
 from nameko_grpc.inspection import Inspector
-from nameko_grpc.stream import Stream, ResponseStream
+from nameko_grpc.streams import ReceiveStream, SendStream
 from .constants import Cardinality
 
 
@@ -91,19 +90,14 @@ class ServerConnectionManager(object):
             )
             self.conn.send_headers(stream_id, response_headers, end_stream=True)
 
-        # NEED
-        # -1. somewhere to store incoming data for this request (need to create an object for this)
-        # -2. a way to chunk that data into actual messages (do this inline after data arrives, rather than in an eventlet thread inside the Stream object)
-        # -3. a way to get messages to entrypoint; could block on actual messages arriving
-
         request_type = self.registered_paths[http_path]
 
-        request_stream = Stream(stream_id, request_type)
-        response_stream = ResponseStream(stream_id)
+        request_stream = ReceiveStream(stream_id, request_type)
+        response_stream = SendStream(stream_id)
         self.streams[stream_id] = request_stream
         self.responses[stream_id] = response_stream
 
-        self.handle_request(http_path, request_stream.requests(), response_stream.put)
+        self.handle_request(http_path, request_stream.messages(), response_stream)
 
     def data_received(self, data, stream_id):
 
@@ -115,7 +109,7 @@ class ServerConnectionManager(object):
             self.conn.reset_stream(stream_id, error_code=PROTOCOL_ERROR)
             return
 
-        request_stream.put_data(data)
+        request_stream.write(data)
 
     def stream_ended(self, stream_id):
 
@@ -131,32 +125,15 @@ class ServerConnectionManager(object):
             end_stream=False,
         )
 
-        # NEED
-        # 1. a way to get the responses from the entrypoint (currently this goes via the "stream", which is silly?)
-        # 2. a way to reasonably send the responses, dealing with chunks
+        receive_stream = self.streams.pop(stream_id)
+        receive_stream.close()
 
-        request_stream = self.streams.pop(stream_id)
-        request_stream.close()
+        send_stream = self.responses[stream_id]
 
-        # need to somehow get an iterator of response messages from the entrypoint;
-        # i guess we have to use entrypoint's handle_request method, and iterate over
-        # them here to chunk then send the data. we DO NOT need to know the type of response message
+        # TODO need to deal with frame sizes and flow control?
+        for chunk in send_stream.read():
 
-        response_stream = self.responses[stream_id]
-        for message in response_stream.responses():
-
-            print(">> sending response", message)
-
-            # TODO what if message body is larger than a single chunk?
-
-            response_message_body = message.SerializeToString()
-            response_data = (
-                struct.pack("?", False)
-                + struct.pack(">I", len(response_message_body))
-                + response_message_body
-            )
-
-            self.conn.send_data(stream_id, response_data, end_stream=False)
+            self.conn.send_data(stream_id, chunk, end_stream=False)
 
         print(">> closing response", stream_id)
 
@@ -251,7 +228,7 @@ class Grpc(Entrypoint):
     def stop(self):
         self.grpc_server.unregister(self)
 
-    def handle_request(self, request, on_result):
+    def handle_request(self, request, response_stream):
 
         # where does this come from?
         context = None
@@ -265,7 +242,7 @@ class Grpc(Entrypoint):
         # context_data = self.unpack_message_headers(message)
         context_data = {}
 
-        handle_result = partial(self.handle_result, on_result)
+        handle_result = partial(self.handle_result, response_stream)
         try:
             self.container.spawn_worker(
                 self,
@@ -278,14 +255,14 @@ class Grpc(Entrypoint):
             # how to reject GRPC requests?
             pass
 
-    def handle_result(self, on_result, worker_ctx, result, exc_info):
+    def handle_result(self, response_stream, worker_ctx, result, exc_info):
 
         if self.cardinality in (Cardinality.UNARY_STREAM, Cardinality.STREAM_STREAM):
             for res in result:
-                on_result(res)
+                response_stream.put(res)
         else:
-            on_result(result)
-        on_result(None)
+            response_stream.put(result)
+        response_stream.close()
         return result, exc_info
 
 

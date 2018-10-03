@@ -9,7 +9,7 @@ from eventlet.event import Event
 
 from h2.errors import PROTOCOL_ERROR
 from nameko_grpc.inspection import Inspector
-from nameko_grpc.stream import Stream
+from nameko_grpc.streams import ReceiveStream
 import itertools
 
 
@@ -65,15 +65,14 @@ class ClientConnectionManager(object):
         # 2. a way to chunk yhat data into actually messsages (could do this inline?)
         # 3. a way to get messages to caller; could block on actual messages arriving
 
-        # urm, probably shouldn't be called RequestStream and saved to responses
-        stream = Stream(stream_id, output_type)
+        stream = ReceiveStream(stream_id, output_type)
         self.streams[stream_id] = stream
 
     def stream_ended(self, stream_id):
         print(">> response stream ended", stream_id)
         stream = self.streams.pop(stream_id)
         stream.close()
-        self.response_ready.send(stream.requests())
+        self.response_ready.send(stream.messages())
 
     def data_received(self, data, stream_id):
         print(">> response data recvd", data, stream_id)
@@ -84,7 +83,7 @@ class ClientConnectionManager(object):
             self.conn.reset_stream(stream_id, error_code=PROTOCOL_ERROR)
             return
 
-        stream.put_data(data)
+        stream.write(data)
 
     def settings_ackd(self, event):
         if not self.request_made:
@@ -94,16 +93,7 @@ class ClientConnectionManager(object):
         stream_id = next(self.counter)
         print(">> sending request", stream_id)
 
-        # NEED
-        # 1. a way to reasonably send the request, dealing with chunks
-        # 1b. what happens when the window closes, in terms of http2? (check twisted example)
-        # do GRPC messages ever span windows? etc.
-
-        # TODO could probably use a single shared connection if we incremented the stream id
-        # for every request!
-        # i wonder how many conncetions get created when we use the normal client,
-        # and whether the stream nymbers we see in the entrypoint is different in this case
-        # (hypothesis: yes; reality: verified!)
+        # TODO should be sharing a single connection
 
         request_headers = [
             (":method", "GET"),
@@ -120,6 +110,8 @@ class ClientConnectionManager(object):
         self.conn.send_headers(stream_id, request_headers)
         self.request_made = True
 
+        # TODO flow control
+
         for request in self.request:
 
             request_bin = request.SerializeToString()
@@ -129,34 +121,6 @@ class ClientConnectionManager(object):
             self.conn.send_data(stream_id=stream_id, data=body)
 
         self.conn.end_stream(stream_id=stream_id)
-
-        # TODO need to add window management, chunking etc.
-        # # Firstly, check what the flow control window is for stream 1.
-        # window_size = self.conn.local_flow_control_window(stream_id=1)
-
-        # # Next, check what the maximum frame size is.
-        # max_frame_size = self.conn.max_outbound_frame_size
-
-        # # We will send no more than the window size or the remaining file size
-        # # of data in this call, whichever is smaller.
-        # bytes_to_send = min(window_size, len(body))
-
-        # # We now need to send a number of data frames.
-        # while bytes_to_send > 0:
-        #     chunk_size = min(bytes_to_send, max_frame_size)
-        #     data_chunk = body[:chunk_size]
-        #     self.conn.send_data(stream_id=1, data=data_chunk)
-
-        #     bytes_to_send -= chunk_size
-        #     body = body[chunk_size:]
-
-        # # We've prepared a whole chunk of data to send. If the file is fully
-        # # sent, we also want to end the stream: we're done here.
-        # if len(body) == 0:
-        #     self.conn.end_stream(stream_id=1)
-        # else:
-        #     # We've still got data left to send but the window is closed. now what?
-        #     raise NotImplementedError()
 
         self.sock.sendall(self.conn.data_to_send())
 
