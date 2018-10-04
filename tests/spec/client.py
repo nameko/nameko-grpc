@@ -22,17 +22,31 @@ if __name__ == "__main__":
     response = stub.say_hello(helloworld_pb2.HelloRequest(name="you"))
     print("Greeter client received: " + response.message)
 
-    response_iterator = stub.say_hello_goodbye(
-        helloworld_pb2.HelloRequest(name="y'all")
-    )
+    # response_iterator = stub.say_hello_goodbye(
+    #     helloworld_pb2.HelloRequest(name="y'all")
+    # )
 
-    for response in response_iterator:
-        print(response.message)
+    # for response in response_iterator:
+    #     print(response.message)
 
-    response_iterator = stub.say_hello_to_many(_name_generator())
+    # response_iterator = stub.say_hello_to_many(_name_generator())
 
-    for response in response_iterator:
-        print(response.message)
+    # for response in response_iterator:
+    #     print(response.message)
 
-    response = stub.say_hello_to_many_at_once(_name_generator())
-    print(response.message)
+    # response = stub.say_hello_to_many_at_once(_name_generator())
+    # print(response.message)
+
+    # # missing tests:
+    # # large request payload
+    # # large response payload
+    # # multiple streams
+    # # standard client, entrypoint service
+    # # nameko client, standard service
+
+    # # TODO
+    # # large request payload (this is actually request and response):
+    # # add flow-control-ish logic to DP and see if we'd fall foul of window rules etc
+    # # and whether we can recover
+    # response = stub.say_hello(helloworld_pb2.HelloRequest(name="you" * 8000))
+    # print(len(response.message))

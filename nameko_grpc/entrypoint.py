@@ -130,6 +130,9 @@ class ServerConnectionManager(object):
 
         send_stream = self.responses[stream_id]
 
+        # TODO we currently don't _start_ replying until the incoming stream ends
+        # which breaks bi-drectional streaming
+
         # TODO need to deal with frame sizes and flow control?
         for chunk in send_stream.read():
 

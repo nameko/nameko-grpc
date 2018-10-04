@@ -10,6 +10,8 @@ from nameko_grpc.dependency_provider import GrpcProxy
 from nameko_grpc.inspection import Inspector
 from nameko_grpc.constants import Cardinality
 
+from helpers import receive, send, temp_fifo, Config
+
 last_modified = os.path.getmtime
 
 
@@ -65,19 +67,41 @@ def stubs(compile_proto):
 
 
 @pytest.fixture
-def client(self, stubs):
-    """ Standard GRPC client
+def client(stubs, logfile):
+    """ Standard GRPC client, running in another process
     """
-    pass
-    # import grpc
-    # from eventlet.tpool import Proxy
+    with temp_fifo("in") as fifo_in:
+        with temp_fifo("out") as fifo_out:
 
-    # channel = grpc.insecure_channel("127.0.0.1:50051")
-    # client = stubs.greeterStub(channel)
-    # return client
+            client_script = os.path.join(os.path.dirname(__file__), "remote_client.py")
+            subprocess.Popen([sys.executable, client_script, fifo_in])
+
+            # print(" ".join([sys.executable, client_script, fifo_in]))
+            # import pdb
+
+            # pdb.set_trace()
+
+            from eventlet import tpool
+
+            class Method:
+                def __init__(self, name):
+                    self.name = name
+
+                def __call__(self, request):
+                    send(fifo_in, Config(self.name, fifo_out))
+                    send(fifo_in, request)
+                    res = receive(fifo_out)
+                    send(fifo_in, None)
+                    return res
+
+            class Client:
+                def __getattr__(self, name):
+                    return Method(name)
+
+            yield Client()
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def service(container_factory, protobufs, stubs):
 
     HelloReply = protobufs.HelloReply
@@ -155,6 +179,7 @@ class TestInspection:
         )
 
 
+@pytest.mark.usefixtures("service")
 class TestDependencyProvider:
     @pytest.fixture
     def caller(self, container_factory, protobufs, stubs):
@@ -218,34 +243,41 @@ class TestDependencyProvider:
         assert [response.message for response in responses] == ["Hi Matt", "Hi Josie"]
 
 
-# XXX blocked on lack of a client
-# class TestEntrypoint:
-#     def test_unary_unary(self, client, protobufs):
-#         response = client.say_hello(protobufs.HelloRequest(name="you"))
-#         assert response.message == "Hello, you!"
+def test_sleep(service):
+    try:
+        while True:
+            import time
 
-#     def test_unary_stream(self, client, protobufs):
-#         responses = client.say_hello_goodbye(protobufs.HelloRequest(name="you"))
-#         assert [response.message for response in responses] == [
-#             "Hello, you!",
-#             "Goodbye, you!",
-#         ]
+            time.sleep(10)
+    except KeyboardInterrupt:
+        pass
 
-#     def test_stream_unary(self, client, protobufs):
-#         def generate_requests():
-#             for name in ["Bill", "Bob"]:
-#                 yield protobufs.HelloRequest(name=name)
 
-#         response = client.say_hello_to_many_at_once(generate_requests())
-#         assert response.message == "Hello Bill, Bob"
+# @pytest.mark.usefixtures("service")
+class TestEntrypoint:
+    def test_unaryx_unaryx(self, client, protobufs):
+        response = client.say_hello(protobufs.HelloRequest(name="you"))
+        assert response.message == "Hello, you!"
 
-#     def test_stream_stream(self, client, protobufs):
-#         def generate_requests():
-#             for name in ["Bill", "Bob"]:
-#                 yield protobufs.HelloRequest(name=name)
+    def test_unaryx_streamx(self, client, protobufs):
+        responses = client.say_hello_goodbye(protobufs.HelloRequest(name="you"))
+        assert [response.message for response in responses] == [
+            "Hello, you!",
+            "Goodbye, you!",
+        ]
 
-#         responses = client.say_hello_to_many(protobufs.HelloRequest(name="you"))
-#         assert [response.message for response in responses] == [
-#             "Hello, Bill!",
-#             "Hello, Bob!",
-#         ]
+    def test_streamx_unaryx(self, client, protobufs):
+        def generate_requests():
+            for name in ["Bill", "Bob"]:
+                yield protobufs.HelloRequest(name=name)
+
+        response = client.say_hello_to_many_at_once(generate_requests())
+        assert response.message == "Hi Bill, Bob!"
+
+    def test_streamx_streamx(self, client, protobufs):
+        def generate_requests():
+            for name in ["Bill", "Bob"]:
+                yield protobufs.HelloRequest(name=name)
+
+        responses = client.say_hello_to_many(generate_requests())
+        assert [response.message for response in responses] == ["Hi, Bill", "HI, Bob"]
