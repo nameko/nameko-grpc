@@ -67,24 +67,14 @@ def stubs(compile_proto):
 
 
 @pytest.fixture
-def logfile():
-    with open("/tmp/logfile", "w") as fh:
-        fh.truncate()
-        yield fh
-
-
-@pytest.fixture
-def client(stubs, logfile):
+def client(stubs, tmpdir):
     """ Standard GRPC client, running in another process
     """
-    # TODO replace /tmp with pytest tempdir
-    with temp_fifo("/tmp") as fifo_in:
-        with temp_fifo("/tmp") as fifo_out:
+    with temp_fifo(tmpdir.strpath) as fifo_in:
+        with temp_fifo(tmpdir.strpath) as fifo_out:
 
             client_script = os.path.join(os.path.dirname(__file__), "remote_client.py")
-            subprocess.Popen(
-                [sys.executable, client_script, fifo_in.path], stdout=logfile
-            )
+            subprocess.Popen([sys.executable, client_script, fifo_in.path])
 
             class Method:
                 def __init__(self, name):
