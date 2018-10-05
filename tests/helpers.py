@@ -85,7 +85,7 @@ def receive(fifo):
 def send_stream(stream_fifo, result):
     for msg in result:
         stream_fifo.dump(msg)
-        time.sleep(0.01)
+        time.sleep(0.1)
     stream_fifo.dump(None)
 
 
