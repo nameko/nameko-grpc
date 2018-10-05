@@ -13,14 +13,9 @@ class Config:
         self.fifo_out = fifo_out
 
 
-class NotPickled:
-    # XXX this is required because raising inside the contextmanager in _load
-    # doesn't result in the file being closed (not sure why, probably because it's
-    # inside tpool). a better solution would be not to use plain (unpickled) strings
-    # as the message to upgrade to a stream, but something else instead. then we
-    # could always load/dump and avoid using read/write at all.
-    def __init__(self, msg):
-        self.msg = msg
+class NewStream:
+    def __init__(self, path):
+        self.path = path
 
 
 def isiterable(req):
@@ -41,21 +36,7 @@ class Fifo:
 
     def load(self):
         with open(self.path, "rb") as in_:
-            try:
-                value = pickle.load(in_)
-            except pickle.UnpicklingError:
-                value = NotPickled(in_.read())
-            return value
-
-    def write(self, data):
-        with open(self.path, "wb") as out_:
-            out_.write(data)
-
-    def read(self):
-        # XXX never called anymore
-        with open(self.path, "rb") as in_:
-            data = in_.read()
-            return data
+            return pickle.load(in_)
 
 
 def under_eventlet():
@@ -92,8 +73,8 @@ def receive_stream(stream_fifo):
 
 def receive(fifo):
     loaded = fifo.load()
-    if isinstance(loaded, NotPickled):
-        stream_fifo_path = loaded.msg
+    if isinstance(loaded, NewStream):
+        stream_fifo_path = loaded.path
         return receive_stream(wrap_fifo(stream_fifo_path))
     return loaded
 
@@ -108,7 +89,7 @@ def send_stream(stream_fifo, result):
 def send(fifo, result):
     if isiterable(result):
         with temp_fifo(os.path.dirname(fifo.path)) as stream_fifo:
-            fifo.write(stream_fifo.path.encode("utf-8"))
+            fifo.dump(NewStream(stream_fifo.path))
             send_stream(stream_fifo, result)
     else:
         fifo.dump(result)
