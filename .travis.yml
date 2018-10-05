@@ -17,6 +17,8 @@ matrix:
       env: TOX_ENV=py36-test
     - stage: test
       python: 3.7
+      dist: xenial
+      sudo: true
       env: TOX_ENV=py37-test
 
 script:
