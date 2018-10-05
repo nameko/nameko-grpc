@@ -3,7 +3,7 @@ from nameko.constants import WEB_SERVER_CONFIG_KEY
 from nameko.exceptions import ConfigurationError
 from collections import namedtuple, OrderedDict
 import re
-from h2.errors import PROTOCOL_ERROR
+from h2.errors import PROTOCOL_ERROR  # changed under h2 from 2.6.4?
 from h2.events import RequestReceived, DataReceived, StreamEnded
 from h2.config import H2Configuration
 from h2.connection import H2Connection

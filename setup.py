@@ -18,8 +18,10 @@ setup(
     author="onefinestay",
     url="http://github.com/nameko/nameko-grpc",
     packages=find_packages(exclude=["test", "test.*"]),
-    install_requires=["nameko"],
-    extras_require={"dev": ["grpcio", "grpcio-tools", "googleapis-common-protos"]},
+    install_requires=["nameko", "h2==2.6.2"],
+    extras_require={
+        "dev": ["pytest", "grpcio", "grpcio-tools", "googleapis-common-protos"]
+    },
     zip_safe=True,
     license="Apache License, Version 2.0",
     classifiers=[

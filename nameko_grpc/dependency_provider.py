@@ -7,7 +7,7 @@ from h2.connection import H2Connection
 from h2.events import ResponseReceived, DataReceived, StreamEnded, SettingsAcknowledged
 from eventlet.event import Event
 
-from h2.errors import PROTOCOL_ERROR
+from h2.errors import PROTOCOL_ERROR  # changed under h2 from 2.6.4?
 from nameko_grpc.inspection import Inspector
 from nameko_grpc.streams import ReceiveStream
 import itertools
