@@ -17,6 +17,9 @@ class NewStream:
     def __init__(self, path):
         self.path = path
 
+    def __str__(self):
+        return "<NewStream {}>".format(self.path)
+
 
 def isiterable(req):
     try:
@@ -74,8 +77,8 @@ def receive_stream(stream_fifo):
 def receive(fifo):
     loaded = fifo.load()
     if isinstance(loaded, NewStream):
-        stream_fifo_path = loaded.path
-        return receive_stream(wrap_fifo(stream_fifo_path))
+        stream_fifo = wrap_fifo(loaded.path)
+        return receive_stream(stream_fifo)
     return loaded
 
 

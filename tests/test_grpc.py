@@ -67,15 +67,24 @@ def stubs(compile_proto):
 
 
 @pytest.fixture
-def client(stubs):
+def logfile():
+    with open("/tmp/logfile", "w") as fh:
+        fh.truncate()
+        yield fh
+
+
+@pytest.fixture
+def client(stubs, logfile):
     """ Standard GRPC client, running in another process
     """
     # TODO replace /tmp with pytest tempdir
-    with temp_fifo("/tmp", name="fifo_in") as fifo_in:
+    with temp_fifo("/tmp") as fifo_in:
         with temp_fifo("/tmp") as fifo_out:
 
             client_script = os.path.join(os.path.dirname(__file__), "remote_client.py")
-            subprocess.Popen([sys.executable, client_script, fifo_in.path])
+            subprocess.Popen(
+                [sys.executable, client_script, fifo_in.path], stdout=logfile
+            )
 
             class Method:
                 def __init__(self, name):
@@ -84,15 +93,14 @@ def client(stubs):
                 def __call__(self, request):
                     send(fifo_in, Config(self.name, fifo_out.path))
                     send(fifo_in, request)
-                    res = receive(fifo_out)
-                    send(fifo_in, None)
-                    return res
+                    return receive(fifo_out)
 
             class Client:
                 def __getattr__(self, name):
                     return Method(name)
 
             yield Client()
+            send(fifo_in, None)
 
 
 @pytest.fixture
@@ -237,16 +245,6 @@ class TestDependencyProvider:
         assert [response.message for response in responses] == ["Hi Matt", "Hi Josie"]
 
 
-def test_sleep(service):
-    try:
-        while True:
-            import time
-
-            time.sleep(10)
-    except KeyboardInterrupt:
-        pass
-
-
 @pytest.mark.usefixtures("service")
 class TestEntrypoint:
     def test_unaryx_unaryx(self, client, protobufs):
@@ -274,4 +272,4 @@ class TestEntrypoint:
                 yield protobufs.HelloRequest(name=name)
 
         responses = client.say_hello_to_many(generate_requests())
-        assert [response.message for response in responses] == ["Hi, Bill", "HI, Bob"]
+        assert [response.message for response in responses] == ["Hi Bill", "Hi Bob"]
