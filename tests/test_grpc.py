@@ -67,28 +67,21 @@ def stubs(compile_proto):
 
 
 @pytest.fixture
-def client(stubs, logfile):
+def client(stubs):
     """ Standard GRPC client, running in another process
     """
     with temp_fifo("in") as fifo_in:
         with temp_fifo("out") as fifo_out:
 
             client_script = os.path.join(os.path.dirname(__file__), "remote_client.py")
-            subprocess.Popen([sys.executable, client_script, fifo_in])
-
-            # print(" ".join([sys.executable, client_script, fifo_in]))
-            # import pdb
-
-            # pdb.set_trace()
-
-            from eventlet import tpool
+            subprocess.Popen([sys.executable, client_script, fifo_in.fifo])
 
             class Method:
                 def __init__(self, name):
                     self.name = name
 
                 def __call__(self, request):
-                    send(fifo_in, Config(self.name, fifo_out))
+                    send(fifo_in, Config(self.name, fifo_out.fifo))
                     send(fifo_in, request)
                     res = receive(fifo_out)
                     send(fifo_in, None)
@@ -253,7 +246,7 @@ def test_sleep(service):
         pass
 
 
-# @pytest.mark.usefixtures("service")
+@pytest.mark.usefixtures("service")
 class TestEntrypoint:
     def test_unaryx_unaryx(self, client, protobufs):
         response = client.say_hello(protobufs.HelloRequest(name="you"))

@@ -2,15 +2,16 @@ import os
 import sys
 import grpc
 
-from helpers import send, receive
+from helpers import send, receive, wrap_fifo
 
 
 if __name__ == "__main__":
 
-    fifo_in = sys.argv[1]
-
     sys.path.append(os.path.join(os.path.dirname(__file__), "spec"))
     import helloworld_pb2_grpc
+
+    fifo_in_path = sys.argv[1]
+    fifo_in = wrap_fifo(fifo_in_path)
 
     channel = grpc.insecure_channel("127.0.0.1:50051")
     stub = helloworld_pb2_grpc.greeterStub(channel)
@@ -18,12 +19,9 @@ if __name__ == "__main__":
     while True:
         config = receive(fifo_in)
         if config is None:
-            print("END")
             break
-        print(config.method_name, config.fifo_out)
-        print(">> WAIT on", fifo_in)
+        fifo_out_path = config.fifo_out
+        fifo_out = wrap_fifo(fifo_out_path)
         request = receive(fifo_in)
-        print(">> REQ", request)
         response = getattr(stub, config.method_name)(request)
-        print(">> RES", response)
-        send(config.fifo_out, response)
+        send(fifo_out, response)
