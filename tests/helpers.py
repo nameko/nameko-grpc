@@ -33,14 +33,14 @@ def isiterable(req):
 
 class Fifo:
     def __init__(self, path):
-        self.fifo = path  # XXX rename: PATH
+        self.path = path
 
     def dump(self, value):
-        with open(self.fifo, "wb") as out_:
+        with open(self.path, "wb") as out_:
             pickle.dump(value, out_)
 
     def load(self):
-        with open(self.fifo, "rb") as in_:
+        with open(self.path, "rb") as in_:
             try:
                 value = pickle.load(in_)
             except pickle.UnpicklingError:
@@ -48,12 +48,12 @@ class Fifo:
             return value
 
     def write(self, data):
-        with open(self.fifo, "wb") as out_:
+        with open(self.path, "wb") as out_:
             out_.write(data)
 
     def read(self):
         # XXX never called anymore
-        with open(self.fifo, "rb") as in_:
+        with open(self.path, "rb") as in_:
             data = in_.read()
             return data
 
@@ -73,8 +73,10 @@ def wrap_fifo(path):
 
 
 @contextmanager
-def temp_fifo(eventlet=True):
-    path = "/tmp/{}".format(uuid.uuid4())
+def temp_fifo(directory, name=None):
+    if name is None:
+        name = str(uuid.uuid4())
+    path = os.path.join(directory, name)
     os.mkfifo(path)
     yield wrap_fifo(path)
     os.unlink(path)
@@ -105,8 +107,8 @@ def send_stream(stream_fifo, result):
 
 def send(fifo, result):
     if isiterable(result):
-        with temp_fifo() as stream_fifo:
-            fifo.write(stream_fifo.fifo.encode("utf-8"))
+        with temp_fifo(os.path.dirname(fifo.path)) as stream_fifo:
+            fifo.write(stream_fifo.path.encode("utf-8"))
             send_stream(stream_fifo, result)
     else:
         fifo.dump(result)

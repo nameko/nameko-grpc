@@ -70,18 +70,19 @@ def stubs(compile_proto):
 def client(stubs):
     """ Standard GRPC client, running in another process
     """
-    with temp_fifo("in") as fifo_in:
-        with temp_fifo("out") as fifo_out:
+    # TODO replace /tmp with pytest tempdir
+    with temp_fifo("/tmp", name="fifo_in") as fifo_in:
+        with temp_fifo("/tmp") as fifo_out:
 
             client_script = os.path.join(os.path.dirname(__file__), "remote_client.py")
-            subprocess.Popen([sys.executable, client_script, fifo_in.fifo])
+            subprocess.Popen([sys.executable, client_script, fifo_in.path])
 
             class Method:
                 def __init__(self, name):
                     self.name = name
 
                 def __call__(self, request):
-                    send(fifo_in, Config(self.name, fifo_out.fifo))
+                    send(fifo_in, Config(self.name, fifo_out.path))
                     send(fifo_in, request)
                     res = receive(fifo_out)
                     send(fifo_in, None)
