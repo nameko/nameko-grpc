@@ -2,6 +2,7 @@ import pytest
 import os
 import subprocess
 import sys
+import time
 from importlib import import_module
 from nameko.testing.services import entrypoint_hook, dummy
 
@@ -72,6 +73,8 @@ def grpc_server():
     """
     server_script = os.path.join(os.path.dirname(__file__), "server.py")
     with subprocess.Popen([sys.executable, server_script]) as proc:
+        # wait until server has started
+        time.sleep(0.5)
         yield
         proc.terminate()
 

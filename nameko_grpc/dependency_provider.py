@@ -4,7 +4,7 @@ import struct
 import socket
 from h2.config import H2Configuration
 from h2.connection import H2Connection
-from h2.events import ResponseReceived, DataReceived, StreamEnded, SettingsAcknowledged
+from h2.events import ResponseReceived, DataReceived, StreamEnded, RemoteSettingsChanged
 from eventlet.event import Event
 
 from h2.errors import PROTOCOL_ERROR  # changed under h2 from 2.6.4?
@@ -41,14 +41,13 @@ class ClientConnectionManager(object):
                 break
 
             events = self.conn.receive_data(data)
-
             for event in events:
                 if isinstance(event, ResponseReceived):
                     self.response_received(event.headers, event.stream_id)
                 elif isinstance(event, DataReceived):
                     self.data_received(event.data, event.stream_id)
-                elif isinstance(event, SettingsAcknowledged):
-                    self.settings_ackd(event)
+                elif isinstance(event, RemoteSettingsChanged):
+                    self.settings_changed(event)
                 elif isinstance(event, StreamEnded):
                     self.stream_ended(event.stream_id)
 
@@ -85,7 +84,8 @@ class ClientConnectionManager(object):
 
         stream.write(data)
 
-    def settings_ackd(self, event):
+    def settings_changed(self, event):
+        # XXX is this the correct hook for sending the request?
         if not self.request_made:
             self.send_request()
 
