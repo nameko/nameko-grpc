@@ -74,23 +74,23 @@ def client(stubs, tmpdir):
         with temp_fifo(tmpdir.strpath) as fifo_out:
 
             client_script = os.path.join(os.path.dirname(__file__), "remote_client.py")
-            subprocess.Popen([sys.executable, client_script, fifo_in.path])
+            with subprocess.Popen([sys.executable, client_script, fifo_in.path]):
 
-            class Method:
-                def __init__(self, name):
-                    self.name = name
+                class Method:
+                    def __init__(self, name):
+                        self.name = name
 
-                def __call__(self, request):
-                    send(fifo_in, Config(self.name, fifo_out.path))
-                    send(fifo_in, request)
-                    return receive(fifo_out)
+                    def __call__(self, request):
+                        send(fifo_in, Config(self.name, fifo_out.path))
+                        send(fifo_in, request)
+                        return receive(fifo_out)
 
-            class Client:
-                def __getattr__(self, name):
-                    return Method(name)
+                class Client:
+                    def __getattr__(self, name):
+                        return Method(name)
 
-            yield Client()
-            send(fifo_in, None)
+                yield Client()
+                send(fifo_in, None)
 
 
 @pytest.fixture
