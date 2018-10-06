@@ -67,7 +67,17 @@ def stubs(compile_proto):
 
 
 @pytest.fixture
-def client(stubs, tmpdir):
+def grpc_server():
+    """ Standard GRPC server, running in another process
+    """
+    server_script = os.path.join(os.path.dirname(__file__), "server.py")
+    with subprocess.Popen([sys.executable, server_script]) as proc:
+        yield
+        proc.terminate()
+
+
+@pytest.fixture
+def grpc_client(stubs, tmpdir):
     """ Standard GRPC client, running in another process
     """
     with temp_fifo(tmpdir.strpath) as fifo_in:
@@ -235,20 +245,30 @@ class TestDependencyProvider:
         assert [response.message for response in responses] == ["Hi Matt", "Hi Josie"]
 
 
-@pytest.mark.usefixtures("service")
-class TestEntrypoint:
-    def test_unaryx_unaryx(self, client, protobufs):
+class TestStandard:
+    @pytest.fixture
+    def client(self, grpc_client):
+        return grpc_client
+
+    @pytest.fixture(params=["grpc", "nameko"], autouse=True)
+    def server(self, request):
+        if request.param == "grpc":
+            request.getfixturevalue("grpc_server")
+        elif request.param == "nameko":
+            request.getfixturevalue("service")
+
+    def test_unary_unary(self, client, protobufs):
         response = client.say_hello(protobufs.HelloRequest(name="you"))
         assert response.message == "Hello, you!"
 
-    def test_unaryx_streamx(self, client, protobufs):
+    def test_unary_stream(self, client, protobufs):
         responses = client.say_hello_goodbye(protobufs.HelloRequest(name="you"))
         assert [response.message for response in responses] == [
             "Hello, you!",
             "Goodbye, you!",
         ]
 
-    def test_streamx_unaryx(self, client, protobufs):
+    def test_stream_unary(self, client, protobufs):
         def generate_requests():
             for name in ["Bill", "Bob"]:
                 yield protobufs.HelloRequest(name=name)
@@ -256,7 +276,7 @@ class TestEntrypoint:
         response = client.say_hello_to_many_at_once(generate_requests())
         assert response.message == "Hi Bill, Bob!"
 
-    def test_streamx_streamx(self, client, protobufs):
+    def test_stream_stream(self, client, protobufs):
         def generate_requests():
             for name in ["Bill", "Bob"]:
                 yield protobufs.HelloRequest(name=name)
