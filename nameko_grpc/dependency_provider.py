@@ -1,6 +1,7 @@
 from nameko.extensions import DependencyProvider
 
 import struct
+from functools import partial
 import socket
 from h2.config import H2Configuration
 from h2.connection import H2Connection
@@ -10,6 +11,7 @@ from eventlet.event import Event
 from h2.errors import PROTOCOL_ERROR  # changed under h2 from 2.6.4?
 from nameko_grpc.inspection import Inspector
 from nameko_grpc.streams import ReceiveStream
+from nameko_grpc.constants import Cardinality
 import itertools
 
 
@@ -128,6 +130,7 @@ class ClientConnectionManager(object):
 class GrpcProxy(DependencyProvider):
     def __init__(self, stub, **kwargs):
         self.stub = stub
+        self.inspector = Inspector(self.stub)
         super().__init__(**kwargs)
 
     def invoke(self, method_name, request):
@@ -135,32 +138,29 @@ class GrpcProxy(DependencyProvider):
         sock = socket.socket()
         sock.connect(("127.0.0.1", 50051))
 
+        cardinality = self.inspector.cardinality_for_method(method_name)
+
+        # TODO case where method doesn't exist
+
+        if cardinality in (Cardinality.UNARY_UNARY, Cardinality.UNARY_STREAM):
+            request = (request,)
+
         manager = ClientConnectionManager(sock, method_name, request, self.stub)
         self.container.spawn_managed_thread(manager.run_forever)
 
-        return manager.response_ready.wait()
+        response = manager.response_ready.wait()
+
+        if cardinality in (Cardinality.STREAM_UNARY, Cardinality.UNARY_UNARY):
+            response = next(response)
+
+        return response
 
     def get_dependency(self, worker_ctx):
-        class Foo:
+        class Proxy:
             def __init__(self, invoke):
                 self.invoke = invoke
 
-            def say_hello(self, request):
-                responses = self.invoke("say_hello", (request,))
-                return next(responses)
+            def __getattr__(self, name):
+                return partial(self.invoke, name)
 
-            def say_hello_goodbye(self, request):
-                responses = self.invoke("say_hello_goodbye", (request,))
-                for response in responses:
-                    yield response
-
-            def say_hello_to_many(self, request):
-                responses = self.invoke("say_hello_to_many", request)
-                for response in responses:
-                    yield response
-
-            def say_hello_to_many_at_once(self, request):
-                responses = self.invoke("say_hello_to_many_at_once", request)
-                return next(responses)
-
-        return Foo(self.invoke)
+        return Proxy(self.invoke)

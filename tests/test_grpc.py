@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 import time
+from functools import partial
 from importlib import import_module
 from nameko.testing.services import entrypoint_hook, dummy
 
@@ -89,18 +90,14 @@ def grpc_client(stubs, tmpdir):
             client_script = os.path.join(os.path.dirname(__file__), "remote_client.py")
             with subprocess.Popen([sys.executable, client_script, fifo_in.path]):
 
-                class Method:
-                    def __init__(self, name):
-                        self.name = name
-
-                    def __call__(self, request):
-                        send(fifo_in, Config(self.name, fifo_out.path))
+                class Client:
+                    def call(self, name, request):
+                        send(fifo_in, Config(name, fifo_out.path))
                         send(fifo_in, request)
                         return receive(fifo_out)
 
-                class Client:
                     def __getattr__(self, name):
-                        return Method(name)
+                        return partial(self.call, name)
 
                 yield Client()
                 send(fifo_in, None)
@@ -156,17 +153,13 @@ def dependency_provider_client(container_factory, stubs):
     container = container_factory(Service, {})
     container.start()
 
-    class Method:
-        def __init__(self, name):
-            self.name = name
-
-        def __call__(self, request):
-            with entrypoint_hook(container, "call") as hook:
-                return hook(self.name, request)
-
     class Client:
+        def call(self, name, request):
+            with entrypoint_hook(container, "call") as hook:
+                return hook(name, request)
+
         def __getattr__(self, name):
-            return Method(name)
+            return partial(self.call, name)
 
     yield Client()
 
