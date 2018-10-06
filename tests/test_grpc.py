@@ -139,6 +139,35 @@ def service(container_factory, protobufs, stubs):
     container.start()
 
 
+@pytest.fixture
+def dependency_provider_client(container_factory, stubs):
+    class Service:
+        name = "caller"
+
+        greeter_grpc = GrpcProxy(stubs.greeterStub)
+
+        @dummy
+        def call(self, method_name, request):
+            return getattr(self.greeter_grpc, method_name)(request)
+
+    container = container_factory(Service, {})
+    container.start()
+
+    class Method:
+        def __init__(self, name):
+            self.name = name
+
+        def __call__(self, request):
+            with entrypoint_hook(container, "call") as hook:
+                return hook(self.name, request)
+
+    class Client:
+        def __getattr__(self, name):
+            return Method(name)
+
+    yield Client()
+
+
 class TestInspection:
     @pytest.fixture
     def inspector(self, stubs):
@@ -181,7 +210,9 @@ class TestInspection:
         )
 
 
-@pytest.mark.usefixtures("service")
+@pytest.mark.usefixtures(
+    "grpc_server"
+)  # exhibits same problem as TestStandard cnameko,sgrpc
 class TestDependencyProvider:
     @pytest.fixture
     def caller(self, container_factory, protobufs, stubs):
@@ -246,16 +277,19 @@ class TestDependencyProvider:
 
 
 class TestStandard:
-    @pytest.fixture
-    def client(self, grpc_client):
-        return grpc_client
-
-    @pytest.fixture(params=["grpc", "nameko"], autouse=True)
+    @pytest.fixture(params=["sgrpc", "snameko"])
     def server(self, request):
-        if request.param == "grpc":
+        if request.param == "sgrpc":
             request.getfixturevalue("grpc_server")
-        elif request.param == "nameko":
+        elif request.param == "snameko":
             request.getfixturevalue("service")
+
+    @pytest.fixture(params=["cgrpc", "cnameko"])
+    def client(self, request, server):
+        if request.param == "cgrpc":
+            return request.getfixturevalue("grpc_client")
+        elif request.param == "cnameko":
+            return request.getfixturevalue("dependency_provider_client")
 
     def test_unary_unary(self, client, protobufs):
         response = client.say_hello(protobufs.HelloRequest(name="you"))
