@@ -35,11 +35,13 @@ class Fifo:
 
     def dump(self, value):
         with open(self.path, "wb") as out_:
-            pickle.dump(value, out_)
+            data = pickle.dumps(value)
+            out_.write(data)
 
     def load(self):
         with open(self.path, "rb") as in_:
-            return pickle.load(in_)
+            data = in_.read()
+            return pickle.loads(data)
 
 
 def under_eventlet():
@@ -85,7 +87,7 @@ def receive(fifo):
 def send_stream(stream_fifo, result):
     for msg in result:
         stream_fifo.dump(msg)
-        time.sleep(0.1)
+        time.sleep(0.01)
     stream_fifo.dump(None)
 
 
