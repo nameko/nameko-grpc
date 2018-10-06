@@ -213,85 +213,19 @@ class TestInspection:
         )
 
 
-@pytest.mark.usefixtures(
-    "grpc_server"
-)  # exhibits same problem as TestStandard cnameko,sgrpc
-class TestDependencyProvider:
-    @pytest.fixture
-    def caller(self, container_factory, protobufs, stubs):
-        class Caller:
-            name = "caller"
-
-            greeter_grpc = GrpcProxy(stubs.greeterStub)
-
-            @dummy
-            def call_say_hello(self, name):
-                return self.greeter_grpc.say_hello(protobufs.HelloRequest(name=name))
-
-            @dummy
-            def call_say_hello_goodbye(self, name):
-                return self.greeter_grpc.say_hello_goodbye(
-                    protobufs.HelloRequest(name=name)
-                )
-
-            @dummy
-            def call_say_hello_to_many_at_once(self, *names):
-                return self.greeter_grpc.say_hello_to_many_at_once(
-                    protobufs.HelloRequest(name=name) for name in names
-                )
-
-            @dummy
-            def call_say_hello_to_many(self, *names):
-                return self.greeter_grpc.say_hello_to_many(
-                    protobufs.HelloRequest(name=name) for name in names
-                )
-
-        container = container_factory(Caller, {})
-        container.start()
-
-        yield container
-
-    def test_unary_unary(self, caller):
-
-        with entrypoint_hook(caller, "call_say_hello") as hook:
-            response = hook(name="Matt")
-        assert response.message == "Hello, Matt!"
-
-    def test_unary_stream(self, caller):
-
-        with entrypoint_hook(caller, "call_say_hello_goodbye") as hook:
-            responses = hook("Matt")
-        assert [response.message for response in responses] == [
-            "Hello, Matt!",
-            "Goodbye, Matt!",
-        ]
-
-    def test_stream_unary(self, caller):
-
-        with entrypoint_hook(caller, "call_say_hello_to_many_at_once") as hook:
-            response = hook("Matt", "Josie")
-        assert response.message == "Hi Matt, Josie!"
-
-    def test_stream_stream(self, caller):
-
-        with entrypoint_hook(caller, "call_say_hello_to_many") as hook:
-            responses = hook("Matt", "Josie")
-        assert [response.message for response in responses] == ["Hi Matt", "Hi Josie"]
-
-
 class TestStandard:
-    @pytest.fixture(params=["sgrpc", "snameko"])
+    @pytest.fixture(params=["server:grpc", "server:nameko"])
     def server(self, request):
-        if request.param == "sgrpc":
+        if "grpc" in request.param:
             request.getfixturevalue("grpc_server")
-        elif request.param == "snameko":
+        elif "nameko" in request.param:
             request.getfixturevalue("service")
 
-    @pytest.fixture(params=["cgrpc", "cnameko"])
+    @pytest.fixture(params=["client:grpc", "client:nameko"])
     def client(self, request, server):
-        if request.param == "cgrpc":
+        if "grpc" in request.param:
             return request.getfixturevalue("grpc_client")
-        elif request.param == "cnameko":
+        elif "nameko" in request.param:
             return request.getfixturevalue("dependency_provider_client")
 
     def test_unary_unary(self, client, protobufs):
