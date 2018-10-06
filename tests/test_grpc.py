@@ -214,14 +214,14 @@ class TestInspection:
 
 
 class TestStandard:
-    @pytest.fixture(params=["server:grpc", "server:nameko"])
+    @pytest.fixture(params=["grpc_server", "nameko_server"])
     def server(self, request):
         if "grpc" in request.param:
             request.getfixturevalue("grpc_server")
         elif "nameko" in request.param:
             request.getfixturevalue("service")
 
-    @pytest.fixture(params=["client:grpc", "client:nameko"])
+    @pytest.fixture(params=["grpc_client", "nameko_client"])
     def client(self, request, server):
         if "grpc" in request.param:
             return request.getfixturevalue("grpc_client")
