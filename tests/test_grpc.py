@@ -72,7 +72,7 @@ def stubs(compile_proto):
 def grpc_server():
     """ Standard GRPC server, running in another process
     """
-    server_script = os.path.join(os.path.dirname(__file__), "server.py")
+    server_script = os.path.join(os.path.dirname(__file__), "grpc_server.py")
     with subprocess.Popen([sys.executable, server_script]) as proc:
         # wait until server has started
         time.sleep(0.5)
@@ -87,7 +87,9 @@ def grpc_client(stubs, tmpdir):
     with temp_fifo(tmpdir.strpath) as fifo_in:
         with temp_fifo(tmpdir.strpath) as fifo_out:
 
-            client_script = os.path.join(os.path.dirname(__file__), "remote_client.py")
+            client_script = os.path.join(
+                os.path.dirname(__file__), "grpc_indirect_client.py"
+            )
             with subprocess.Popen([sys.executable, client_script, fifo_in.path]):
 
                 class Client:
@@ -106,7 +108,7 @@ def grpc_client(stubs, tmpdir):
 @pytest.fixture
 def service(container_factory, protobufs, stubs):
 
-    from example import ExampleService
+    from nameko_service import ExampleService
 
     container = container_factory(ExampleService, {})
     container.start()

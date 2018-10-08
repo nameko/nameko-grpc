@@ -9,7 +9,7 @@ service example {
 
 message ExampleRequest {
   string name = 1;
-  //bool large_reply = 2;
+  bool large_reply = 2;
 }
 
 
