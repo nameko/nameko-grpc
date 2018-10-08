@@ -131,12 +131,19 @@ class ServerConnectionManager(object):
         send_stream = self.responses[stream_id]
 
         # TODO we currently don't _start_ replying until the incoming stream ends
-        # which breaks bi-drectional streaming
+        # which breaks bi-drectional streaming. we instead need to reply as soon as
+        # we have a complete message, but not close the stream
 
-        # TODO need to deal with frame sizes and flow control?
-        for chunk in send_stream.read():
+        window_size = self.conn.local_flow_control_window(stream_id=stream_id)
+        max_frame_size = self.conn.max_outbound_frame_size
 
-            self.conn.send_data(stream_id, chunk, end_stream=False)
+        max_send_bytes = min(window_size, max_frame_size)
+
+        # XXX this is broken:
+
+        for chunk in send_stream.read(max_send_bytes):
+            print(">> chunk", chunk)
+            self.conn.send_data(stream_id=stream_id, data=chunk)
 
         print(">> closing response", stream_id)
 

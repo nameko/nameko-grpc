@@ -10,7 +10,7 @@ from eventlet.event import Event
 
 from h2.errors import PROTOCOL_ERROR  # changed under h2 from 2.6.4?
 from nameko_grpc.inspection import Inspector
-from nameko_grpc.streams import ReceiveStream
+from nameko_grpc.streams import ReceiveStream, SendStream
 from nameko_grpc.constants import Cardinality
 import itertools
 
@@ -61,11 +61,6 @@ class ClientConnectionManager(object):
         inspector = Inspector(self.stub)
         output_type = inspector.output_type_for_method(self.method_name)
 
-        # NEED
-        # 1. somewhere to store incoming data for this response
-        # 2. a way to chunk yhat data into actually messsages (could do this inline?)
-        # 3. a way to get messages to caller; could block on actual messages arriving
-
         stream = ReceiveStream(stream_id, output_type)
         self.streams[stream_id] = stream
 
@@ -112,17 +107,28 @@ class ClientConnectionManager(object):
         self.conn.send_headers(stream_id, request_headers)
         self.request_made = True
 
-        # TODO flow control
-
+        send_stream = SendStream(stream_id)
         for request in self.request:
+            send_stream.put(request)
+        send_stream.close()
 
-            request_bin = request.SerializeToString()
-            header = struct.pack("?", False) + struct.pack(">I", len(request_bin))
-            body = header + request_bin
+        # TODO finish flow control
+        window_size = self.conn.local_flow_control_window(stream_id=stream_id)
+        max_frame_size = self.conn.max_outbound_frame_size
 
-            self.conn.send_data(stream_id=stream_id, data=body)
+        max_send_bytes = min(window_size, max_frame_size)
 
-        self.conn.end_stream(stream_id=stream_id)
+        for chunk in send_stream.read(max_send_bytes):
+            self.conn.send_data(stream_id=stream_id, data=chunk)
+
+        if send_stream.exhausted:
+            self.conn.end_stream(stream_id=stream_id)
+        else:
+            # wait for new window, then continue
+            import pdb
+
+            pdb.set_trace()
+            pass
 
         self.sock.sendall(self.conn.data_to_send())
 
@@ -135,6 +141,8 @@ class GrpcProxy(DependencyProvider):
 
     def invoke(self, method_name, request):
 
+        # TODO do we need a new socket every time?
+        # how to get multiple concurrent requests sharing the same underlying connection?
         sock = socket.socket()
         sock.connect(("127.0.0.1", 50051))
 
