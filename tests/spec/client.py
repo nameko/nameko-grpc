@@ -10,7 +10,7 @@ def _name_generator():
     names = ("Foo", "Bar", "Bat", "Baz")
 
     for name in names:
-        yield example_pb2.ExampleRequest(name=name)
+        yield example_pb2.ExampleRequest(value=name)
         # sleep(0.5)
 
 
@@ -19,18 +19,18 @@ if __name__ == "__main__":
     channel = grpc.insecure_channel("127.0.0.1:50051")
     stub = example_pb2_grpc.exampleStub(channel)
 
-    response = stub.unary_unary(example_pb2.ExampleRequest(name="you"))
+    response = stub.unary_unary(example_pb2.ExampleRequest(value="you", multiplier=2))
     print("Greeter client received: " + response.message)
 
-    response_iterator = stub.unary_stream(example_pb2.ExampleRequest(name="y'all"))
+    response_iterator = stub.unary_stream(example_pb2.ExampleRequest(value="y'all"))
 
     for response in response_iterator:
-        print(response.message)
+        print(response.message, response.seqno)
 
     response_iterator = stub.stream_stream(_name_generator())
 
     for response in response_iterator:
-        print(response.message)
+        print(response.message, response.seqno)
 
     response = stub.stream_unary(_name_generator())
     print(response.message)

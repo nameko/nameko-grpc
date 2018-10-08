@@ -16,22 +16,26 @@ class ExampleService:
 
     @grpc
     def unary_unary(self, request, context):
-        return ExampleReply(message="Hello, %s!" % request.name)
+        message = request.value * (request.multiplier or 1)
+        return ExampleReply(message=message)
 
     @grpc
     def unary_stream(self, request, context):
-        yield ExampleReply(message="Hello, %s!" % request.name)
-        yield ExampleReply(message="Goodbye, %s!" % request.name)
+        message = request.value * (request.multiplier or 1)
+        yield ExampleReply(message=message, seqno=1)
+        yield ExampleReply(message=message, seqno=2)
 
     @grpc
     def stream_unary(self, request, context):
-        names = []
-        for message in request:
-            names.append(message.name)
+        messages = []
+        for req in request:
+            message = req.value * (req.multiplier or 1)
+            messages.append(message)
 
-        return ExampleReply(message="Hi " + ", ".join(names) + "!")
+        return ExampleReply(message=",".join(messages))
 
     @grpc
     def stream_stream(self, request, context):
-        for message in request:
-            yield ExampleReply(message="Hi " + message.name)
+        for index, req in enumerate(request):
+            message = req.value * (req.multiplier or 1)
+            yield ExampleReply(message=message, seqno=index + 1)

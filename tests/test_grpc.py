@@ -7,7 +7,6 @@ from functools import partial
 from importlib import import_module
 from nameko.testing.services import entrypoint_hook, dummy
 
-from nameko_grpc.entrypoint import Grpc
 from nameko_grpc.dependency_provider import GrpcProxy
 from nameko_grpc.inspection import Inspector
 from nameko_grpc.constants import Cardinality
@@ -182,28 +181,31 @@ class TestStandard:
             return request.getfixturevalue("dependency_provider_client")
 
     def test_unary_unary(self, client, protobufs):
-        response = client.unary_unary(protobufs.ExampleRequest(name="you"))
-        assert response.message == "Hello, you!"
+        response = client.unary_unary(protobufs.ExampleRequest(value="A"))
+        assert response.message == "A"
 
     def test_unary_stream(self, client, protobufs):
-        responses = client.unary_stream(protobufs.ExampleRequest(name="you"))
-        assert [response.message for response in responses] == [
-            "Hello, you!",
-            "Goodbye, you!",
+        responses = client.unary_stream(protobufs.ExampleRequest(value="A"))
+        assert [(response.message, response.seqno) for response in responses] == [
+            ("A", 1),
+            ("A", 2),
         ]
 
     def test_stream_unary(self, client, protobufs):
         def generate_requests():
-            for name in ["Bill", "Bob"]:
-                yield protobufs.ExampleRequest(name=name)
+            for value in ["A", "B"]:
+                yield protobufs.ExampleRequest(value=value)
 
         response = client.stream_unary(generate_requests())
-        assert response.message == "Hi Bill, Bob!"
+        assert response.message == "A,B"
 
     def test_stream_stream(self, client, protobufs):
         def generate_requests():
-            for name in ["Bill", "Bob"]:
-                yield protobufs.ExampleRequest(name=name)
+            for value in ["A", "B"]:
+                yield protobufs.ExampleRequest(value=value)
 
         responses = client.stream_stream(generate_requests())
-        assert [response.message for response in responses] == ["Hi Bill", "Hi Bob"]
+        assert [(response.message, response.seqno) for response in responses] == [
+            ("A", 1),
+            ("B", 2),
+        ]

@@ -8,13 +8,14 @@ service example {
 }
 
 message ExampleRequest {
-  string name = 1;
-  bool large_reply = 2;
+  string value = 1;
+  int32 multiplier = 2;
 }
 
 
 
 message ExampleReply {
   string message = 1;
+  int32 seqno = 2;
 }
 
