@@ -83,6 +83,7 @@ def grpc_server():
 def grpc_client(stubs, tmpdir):
     """ Standard GRPC client, running in another process
     """
+    # TODO allow multiple clients in the same test
     with temp_fifo(tmpdir.strpath) as fifo_in:
         with temp_fifo(tmpdir.strpath) as fifo_out:
 
@@ -169,15 +170,19 @@ class TestStandard:
     @pytest.fixture(params=["grpc_server", "nameko_server"])
     def server(self, request):
         if "grpc" in request.param:
+            # pytest.skip("pass")
             request.getfixturevalue("grpc_server")
         elif "nameko" in request.param:
+            # pytest.skip("pass")
             request.getfixturevalue("service")
 
     @pytest.fixture(params=["grpc_client", "nameko_client"])
     def client(self, request, server):
         if "grpc" in request.param:
+            # pytest.skip("pass")
             return request.getfixturevalue("grpc_client")
         elif "nameko" in request.param:
+            # pytest.skip("pass")
             return request.getfixturevalue("dependency_provider_client")
 
     def test_unary_unary(self, client, protobufs):
@@ -209,3 +214,36 @@ class TestStandard:
             ("A", 1),
             ("B", 2),
         ]
+
+
+class TestLarge:
+    @pytest.fixture(params=["grpc_server", "nameko_server"])
+    def server(self, request):
+        if "grpc" in request.param:
+            pytest.skip("pass")
+            request.getfixturevalue("grpc_server")
+        elif "nameko" in request.param:
+            pytest.skip("pass")
+            request.getfixturevalue("service")
+
+    @pytest.fixture(params=["grpc_client", "nameko_client"])
+    def client(self, request, server):
+        if "grpc" in request.param:
+            pytest.skip("pass")
+            return request.getfixturevalue("grpc_client")
+        elif "nameko" in request.param:
+            pytest.skip("pass")
+            return request.getfixturevalue("dependency_provider_client")
+
+    def test_large_request(self, client, protobufs):
+        response = client.unary_unary(
+            protobufs.ExampleRequest(value="A", blob="B" * 10000)
+        )
+        assert response.message == "A"
+
+    def test_large_response(self, client, protobufs):
+        multiplier = 10000
+        response = client.unary_unary(
+            protobufs.ExampleRequest(value="A", multiplier=multiplier)
+        )
+        assert response.message == "A" * multiplier

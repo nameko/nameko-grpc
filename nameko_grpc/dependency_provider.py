@@ -107,6 +107,8 @@ class ClientConnectionManager(object):
         self.conn.send_headers(stream_id, request_headers)
         self.request_made = True
 
+        # XXX what about when self.request blocks? don't want to wait here
+        # until the input stream has finished
         send_stream = SendStream(stream_id)
         for request in self.request:
             send_stream.put(request)

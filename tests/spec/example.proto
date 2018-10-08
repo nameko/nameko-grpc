@@ -10,6 +10,7 @@ service example {
 message ExampleRequest {
   string value = 1;
   int32 multiplier = 2;
+  string blob = 3;  // arbitrary extra data
 }
 
 

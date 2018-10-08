@@ -16,6 +16,9 @@ if __name__ == "__main__":
     channel = grpc.insecure_channel("127.0.0.1:50051")
     stub = example_pb2_grpc.exampleStub(channel)
 
+    # TODO allow clients to make async calls; encode in a "Request" command that
+    # wraps the actual request or NewStream, and a boolean for async or not
+
     while True:
         config = receive(fifo_in)
         if config is None:

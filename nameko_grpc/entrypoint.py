@@ -4,7 +4,7 @@ from nameko.exceptions import ConfigurationError
 from collections import namedtuple, OrderedDict
 import re
 from h2.errors import PROTOCOL_ERROR  # changed under h2 from 2.6.4?
-from h2.events import RequestReceived, DataReceived, StreamEnded
+from h2.events import RequestReceived, DataReceived, StreamEnded, WindowUpdated
 from h2.config import H2Configuration
 from h2.connection import H2Connection
 import eventlet
@@ -63,6 +63,8 @@ class ServerConnectionManager(object):
                     self.data_received(event.data, event.stream_id)
                 elif isinstance(event, StreamEnded):
                     self.stream_ended(event.stream_id)
+                elif isinstance(event, WindowUpdated):
+                    self.window_updated(event.stream_id)
 
             self.sock.sendall(self.conn.data_to_send())
 
@@ -99,6 +101,16 @@ class ServerConnectionManager(object):
 
         self.handle_request(http_path, request_stream.messages(), response_stream)
 
+        self.conn.send_headers(
+            stream_id,
+            (
+                (":status", "200"),
+                ("content-type", "application/grpc+proto"),
+                ("server", "nameko-grpc"),
+            ),
+            end_stream=False,
+        )
+
     def data_received(self, data, stream_id):
 
         print(">> request data recvd", data)
@@ -111,43 +123,47 @@ class ServerConnectionManager(object):
 
         request_stream.write(data)
 
+        # if there is stuff to send now, send it
+        self.send_data(stream_id)
+
     def stream_ended(self, stream_id):
 
-        print(">> request stream ended")
-
-        self.conn.send_headers(
-            stream_id,
-            (
-                (":status", "200"),
-                ("content-type", "application/grpc+proto"),
-                ("server", "nameko-grpc"),
-            ),
-            end_stream=False,
-        )
+        print(">> request stream ended", stream_id)
 
         receive_stream = self.streams.pop(stream_id)
         receive_stream.close()
 
-        send_stream = self.responses[stream_id]
+        # now we send anything still left to send
+        self.send_data(stream_id)
 
-        # TODO we currently don't _start_ replying until the incoming stream ends
-        # which breaks bi-drectional streaming. we instead need to reply as soon as
-        # we have a complete message, but not close the stream
+    def window_updated(self, stream_id):
+
+        print(">> window updated", stream_id)
+        self.send_data(stream_id)
+
+    def send_data(self, stream_id):
+        final_send = stream_id not in self.streams  # if not, request stream is closed
+        send_stream = self.responses.get(stream_id)
+
+        if not send_stream:
+            # send_data may be called after everything is already sent
+            # (unary reponses)?
+            return
 
         window_size = self.conn.local_flow_control_window(stream_id=stream_id)
         max_frame_size = self.conn.max_outbound_frame_size
 
         max_send_bytes = min(window_size, max_frame_size)
 
-        # XXX this is broken:
+        # XXX this is broken; flow control not quite working
 
-        for chunk in send_stream.read(max_send_bytes):
-            print(">> chunk", chunk)
+        for chunk in send_stream.read(max_send_bytes, blocking=final_send):
             self.conn.send_data(stream_id=stream_id, data=chunk)
 
-        print(">> closing response", stream_id)
-
-        self.conn.send_headers(stream_id, (("grpc-status", "0"),), end_stream=True)
+        if send_stream.exhausted:
+            print(">> closing response", stream_id)
+            self.conn.send_headers(stream_id, (("grpc-status", "0"),), end_stream=True)
+            self.responses.pop(stream_id)
 
 
 class GrpcServer(SharedExtension):

@@ -1,6 +1,5 @@
-from eventlet.queue import Queue
+from eventlet.queue import Queue, Empty
 import struct
-from collections import deque
 
 
 class ReceiveStream:
@@ -46,12 +45,21 @@ class ReceiveStream:
             yield message
 
 
-# class ByteBuffer:
-#     def __init__(self):
-#         self.buffer = []
+class ByteBuffer:
+    def __init__(self):
+        self.bytes = bytearray()
 
-#     def empty(self):
-#         return not len(self.buffer)
+    def read(self, max_bytes):
+        length = min(max_bytes, len(self.bytes))
+        data = self.bytes[:length]
+        self.bytes = self.bytes[length:]
+        return data
+
+    def write(self, data):
+        self.bytes.extend(data)
+
+    def empty(self):
+        return not len(self.bytes)
 
 
 class SendStream:
@@ -62,12 +70,12 @@ class SendStream:
         self.stream_id = stream_id
 
         self.queue = Queue()
-        self.buffer = []
+        self.buffer = ByteBuffer()
         self.closed = False
 
     @property
     def exhausted(self):
-        return self.closed and self.queue.empty()
+        return self.closed and self.queue.empty() and self.buffer.empty()
 
     def close(self):
         self.closed = True
@@ -79,45 +87,47 @@ class SendStream:
         self.queue.put(message)
 
     def messages(self):
-        # TODO: make internal?
+        # TODO: nobody actually calls this anymore?
         while True:
             message = self.queue.get()
             if message is None:
                 break
             yield message
 
-    def read(self, max_bytes):
+    def get(self, blocking):
+        if blocking:
+            message = self.queue.get()
+        else:
+            try:
+                message = self.queue.get_nowait()
+            except Empty:
+                message = None
+        return message
+
+    def read(self, max_bytes, blocking=True):
         """ Read up to `max_bytes` from the stream, blocking until sufficient messages
         are received or the stream is closed.
 
         If more bytes are received than can be returned within `max_bytes`, they are
         buffered until the next call to `read`.
         """
-        sent_bytes = 0
+        sent = 0
+        while not self.buffer.empty():
+            data = self.buffer.read(max_bytes - sent)
+            sent += len(data)
+            yield data
 
-        # XXX this is broken when an individual message is longer than max_bytes
-        while self.buffer:
-            data = self.buffer.pop(0)
+        while True:
+            message = self.get(blocking)
+            print(">> SendStream.read", message)
+            if message is None:
+                break  # end
 
-            length = len(data)
-            if sent_bytes + length < max_bytes:
-                sent_bytes += length
-                yield data
-            else:
-                self.buffer.append(data)
-                break
-
-        for message in self.messages():
             body = message.SerializeToString()
             data = struct.pack("?", False) + struct.pack(">I", len(body)) + body
+            self.buffer.write(data)
 
-            length = len(data)
-            if sent_bytes + length < max_bytes:
-                sent_bytes += length
-                split = int(len(data) / 2)
-                yield data[:split]
-                yield data[split:]
-                # yield data
-            else:
-                self.buffer.append(data)
-                break
+            while not self.buffer.empty():
+                data = self.buffer.read(max_bytes - sent)
+                sent += len(data)
+                yield data
