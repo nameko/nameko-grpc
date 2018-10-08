@@ -58,13 +58,13 @@ def compile_proto():
 
 @pytest.fixture
 def protobufs(compile_proto):
-    protobufs, _ = compile_proto("helloworld")
+    protobufs, _ = compile_proto("example")
     return protobufs
 
 
 @pytest.fixture
 def stubs(compile_proto):
-    _, stubs = compile_proto("helloworld")
+    _, stubs = compile_proto("example")
     return stubs
 
 
@@ -106,36 +106,9 @@ def grpc_client(stubs, tmpdir):
 @pytest.fixture
 def service(container_factory, protobufs, stubs):
 
-    HelloReply = protobufs.HelloReply
+    from example import ExampleService
 
-    grpc = Grpc.decorator(stubs.greeterStub)
-
-    class Service:
-        name = "greeter"
-
-        @grpc
-        def say_hello(self, request, context):
-            return HelloReply(message="Hello, %s!" % request.name)
-
-        @grpc
-        def say_hello_goodbye(self, request, context):
-            yield HelloReply(message="Hello, %s!" % request.name)
-            yield HelloReply(message="Goodbye, %s!" % request.name)
-
-        @grpc
-        def say_hello_to_many(self, request, context):
-            for message in request:
-                yield HelloReply(message="Hi " + message.name)
-
-        @grpc
-        def say_hello_to_many_at_once(self, request, context):
-            names = []
-            for message in request:
-                names.append(message.name)
-
-            return HelloReply(message="Hi " + ", ".join(names) + "!")
-
-    container = container_factory(Service, {})
+    container = container_factory(ExampleService, {})
     container.start()
 
 
@@ -144,11 +117,11 @@ def dependency_provider_client(container_factory, stubs):
     class Service:
         name = "caller"
 
-        greeter_grpc = GrpcProxy(stubs.greeterStub)
+        example_grpc = GrpcProxy(stubs.exampleStub)
 
         @dummy
         def call(self, method_name, request):
-            return getattr(self.greeter_grpc, method_name)(request)
+            return getattr(self.example_grpc, method_name)(request)
 
     container = container_factory(Service, {})
     container.start()
@@ -167,43 +140,28 @@ def dependency_provider_client(container_factory, stubs):
 class TestInspection:
     @pytest.fixture
     def inspector(self, stubs):
-        return Inspector(stubs.greeterStub)
+        return Inspector(stubs.exampleStub)
 
     def test_path_for_method(self, inspector):
-        assert inspector.path_for_method("say_hello") == "/greeter/say_hello"
-        assert (
-            inspector.path_for_method("say_hello_goodbye")
-            == "/greeter/say_hello_goodbye"
-        )
-        assert (
-            inspector.path_for_method("say_hello_to_many")
-            == "/greeter/say_hello_to_many"
-        )
-        assert (
-            inspector.path_for_method("say_hello_to_many_at_once")
-            == "/greeter/say_hello_to_many_at_once"
-        )
+        assert inspector.path_for_method("unary_unary") == "/example/unary_unary"
+        assert inspector.path_for_method("unary_stream") == "/example/unary_stream"
+        assert inspector.path_for_method("stream_stream") == "/example/stream_stream"
+        assert inspector.path_for_method("stream_unary") == "/example/stream_unary"
 
     def test_input_type_for_method(self, inspector, protobufs):
-        assert inspector.input_type_for_method("say_hello") == protobufs.HelloRequest
+        assert (
+            inspector.input_type_for_method("unary_unary") == protobufs.ExampleRequest
+        )
 
     def test_output_type_for_method(self, inspector, protobufs):
-        assert inspector.output_type_for_method("say_hello") == protobufs.HelloReply
+        assert inspector.output_type_for_method("unary_unary") == protobufs.ExampleReply
 
     def test_cardinality_for_method(self, inspector):
-        assert inspector.cardinality_for_method("say_hello") == Cardinality.UNARY_UNARY
-        assert (
-            inspector.cardinality_for_method("say_hello_goodbye")
-            == Cardinality.UNARY_STREAM
-        )
-        assert (
-            inspector.cardinality_for_method("say_hello_to_many")
-            == Cardinality.STREAM_STREAM
-        )
-        assert (
-            inspector.cardinality_for_method("say_hello_to_many_at_once")
-            == Cardinality.STREAM_UNARY
-        )
+        insp = inspector
+        assert insp.cardinality_for_method("unary_unary") == Cardinality.UNARY_UNARY
+        assert insp.cardinality_for_method("unary_stream") == Cardinality.UNARY_STREAM
+        assert insp.cardinality_for_method("stream_unary") == Cardinality.STREAM_UNARY
+        assert insp.cardinality_for_method("stream_stream") == Cardinality.STREAM_STREAM
 
 
 class TestStandard:
@@ -222,11 +180,11 @@ class TestStandard:
             return request.getfixturevalue("dependency_provider_client")
 
     def test_unary_unary(self, client, protobufs):
-        response = client.say_hello(protobufs.HelloRequest(name="you"))
+        response = client.unary_unary(protobufs.ExampleRequest(name="you"))
         assert response.message == "Hello, you!"
 
     def test_unary_stream(self, client, protobufs):
-        responses = client.say_hello_goodbye(protobufs.HelloRequest(name="you"))
+        responses = client.unary_stream(protobufs.ExampleRequest(name="you"))
         assert [response.message for response in responses] == [
             "Hello, you!",
             "Goodbye, you!",
@@ -235,15 +193,15 @@ class TestStandard:
     def test_stream_unary(self, client, protobufs):
         def generate_requests():
             for name in ["Bill", "Bob"]:
-                yield protobufs.HelloRequest(name=name)
+                yield protobufs.ExampleRequest(name=name)
 
-        response = client.say_hello_to_many_at_once(generate_requests())
+        response = client.stream_unary(generate_requests())
         assert response.message == "Hi Bill, Bob!"
 
     def test_stream_stream(self, client, protobufs):
         def generate_requests():
             for name in ["Bill", "Bob"]:
-                yield protobufs.HelloRequest(name=name)
+                yield protobufs.ExampleRequest(name=name)
 
-        responses = client.say_hello_to_many(generate_requests())
+        responses = client.stream_stream(generate_requests())
         assert [response.message for response in responses] == ["Hi Bill", "Hi Bob"]

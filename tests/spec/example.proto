@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+service example {
+  rpc unary_unary (ExampleRequest) returns (ExampleReply) {}
+  rpc unary_stream (ExampleRequest) returns (stream ExampleReply) {}
+  rpc stream_unary (stream ExampleRequest) returns (ExampleReply) {}
+  rpc stream_stream (stream ExampleRequest) returns (stream ExampleReply) {}
+}
+
+message ExampleRequest {
+  string name = 1;
+  //bool large_reply = 2;
+}
+
+
+
+message ExampleReply {
+  string message = 1;
+}
+

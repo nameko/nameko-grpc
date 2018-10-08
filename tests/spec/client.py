@@ -2,40 +2,38 @@ from __future__ import print_function
 
 import grpc
 
-import helloworld_pb2
-import helloworld_pb2_grpc
+import example_pb2
+import example_pb2_grpc
 
 
 def _name_generator():
     names = ("Foo", "Bar", "Bat", "Baz")
 
     for name in names:
-        yield helloworld_pb2.HelloRequest(name=name)
+        yield example_pb2.ExampleRequest(name=name)
         # sleep(0.5)
 
 
 if __name__ == "__main__":
 
     channel = grpc.insecure_channel("127.0.0.1:50051")
-    stub = helloworld_pb2_grpc.greeterStub(channel)
+    stub = example_pb2_grpc.exampleStub(channel)
 
-    response = stub.say_hello(helloworld_pb2.HelloRequest(name="you"))
+    response = stub.unary_unary(example_pb2.ExampleRequest(name="you"))
     print("Greeter client received: " + response.message)
 
-    # response_iterator = stub.say_hello_goodbye(
-    #     helloworld_pb2.HelloRequest(name="y'all")
-    # )
+    response_iterator = stub.unary_stream(example_pb2.ExampleRequest(name="y'all"))
 
-    # for response in response_iterator:
-    #     print(response.message)
+    for response in response_iterator:
+        print(response.message)
 
-    # response_iterator = stub.say_hello_to_many(_name_generator())
+    response_iterator = stub.stream_stream(_name_generator())
 
-    # for response in response_iterator:
-    #     print(response.message)
+    for response in response_iterator:
+        print(response.message)
 
-    # response = stub.say_hello_to_many_at_once(_name_generator())
-    # print(response.message)
+    response = stub.stream_unary(_name_generator())
+    print(response.message)
 
     # # missing tests:
     # # large request payload

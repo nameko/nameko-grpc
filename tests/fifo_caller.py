@@ -11,9 +11,9 @@ from helpers import receive, send, Config, Fifo, wrap_fifo
 if __name__ == "__main__":
 
     sys.path.append(os.path.join(os.path.dirname(__file__), "spec"))
-    import helloworld_pb2
+    import example_pb2
 
-    req = helloworld_pb2.HelloRequest(name="pickle1")
+    req = example_pb2.ExampleRequest(name="pickle1")
 
     FIFO_IN = "/tmp/fifo_in"
     FIFO_OUT = "/tmp/fifo_out"
@@ -23,7 +23,7 @@ if __name__ == "__main__":
 
     def gen():
         for i in range(50):
-            yield helloworld_pb2.HelloRequest(name="pickle{}".format(i))
+            yield example_pb2.ExampleRequest(name="pickle{}".format(i))
 
     def ping():
         while True:
@@ -45,9 +45,9 @@ if __name__ == "__main__":
         else:
             print(">>", result)
 
-    call("say_hello", req, stream_response=False)
-    call("say_hello_goodbye", req)
-    call("say_hello_to_many_at_once", gen(), stream_response=False)
-    call("say_hello_to_many", gen())
+    call("unary_unary", req, stream_response=False)
+    call("unary_stream", req, stream_response=True)
+    call("stream_unary", gen(), stream_response=False)
+    call("stream_stream", gen(), stream_response=True)
 
     send(fifo_in, None)

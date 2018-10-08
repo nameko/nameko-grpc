@@ -101,7 +101,7 @@ class ClientConnectionManager(object):
             (":method", "GET"),
             (":scheme", "http"),
             (":authority", "127.0.0.1"),
-            (":path", "/greeter/{}".format(self.method_name)),
+            (":path", "/example/{}".format(self.method_name)),
             ("te", "trailers"),
             ("content-type", "application/grpc"),
             ("user-agent", "nameko-grc-proxy"),
