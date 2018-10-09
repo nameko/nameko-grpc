@@ -59,7 +59,10 @@ class ByteBuffer:
         self.bytes.extend(data)
 
     def empty(self):
-        return not len(self.bytes)
+        return len(self.bytes) == 0
+
+    def __len__(self):
+        return len(self.bytes)
 
 
 class SendStream:
@@ -104,22 +107,22 @@ class SendStream:
                 message = None
         return message
 
-    def read(self, max_bytes, blocking=True):
-        """ Read up to `max_bytes` from the stream, blocking until sufficient messages
-        are received or the stream is closed.
+    def read(self, max_bytes, chunk_size, blocking=True):
+        """ Read up to `max_bytes` from the stream, yielding up to `chunk_size`
+        bytes at a time.
 
-        If more bytes are received than can be returned within `max_bytes`, they are
-        buffered until the next call to `read`.
+        Optionally blocks until sufficient messages are received or the stream is
+        closed.
         """
         sent = 0
-        while not self.buffer.empty():
-            data = self.buffer.read(max_bytes - sent)
-            sent += len(data)
-            yield data
+
+        while len(self.buffer) >= chunk_size and sent < max_bytes:
+            chunk = self.buffer.read(chunk_size)
+            sent += len(chunk)
+            yield chunk
 
         while True:
             message = self.get(blocking)
-            print(">> SendStream.read", message)
             if message is None:
                 break  # end
 
@@ -127,7 +130,9 @@ class SendStream:
             data = struct.pack("?", False) + struct.pack(">I", len(body)) + body
             self.buffer.write(data)
 
-            while not self.buffer.empty():
-                data = self.buffer.read(max_bytes - sent)
-                sent += len(data)
-                yield data
+            while sent < max_bytes:
+                chunk = self.buffer.read(chunk_size)
+                if not chunk:
+                    break  # no more data to send
+                sent += len(chunk)
+                yield chunk

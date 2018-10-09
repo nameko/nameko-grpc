@@ -1,11 +1,16 @@
 from nameko.extensions import DependencyProvider
 
-import struct
 from functools import partial
 import socket
 from h2.config import H2Configuration
 from h2.connection import H2Connection
-from h2.events import ResponseReceived, DataReceived, StreamEnded, RemoteSettingsChanged
+from h2.events import (
+    ResponseReceived,
+    DataReceived,
+    StreamEnded,
+    RemoteSettingsChanged,
+    WindowUpdated,
+)
 from eventlet.event import Event
 
 from h2.errors import PROTOCOL_ERROR  # changed under h2 from 2.6.4?
@@ -29,6 +34,7 @@ class ClientConnectionManager(object):
         config = H2Configuration(client_side=True)
         self.conn = H2Connection(config=config)
         self.streams = {}
+        self.send_streams = {}
         self.request_made = False
         self.response_ready = Event()
         self.counter = itertools.count(start=1)
@@ -42,6 +48,9 @@ class ClientConnectionManager(object):
             if not data:
                 break
 
+            # XXX what happens when we 'idle'? could we be deadlocked waiting to make
+            # a new request?
+
             events = self.conn.receive_data(data)
             for event in events:
                 if isinstance(event, ResponseReceived):
@@ -52,6 +61,10 @@ class ClientConnectionManager(object):
                     self.settings_changed(event)
                 elif isinstance(event, StreamEnded):
                     self.stream_ended(event.stream_id)
+                elif isinstance(event, WindowUpdated):
+                    self.window_updated(event.stream_id)
+                else:
+                    print(">> ", event)
 
             self.sock.sendall(self.conn.data_to_send())
 
@@ -68,6 +81,8 @@ class ClientConnectionManager(object):
         print(">> response stream ended", stream_id)
         stream = self.streams.pop(stream_id)
         stream.close()
+
+        # XXX actually, some responses may be ready way before this
         self.response_ready.send(stream.messages())
 
     def data_received(self, data, stream_id):
@@ -83,8 +98,15 @@ class ClientConnectionManager(object):
 
     def settings_changed(self, event):
         # XXX is this the correct hook for sending the request?
+        # (probably, but we should be getting requests to send from outside)
         if not self.request_made:
             self.send_request()
+
+    def window_updated(self, stream_id):
+        pass
+        # if there are any pending requests, send them
+        # if there are any sending streams, continue sending them
+        self.send_data(stream_id)
 
     def send_request(self):
         stream_id = next(self.counter)
@@ -105,32 +127,38 @@ class ClientConnectionManager(object):
         ]
 
         self.conn.send_headers(stream_id, request_headers)
-        self.request_made = True
+        self.request_made = True  # request made _for stream_
+        # (we can use streams dict to track this)
+
+        self.send_streams[stream_id] = SendStream(stream_id)
+        self.send_data(stream_id)
+
+    def send_data(self, stream_id):
+
+        send_stream = self.send_streams.get(stream_id)
+
+        if not send_stream:
+            # send_data may be called after everything is already sent?
+            return
 
         # XXX what about when self.request blocks? don't want to wait here
-        # until the input stream has finished
-        send_stream = SendStream(stream_id)
+        # until the input stream has finished.
+        # can we not put requests _directly_ into the stream?
         for request in self.request:
             send_stream.put(request)
         send_stream.close()
 
-        # TODO finish flow control
+        final_send = True  # XXX faking it until we have a better hook
+
         window_size = self.conn.local_flow_control_window(stream_id=stream_id)
         max_frame_size = self.conn.max_outbound_frame_size
 
-        max_send_bytes = min(window_size, max_frame_size)
-
-        for chunk in send_stream.read(max_send_bytes):
+        for chunk in send_stream.read(window_size, max_frame_size, blocking=final_send):
             self.conn.send_data(stream_id=stream_id, data=chunk)
 
         if send_stream.exhausted:
             self.conn.end_stream(stream_id=stream_id)
-        else:
-            # wait for new window, then continue
-            import pdb
-
-            pdb.set_trace()
-            pass
+            self.send_streams.pop(stream_id)
 
         self.sock.sendall(self.conn.data_to_send())
 

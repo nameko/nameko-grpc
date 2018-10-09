@@ -232,7 +232,7 @@ class TestLarge:
             # pytest.skip("pass")
             return request.getfixturevalue("grpc_client")
         elif "nameko" in request.param:
-            pytest.skip("pass")
+            # pytest.skip("pass")
             return request.getfixturevalue("dependency_provider_client")
 
     def test_large_request(self, client, protobufs):
@@ -247,3 +247,11 @@ class TestLarge:
             protobufs.ExampleRequest(value="A", multiplier=multiplier)
         )
         assert response.message == "A" * multiplier
+
+
+# class TestConcurrency:
+#     def test_concurrent_unary_requests(self):
+#         pass
+
+#     def test_concurrent_stream_requests(self):
+#         pass

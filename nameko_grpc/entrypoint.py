@@ -153,11 +153,7 @@ class ServerConnectionManager(object):
         window_size = self.conn.local_flow_control_window(stream_id=stream_id)
         max_frame_size = self.conn.max_outbound_frame_size
 
-        max_send_bytes = min(window_size, max_frame_size)
-
-        # XXX this is broken; flow control not quite working
-
-        for chunk in send_stream.read(max_send_bytes, blocking=final_send):
+        for chunk in send_stream.read(window_size, max_frame_size, blocking=final_send):
             self.conn.send_data(stream_id=stream_id, data=chunk)
 
         if send_stream.exhausted:
