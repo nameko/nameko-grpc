@@ -113,7 +113,7 @@ class ServerConnectionManager(object):
 
     def data_received(self, data, stream_id):
 
-        print(">> request data recvd", data)
+        print(">> request data recvd", data[:100])
 
         request_stream = self.streams.get(stream_id)
         if request_stream is None:
