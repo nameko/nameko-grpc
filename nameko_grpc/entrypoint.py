@@ -13,6 +13,7 @@ from nameko.exceptions import ContainerBeingKilled
 from nameko_grpc.inspection import Inspector
 from nameko_grpc.streams import ReceiveStream, SendStream
 from .constants import Cardinality
+import socket
 
 
 def parse_address(address_string):
@@ -52,11 +53,15 @@ class ServerConnectionManager(object):
         self.sock.sendall(self.conn.data_to_send())
 
         while True:
-            data = self.sock.recv(65535)
-            if not data:
-                break
-
-            events = self.conn.receive_data(data)
+            self.sock.settimeout(0.01)
+            try:
+                data = self.sock.recv(65535)
+                if not data:
+                    break
+                events = self.conn.receive_data(data)
+            except socket.timeout:
+                events = []
+                self.bump()
 
             for event in events:
                 if isinstance(event, RequestReceived):
@@ -69,6 +74,11 @@ class ServerConnectionManager(object):
                     self.window_updated(event.stream_id)
 
             self.sock.sendall(self.conn.data_to_send())
+
+    def bump(self):
+        # XXX rename, formalise
+        for stream_id in list(self.responses.keys()):
+            self.send_data(stream_id)
 
     def request_received(self, headers, stream_id):
 
@@ -144,7 +154,14 @@ class ServerConnectionManager(object):
         self.send_data(stream_id)
 
     def send_data(self, stream_id):
-        final_send = stream_id not in self.streams  # if not, request stream is closed
+        # if the receive stream is closed, there's nothing left for this connection
+        # to do except wait for the server to finish responding
+        # (what about handling new concurrent requests?)
+        # (do we actually _need_ to block here, or are there other hooks that'll
+        # bring us back to here to try again?)
+        block_until_sent = stream_id not in self.streams
+        block_until_sent = False  # XXX possible when we use .bump()
+
         send_stream = self.responses.get(stream_id)
 
         if not send_stream:
@@ -155,7 +172,9 @@ class ServerConnectionManager(object):
         window_size = self.conn.local_flow_control_window(stream_id=stream_id)
         max_frame_size = self.conn.max_outbound_frame_size
 
-        for chunk in send_stream.read(window_size, max_frame_size, blocking=final_send):
+        for chunk in send_stream.read(
+            window_size, max_frame_size, blocking=block_until_sent
+        ):
             self.conn.send_data(stream_id=stream_id, data=chunk)
 
         if send_stream.exhausted:
@@ -278,6 +297,8 @@ class Grpc(Entrypoint):
         except ContainerBeingKilled:
             # how to reject GRPC requests?
             pass
+
+        # XXX return something here, rather than using callbacks in handle_result
 
     def handle_result(self, response_stream, worker_ctx, result, exc_info):
 

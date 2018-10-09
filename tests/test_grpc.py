@@ -113,6 +113,8 @@ def service(container_factory, protobufs, stubs):
     container = container_factory(ExampleService, {})
     container.start()
 
+    return container
+
 
 @pytest.fixture
 def dependency_provider_client(container_factory, stubs):
@@ -166,25 +168,27 @@ class TestInspection:
         assert insp.cardinality_for_method("stream_stream") == Cardinality.STREAM_STREAM
 
 
+@pytest.fixture(params=["grpc_server", "nameko_server"])
+def server(request):
+    if "grpc" in request.param:
+        # pytest.skip("pass")
+        request.getfixturevalue("grpc_server")
+    elif "nameko" in request.param:
+        pytest.skip("pass")
+        request.getfixturevalue("service")
+
+
+@pytest.fixture(params=["grpc_client", "nameko_client"])
+def client(request, server):
+    if "grpc" in request.param:
+        pytest.skip("pass")
+        return request.getfixturevalue("grpc_client")
+    elif "nameko" in request.param:
+        # pytest.skip("pass")
+        return request.getfixturevalue("dependency_provider_client")
+
+
 class TestStandard:
-    @pytest.fixture(params=["grpc_server", "nameko_server"])
-    def server(self, request):
-        if "grpc" in request.param:
-            # pytest.skip("pass")
-            request.getfixturevalue("grpc_server")
-        elif "nameko" in request.param:
-            # pytest.skip("pass")
-            request.getfixturevalue("service")
-
-    @pytest.fixture(params=["grpc_client", "nameko_client"])
-    def client(self, request, server):
-        if "grpc" in request.param:
-            # pytest.skip("pass")
-            return request.getfixturevalue("grpc_client")
-        elif "nameko" in request.param:
-            # pytest.skip("pass")
-            return request.getfixturevalue("dependency_provider_client")
-
     def test_unary_unary(self, client, protobufs):
         response = client.unary_unary(protobufs.ExampleRequest(value="A"))
         assert response.message == "A"
@@ -217,24 +221,6 @@ class TestStandard:
 
 
 class TestLarge:
-    @pytest.fixture(params=["grpc_server", "nameko_server"])
-    def server(self, request):
-        if "grpc" in request.param:
-            # pytest.skip("pass")
-            request.getfixturevalue("grpc_server")
-        elif "nameko" in request.param:
-            # pytest.skip("pass")
-            request.getfixturevalue("service")
-
-    @pytest.fixture(params=["grpc_client", "nameko_client"])
-    def client(self, request, server):
-        if "grpc" in request.param:
-            # pytest.skip("pass")
-            return request.getfixturevalue("grpc_client")
-        elif "nameko" in request.param:
-            # pytest.skip("pass")
-            return request.getfixturevalue("dependency_provider_client")
-
     def test_large_request(self, client, protobufs):
         response = client.unary_unary(
             protobufs.ExampleRequest(value="A", blob="B" * 20000)
@@ -247,6 +233,15 @@ class TestLarge:
             protobufs.ExampleRequest(value="A", multiplier=multiplier)
         )
         assert response.message == "A" * multiplier
+
+
+class TestFuture:
+    def test_unary_unary(self, client, server):
+        response_future = client.unary_unary.future(
+            protobufs.ExampleRequest(value="A", blob="B" * 20000)
+        )
+        response = response_future.get()
+        assert response.message == "A"
 
 
 # class TestConcurrency:

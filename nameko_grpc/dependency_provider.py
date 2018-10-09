@@ -12,6 +12,7 @@ from h2.events import (
     WindowUpdated,
 )
 from eventlet.event import Event
+import eventlet
 
 from h2.errors import PROTOCOL_ERROR  # changed under h2 from 2.6.4?
 from nameko_grpc.inspection import Inspector
@@ -45,11 +46,18 @@ class ClientConnectionManager(object):
         self.sock.sendall(self.conn.data_to_send())
 
         while True:
-            data = self.sock.recv(65535)
-            if not data:
-                break
 
-            events = self.conn.receive_data(data)
+            self.sock.settimeout(0.01)
+            try:
+                # XXX does receiving ANY data prevent the timeout?
+                data = self.sock.recv(65535)
+                if not data:
+                    break
+                events = self.conn.receive_data(data)
+            except socket.timeout:
+                events = []
+                self.bump()
+
             for event in events:
                 if isinstance(event, ResponseReceived):
                     self.response_received(event.headers, event.stream_id)
@@ -63,6 +71,11 @@ class ClientConnectionManager(object):
                     self.window_updated(event.stream_id)
 
             self.sock.sendall(self.conn.data_to_send())
+
+    def bump(self):
+        # XXX rename, formalise
+        for stream_id in list(self.send_streams.keys()):
+            self.send_data(stream_id)
 
     def invoke(self, method_name, request):
 
@@ -78,15 +91,19 @@ class ClientConnectionManager(object):
         send_stream = SendStream(stream_id)
         self.send_streams[stream_id] = send_stream
 
+        # XXX is this enough? what happens if we idle after the first request?
         self.pending_requests.append((stream_id, method_name))
         if not self.initial_requests_pending.ready():
             self.initial_requests_pending.send()
 
-        # XXX what about when request blocks? don't want to wait here
-        # until the input stream has finished.
-        for request in request:
-            send_stream.put(request)
-        send_stream.close()
+        # XXX can we do this without another thread? yes, if we make
+        # DependencyProvider.invoke do the puts (we can push from there, not rely on pull)
+        def puts():
+            for req in request:
+                send_stream.put(req)
+            send_stream.close()
+
+        eventlet.spawn_n(puts)
 
         return receive_stream.messages()
 
@@ -167,7 +184,7 @@ class ClientConnectionManager(object):
         #     send_stream.put(request)
         # send_stream.close()
 
-        final_send = True  # XXX faking it until we have a better hook
+        final_send = False  # XXX possible when we use .bump()
 
         window_size = self.conn.local_flow_control_window(stream_id=stream_id)
         max_frame_size = self.conn.max_outbound_frame_size
@@ -202,6 +219,8 @@ class GrpcProxy(DependencyProvider):
         if cardinality in (Cardinality.UNARY_UNARY, Cardinality.UNARY_STREAM):
             request = (request,)
 
+        # TODO make this method put the requests into the queue, rather than
+        # simply providing the generator? (i.e. change from pull to push)
         response = self.manager.invoke(method_name, request)
 
         if cardinality in (Cardinality.STREAM_UNARY, Cardinality.UNARY_UNARY):

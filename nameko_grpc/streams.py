@@ -90,14 +90,6 @@ class SendStream:
             raise SendStream.Closed()
         self.queue.put(message)
 
-    def messages(self):
-        # TODO: nobody actually calls this anymore?
-        while True:
-            message = self.queue.get()
-            if message is None:
-                break
-            yield message
-
     def get(self, blocking):
         if blocking:
             message = self.queue.get()
