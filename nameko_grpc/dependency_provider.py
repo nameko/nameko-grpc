@@ -25,18 +25,19 @@ class ClientConnectionManager(object):
     An object that manages a single HTTP/2 connection on a GRPC client.
     """
 
-    def __init__(self, sock, method_name, request, stub):
+    def __init__(self, sock, stub):
         self.sock = sock
-        self.method_name = method_name
-        self.request = request
         self.stub = stub
 
         config = H2Configuration(client_side=True)
         self.conn = H2Connection(config=config)
-        self.streams = {}
+
+        self.receive_streams = {}
         self.send_streams = {}
-        self.request_made = False
-        self.response_ready = Event()
+
+        self.pending_requests = []
+        self.initial_requests_pending = Event()
+
         self.counter = itertools.count(start=1)
 
     def run_forever(self):
@@ -47,9 +48,6 @@ class ClientConnectionManager(object):
             data = self.sock.recv(65535)
             if not data:
                 break
-
-            # XXX what happens when we 'idle'? could we be deadlocked waiting to make
-            # a new request?
 
             events = self.conn.receive_data(data)
             for event in events:
@@ -63,75 +61,96 @@ class ClientConnectionManager(object):
                     self.stream_ended(event.stream_id)
                 elif isinstance(event, WindowUpdated):
                     self.window_updated(event.stream_id)
-                else:
-                    print(">> ", event)
 
             self.sock.sendall(self.conn.data_to_send())
+
+    def invoke(self, method_name, request):
+
+        stream_id = next(self.counter)
+        print(">> invoke", method_name, request, stream_id)
+
+        inspector = Inspector(self.stub)
+        output_type = inspector.output_type_for_method(method_name)
+
+        receive_stream = ReceiveStream(stream_id, output_type)
+        self.receive_streams[stream_id] = receive_stream
+
+        send_stream = SendStream(stream_id)
+        self.send_streams[stream_id] = send_stream
+
+        self.pending_requests.append((stream_id, method_name))
+        if not self.initial_requests_pending.ready():
+            self.initial_requests_pending.send()
+
+        # XXX what about when request blocks? don't want to wait here
+        # until the input stream has finished.
+        for request in request:
+            send_stream.put(request)
+        send_stream.close()
+
+        return receive_stream.messages()
 
     def response_received(self, headers, stream_id):
         print(">> response recvd", stream_id)
 
-        inspector = Inspector(self.stub)
-        output_type = inspector.output_type_for_method(self.method_name)
+        # inspector = Inspector(self.stub)
+        # output_type = inspector.output_type_for_method(self.method_name)
 
-        stream = ReceiveStream(stream_id, output_type)
-        self.streams[stream_id] = stream
+        # stream = ReceiveStream(stream_id, output_type)
+        # self.receive_streams[stream_id] = stream
 
     def stream_ended(self, stream_id):
         print(">> response stream ended", stream_id)
-        stream = self.streams.pop(stream_id)
-        stream.close()
-
-        # XXX actually, some responses may be ready way before this
-        self.response_ready.send(stream.messages())
+        receive_stream = self.receive_streams.pop(stream_id)
+        receive_stream.close()
 
     def data_received(self, data, stream_id):
         print(">> response data recvd", data, stream_id)
 
-        stream = self.streams.get(stream_id)
-        if stream is None:
+        receive_stream = self.receive_streams.get(stream_id)
+        if receive_stream is None:
             # data for unknown stream, exit?
             self.conn.reset_stream(stream_id, error_code=PROTOCOL_ERROR)
             return
 
-        stream.write(data)
+        receive_stream.write(data)
 
     def settings_changed(self, event):
         # XXX is this the correct hook for sending the request?
         # (probably, but we should be getting requests to send from outside)
-        if not self.request_made:
-            self.send_request()
+        print(">> settings changed")
+        self.send_pending_requests()
 
     def window_updated(self, stream_id):
-        pass
-        # if there are any pending requests, send them
-        # if there are any sending streams, continue sending them
+        print(">> window updated")
+        self.send_pending_requests()
         self.send_data(stream_id)
 
-    def send_request(self):
-        stream_id = next(self.counter)
-        print(">> sending request", stream_id)
+    def send_pending_requests(self):
 
-        # TODO should be sharing a single connection
+        self.initial_requests_pending.wait()
 
-        request_headers = [
-            (":method", "GET"),
-            (":scheme", "http"),
-            (":authority", "127.0.0.1"),
-            (":path", "/example/{}".format(self.method_name)),
-            ("te", "trailers"),
-            ("content-type", "application/grpc"),
-            ("user-agent", "nameko-grc-proxy"),
-            ("grpc-accept-encoding", "identity,deflate,gzip"),
-            ("accept-encoding", "identity,gzip"),
-        ]
+        print(">> send pending requests", self.pending_requests)
 
-        self.conn.send_headers(stream_id, request_headers)
-        self.request_made = True  # request made _for stream_
-        # (we can use streams dict to track this)
+        while self.pending_requests:
+            stream_id, method_name = self.pending_requests.pop()
 
-        self.send_streams[stream_id] = SendStream(stream_id)
-        self.send_data(stream_id)
+            print(">> sending request", stream_id)
+
+            request_headers = [
+                (":method", "GET"),
+                (":scheme", "http"),
+                (":authority", "127.0.0.1"),
+                (":path", "/example/{}".format(method_name)),
+                ("te", "trailers"),
+                ("content-type", "application/grpc"),
+                ("user-agent", "nameko-grc-proxy"),
+                ("grpc-accept-encoding", "identity,deflate,gzip"),
+                ("accept-encoding", "identity,gzip"),
+            ]
+
+            self.conn.send_headers(stream_id, request_headers)
+            self.send_data(stream_id)
 
     def send_data(self, stream_id):
 
@@ -144,9 +163,9 @@ class ClientConnectionManager(object):
         # XXX what about when self.request blocks? don't want to wait here
         # until the input stream has finished.
         # can we not put requests _directly_ into the stream?
-        for request in self.request:
-            send_stream.put(request)
-        send_stream.close()
+        # for request in self.request:
+        #     send_stream.put(request)
+        # send_stream.close()
 
         final_send = True  # XXX faking it until we have a better hook
 
@@ -169,24 +188,21 @@ class GrpcProxy(DependencyProvider):
         self.inspector = Inspector(self.stub)
         super().__init__(**kwargs)
 
-    def invoke(self, method_name, request):
+    def setup(self):
 
-        # TODO do we need a new socket every time?
-        # how to get multiple concurrent requests sharing the same underlying connection?
         sock = socket.socket()
         sock.connect(("127.0.0.1", 50051))
 
+        self.manager = ClientConnectionManager(sock, self.stub)
+        self.container.spawn_managed_thread(self.manager.run_forever)
+
+    def invoke(self, method_name, request):
+
         cardinality = self.inspector.cardinality_for_method(method_name)
-
-        # TODO case where method doesn't exist
-
         if cardinality in (Cardinality.UNARY_UNARY, Cardinality.UNARY_STREAM):
             request = (request,)
 
-        manager = ClientConnectionManager(sock, method_name, request, self.stub)
-        self.container.spawn_managed_thread(manager.run_forever)
-
-        response = manager.response_ready.wait()
+        response = self.manager.invoke(method_name, request)
 
         if cardinality in (Cardinality.STREAM_UNARY, Cardinality.UNARY_UNARY):
             response = next(response)

@@ -8,7 +8,7 @@ class ReceiveStream:
         self.message_type = message_type
 
         self.message_queue = Queue()
-        self.buffer = bytearray()
+        self.buffer = bytearray()  # TODO use ByteBuffer
 
     def close(self):
         self.message_queue.put(None)
@@ -85,6 +85,7 @@ class SendStream:
         self.queue.put(None)
 
     def put(self, message):
+        # XXX can we replace `put` with just passing a generator into the constructor?
         if self.closed:
             raise SendStream.Closed()
         self.queue.put(message)

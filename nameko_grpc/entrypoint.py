@@ -42,6 +42,8 @@ class ServerConnectionManager(object):
 
         config = H2Configuration(client_side=False)
         self.conn = H2Connection(config=config)
+
+        # TODO rename to receive_streams, send_streams
         self.streams = {}
         self.responses = {}
 
