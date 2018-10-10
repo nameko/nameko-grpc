@@ -261,6 +261,37 @@ class TestFuture:
         response = response_future.result()
         assert response.message == "A"
 
+    def test_unary_stream(self, client, protobufs):
+        responses_future = client.unary_stream.future(
+            protobufs.ExampleRequest(value="A")
+        )
+        responses = responses_future.result()
+        assert [(response.message, response.seqno) for response in responses] == [
+            ("A", 1),
+            ("A", 2),
+        ]
+
+    def test_stream_unary(self, client, protobufs):
+        def generate_requests():
+            for value in ["A", "B"]:
+                yield protobufs.ExampleRequest(value=value)
+
+        response_future = client.stream_unary.future(generate_requests())
+        response = response_future.result()
+        assert response.message == "A,B"
+
+    def test_stream_stream(self, client, protobufs):
+        def generate_requests():
+            for value in ["A", "B"]:
+                yield protobufs.ExampleRequest(value=value)
+
+        responses_future = client.stream_stream.future(generate_requests())
+        responses = responses_future.result()
+        assert [(response.message, response.seqno) for response in responses] == [
+            ("A", 1),
+            ("B", 2),
+        ]
+
 
 # class TestConcurrency:
 #     def test_concurrent_unary_requests(self):
