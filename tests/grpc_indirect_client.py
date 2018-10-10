@@ -1,8 +1,15 @@
 import os
 import sys
 import grpc
+import threading
 
-from helpers import send, receive, wrap_fifo
+from helpers import send, receive, FifoPipe
+
+
+def call(fifo_in, fifo_out, method):
+    request = receive(fifo_in)
+    response = method(request)
+    send(fifo_out, response)
 
 
 if __name__ == "__main__":
@@ -10,21 +17,26 @@ if __name__ == "__main__":
     sys.path.append(os.path.join(os.path.dirname(__file__), "spec"))
     import example_pb2_grpc
 
-    fifo_in_path = sys.argv[1]
-    fifo_in = wrap_fifo(fifo_in_path)
+    command_fifo_path = sys.argv[1]
+    command_fifo = FifoPipe.wrap(command_fifo_path)
 
     channel = grpc.insecure_channel("127.0.0.1:50051")
     stub = example_pb2_grpc.exampleStub(channel)
 
-    # TODO allow clients to make async calls; encode in a "Request" command that
-    # wraps the actual request or NewStream, and a boolean for async or not
-
     while True:
-        config = receive(fifo_in)
+        config = receive(command_fifo)
         if config is None:
             break
-        fifo_out_path = config.fifo_out
-        fifo_out = wrap_fifo(fifo_out_path)
-        request = receive(fifo_in)
-        response = getattr(stub, config.method_name)(request)
-        send(fifo_out, response)
+
+        in_fifo_path = config.in_fifo
+        in_fifo = FifoPipe.wrap(in_fifo_path)
+
+        out_fifo_path = config.out_fifo
+        out_fifo = FifoPipe.wrap(out_fifo_path)
+
+        method = getattr(stub, config.method_name)
+
+        thread = threading.Thread(
+            target=call, name=config.method_name, args=(in_fifo, out_fifo, method)
+        )
+        thread.start()

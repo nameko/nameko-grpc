@@ -2,15 +2,15 @@ import pickle
 import time
 import os
 import uuid
-from contextlib import contextmanager
 
 from eventlet import tpool
 
 
 class Config:
-    def __init__(self, method_name, fifo_out):
+    def __init__(self, method_name, in_fifo, out_fifo):
         self.method_name = method_name
-        self.fifo_out = fifo_out
+        self.in_fifo = in_fifo
+        self.out_fifo = out_fifo
 
 
 class NewStream:
@@ -29,7 +29,7 @@ def isiterable(req):
         return False
 
 
-class Fifo:
+class FifoPipe:
     def __init__(self, path):
         self.path = path
 
@@ -43,29 +43,39 @@ class Fifo:
             data = in_.read()
             return pickle.loads(data)
 
+    def open(self):
+        os.mkfifo(self.path)
+
+    def close(self):
+        os.unlink(self.path)
+
+    @classmethod
+    def new(cls, directory, name=None):
+        if name is None:
+            name = str(uuid.uuid4())
+        path = os.path.join(directory, name)
+        return cls.wrap(path)
+
+    @classmethod
+    def wrap(cls, path):
+        instance = cls(path)
+        if under_eventlet():
+            instance = tpool.Proxy(instance)
+        return instance
+
+    def __enter__(self):
+        self.open()
+        return self
+
+    def __exit__(self, *args):
+        self.close()
+
 
 def under_eventlet():
     import socket
     from eventlet.greenio.base import GreenSocket
 
     return issubclass(socket.socket, GreenSocket)
-
-
-def wrap_fifo(path):
-    wrapped = Fifo(path)
-    if under_eventlet():
-        wrapped = tpool.Proxy(wrapped)
-    return wrapped
-
-
-@contextmanager
-def temp_fifo(directory, name=None):
-    if name is None:
-        name = str(uuid.uuid4())
-    path = os.path.join(directory, name)
-    os.mkfifo(path)
-    yield wrap_fifo(path)
-    os.unlink(path)
 
 
 def receive_stream(stream_fifo):
@@ -79,7 +89,7 @@ def receive_stream(stream_fifo):
 def receive(fifo):
     loaded = fifo.load()
     if isinstance(loaded, NewStream):
-        stream_fifo = wrap_fifo(loaded.path)
+        stream_fifo = FifoPipe.wrap(loaded.path)
         return receive_stream(stream_fifo)
     return loaded
 
@@ -93,7 +103,7 @@ def send_stream(stream_fifo, result):
 
 def send(fifo, result):
     if isiterable(result):
-        with temp_fifo(os.path.dirname(fifo.path)) as stream_fifo:
+        with FifoPipe.new(os.path.dirname(fifo.path)) as stream_fifo:
             fifo.dump(NewStream(stream_fifo.path))
             send_stream(stream_fifo, result)
     else:

@@ -11,7 +11,7 @@ from nameko_grpc.dependency_provider import GrpcProxy
 from nameko_grpc.inspection import Inspector
 from nameko_grpc.constants import Cardinality
 
-from helpers import receive, send, temp_fifo, Config
+from helpers import receive, send, Config, FifoPipe
 
 last_modified = os.path.getmtime
 
@@ -84,25 +84,51 @@ def grpc_client(stubs, tmpdir):
     """ Standard GRPC client, running in another process
     """
     # TODO allow multiple clients in the same test
-    with temp_fifo(tmpdir.strpath) as fifo_in:
-        with temp_fifo(tmpdir.strpath) as fifo_out:
+    with FifoPipe.new(tmpdir.strpath) as command_fifo:
 
-            client_script = os.path.join(
-                os.path.dirname(__file__), "grpc_indirect_client.py"
-            )
-            with subprocess.Popen([sys.executable, client_script, fifo_in.path]):
+        client_script = os.path.join(
+            os.path.dirname(__file__), "grpc_indirect_client.py"
+        )
+        with subprocess.Popen([sys.executable, client_script, command_fifo.path]):
 
-                class Client:
-                    def call(self, name, request):
-                        send(fifo_in, Config(name, fifo_out.path))
-                        send(fifo_in, request)
-                        return receive(fifo_out)
+            fifos = []
 
-                    def __getattr__(self, name):
-                        return partial(self.call, name)
+            def new_fifo():
+                fifo = FifoPipe.new(tmpdir.strpath)
+                fifos.append(fifo)
+                fifo.open()
+                return fifo
 
-                yield Client()
-                send(fifo_in, None)
+            class Result:
+                def __init__(self, fifo):
+                    self.fifo = fifo
+
+                def result(self):
+                    return receive(self.fifo)
+
+            class Method:
+                def __init__(self, name):
+                    self.name = name
+
+                def __call__(self, request):
+                    return self.future(request).result()
+
+                def future(self, request):
+                    in_fifo = new_fifo()
+                    out_fifo = new_fifo()
+                    send(command_fifo, Config(self.name, in_fifo.path, out_fifo.path))
+                    send(in_fifo, request)
+                    return Result(out_fifo)
+
+            class Client:
+                def __getattr__(self, name):
+                    return Method(name)
+
+            yield Client()
+            send(command_fifo, None)
+
+            for fifo in fifos:
+                fifo.close()
 
 
 @pytest.fixture
@@ -174,14 +200,14 @@ def server(request):
         # pytest.skip("pass")
         request.getfixturevalue("grpc_server")
     elif "nameko" in request.param:
-        pytest.skip("pass")
+        # pytest.skip("pass")
         request.getfixturevalue("service")
 
 
 @pytest.fixture(params=["grpc_client", "nameko_client"])
 def client(request, server):
     if "grpc" in request.param:
-        pytest.skip("pass")
+        # pytest.skip("pass")
         return request.getfixturevalue("grpc_client")
     elif "nameko" in request.param:
         # pytest.skip("pass")
@@ -236,11 +262,11 @@ class TestLarge:
 
 
 class TestFuture:
-    def test_unary_unary(self, client, server):
+    def test_unary_unary(self, client, protobufs):
         response_future = client.unary_unary.future(
             protobufs.ExampleRequest(value="A", blob="B" * 20000)
         )
-        response = response_future.get()
+        response = response_future.result()
         assert response.message == "A"
 
 
