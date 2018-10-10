@@ -3,9 +3,10 @@ import os
 import subprocess
 import sys
 import time
-from functools import partial
+from mock import Mock
 from importlib import import_module
-from nameko.testing.services import entrypoint_hook, dummy
+from nameko.testing.services import dummy
+from nameko.testing.utils import get_extension
 
 from nameko_grpc.dependency_provider import GrpcProxy
 from nameko_grpc.inspection import Inspector
@@ -150,21 +151,14 @@ def dependency_provider_client(container_factory, stubs):
         example_grpc = GrpcProxy(stubs.exampleStub)
 
         @dummy
-        def call(self, method_name, request):
-            return getattr(self.example_grpc, method_name)(request)
+        def call(self):
+            pass
 
     container = container_factory(Service, {})
     container.start()
 
-    class Client:
-        def call(self, name, request):
-            with entrypoint_hook(container, "call") as hook:
-                return hook(name, request)
-
-        def __getattr__(self, name):
-            return partial(self.call, name)
-
-    yield Client()
+    grpc_proxy = get_extension(container, GrpcProxy)
+    return grpc_proxy.get_dependency(Mock())
 
 
 class TestInspection:
@@ -263,9 +257,7 @@ class TestLarge:
 
 class TestFuture:
     def test_unary_unary(self, client, protobufs):
-        response_future = client.unary_unary.future(
-            protobufs.ExampleRequest(value="A", blob="B" * 20000)
-        )
+        response_future = client.unary_unary.future(protobufs.ExampleRequest(value="A"))
         response = response_future.result()
         assert response.message == "A"
 

@@ -1,6 +1,5 @@
 from nameko.extensions import DependencyProvider
 
-from functools import partial
 import socket
 from h2.config import H2Configuration
 from h2.connection import H2Connection
@@ -92,6 +91,7 @@ class ClientConnectionManager(object):
         self.send_streams[stream_id] = send_stream
 
         # XXX is this enough? what happens if we idle after the first request?
+        # XXX probably don't need this anymore, now we have a timeout on the loop
         self.pending_requests.append((stream_id, method_name))
         if not self.initial_requests_pending.ready():
             self.initial_requests_pending.send()
@@ -215,25 +215,52 @@ class GrpcProxy(DependencyProvider):
 
     def invoke(self, method_name, request):
 
-        cardinality = self.inspector.cardinality_for_method(method_name)
-        if cardinality in (Cardinality.UNARY_UNARY, Cardinality.UNARY_STREAM):
-            request = (request,)
-
         # TODO make this method put the requests into the queue, rather than
         # simply providing the generator? (i.e. change from pull to push)
         response = self.manager.invoke(method_name, request)
 
-        if cardinality in (Cardinality.STREAM_UNARY, Cardinality.UNARY_UNARY):
-            response = next(response)
-
         return response
 
     def get_dependency(self, worker_ctx):
-        class Proxy:
-            def __init__(self, invoke):
+        class Result:
+            def __init__(self, response, cardinality):
+                self.response = response
+                self.cardinality = cardinality
+
+            def result(self):
+                response = self.response
+                if self.cardinality in (
+                    Cardinality.STREAM_UNARY,
+                    Cardinality.UNARY_UNARY,
+                ):
+                    response = next(response)
+                return response
+
+        class Method:
+            def __init__(self, invoke, stub, name):
                 self.invoke = invoke
+                self.stub = stub
+                self.name = name
+
+            def __call__(self, request):
+                return self.future(request).result()
+
+            def future(self, request):
+                inspector = Inspector(self.stub)
+                cardinality = inspector.cardinality_for_method(self.name)
+
+                if cardinality in (Cardinality.UNARY_UNARY, Cardinality.UNARY_STREAM):
+                    request = (request,)
+                resp = self.invoke(self.name, request)
+
+                return Result(resp, cardinality)
+
+        class Proxy:
+            def __init__(self, invoke, stub):
+                self.invoke = invoke
+                self.stub = stub
 
             def __getattr__(self, name):
-                return partial(self.invoke, name)
+                return Method(self.invoke, self.stub, name)
 
-        return Proxy(self.invoke)
+        return Proxy(self.invoke, self.stub)
