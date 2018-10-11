@@ -84,8 +84,8 @@ class SendStream:
         self.closed = True
         self.queue.put(None)
 
-    def populate(self, generator):
-        for item in generator:
+    def populate(self, iterable):
+        for item in iterable:
             self.put(item)
         self.close()
 

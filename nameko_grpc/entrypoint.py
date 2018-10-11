@@ -121,7 +121,7 @@ class ServerConnectionManager(object):
         self.receive_streams[stream_id] = request_stream
         self.send_streams[stream_id] = response_stream
 
-        self.handle_request(http_path, request_stream.messages(), response_stream)
+        self.handle_request(http_path, request_stream, response_stream)
 
         self.conn.send_headers(
             stream_id,
@@ -207,10 +207,10 @@ class GrpcServer(SharedExtension):
     def unregister(self, entrypoint):
         self.entrypoints.pop(entrypoint.method_path, None)
 
-    def handle_request(self, method_path, request, handle_request):
+    def handle_request(self, method_path, request_stream, response_stream):
         entrypoint = self.entrypoints[method_path]
         self.container.spawn_managed_thread(
-            partial(entrypoint.handle_request, request, handle_request)
+            partial(entrypoint.handle_request, request_stream, response_stream)
         )
 
     def run(self):
@@ -271,10 +271,12 @@ class Grpc(Entrypoint):
     def stop(self):
         self.grpc_server.unregister(self)
 
-    def handle_request(self, request, response_stream):
+    def handle_request(self, request_stream, response_stream):
 
         # where does this come from?
         context = None
+
+        request = request_stream.messages()
 
         if self.cardinality in (Cardinality.UNARY_STREAM, Cardinality.UNARY_UNARY):
             request = next(request)
@@ -298,16 +300,13 @@ class Grpc(Entrypoint):
             # how to reject GRPC requests?
             pass
 
-        # XXX return something here, rather than using callbacks in handle_result
-
     def handle_result(self, response_stream, worker_ctx, result, exc_info):
 
-        if self.cardinality in (Cardinality.UNARY_STREAM, Cardinality.STREAM_STREAM):
-            for res in result:
-                response_stream.put(res)
-        else:
-            response_stream.put(result)
-        response_stream.close()
+        if self.cardinality in (Cardinality.STREAM_UNARY, Cardinality.UNARY_UNARY):
+            result = (result,)
+
+        response_stream.populate(result)
+
         return result, exc_info
 
 
