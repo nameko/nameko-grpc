@@ -3,6 +3,7 @@ from nameko.constants import WEB_SERVER_CONFIG_KEY
 from nameko.exceptions import ConfigurationError
 from collections import namedtuple, OrderedDict
 import re
+import select
 from h2.errors import PROTOCOL_ERROR  # changed under h2 from 2.6.4?
 from h2.events import (
     RequestReceived,
@@ -21,6 +22,9 @@ from nameko_grpc.inspection import Inspector
 from nameko_grpc.streams import ReceiveStream, SendStream
 from .constants import Cardinality
 import socket
+
+
+SELECT_TIMEOUT = 0.01
 
 
 def parse_address(address_string):
@@ -59,15 +63,16 @@ class ServerConnectionManager(object):
         self.sock.sendall(self.conn.data_to_send())
 
         while True:
-            self.sock.settimeout(0.01)
-            try:
+
+            ready = select.select([self.sock], [], [], SELECT_TIMEOUT)
+            if not ready[0]:
+                self.on_idle_iteration()
+                events = []
+            else:
                 data = self.sock.recv(65535)
                 if not data:
                     break
                 events = self.conn.receive_data(data)
-            except socket.timeout:
-                events = []
-                self.bump()
 
             for event in events:
                 if isinstance(event, RequestReceived):
@@ -85,8 +90,7 @@ class ServerConnectionManager(object):
 
             self.sock.sendall(self.conn.data_to_send())
 
-    def bump(self):
-        # XXX rename, formalise
+    def on_idle_iteration(self):
         for stream_id in list(self.send_streams.keys()):
             self.send_data(stream_id)
 
@@ -167,8 +171,8 @@ class ServerConnectionManager(object):
         send_stream = self.send_streams.get(stream_id)
 
         if not send_stream:
-            # send_data may be called after everything is already sent
-            # (unary reponses)?
+            # window updates trigger sending of data, but can happen after a stream
+            # has been completely sent
             return
 
         window_size = self.conn.local_flow_control_window(stream_id=stream_id)

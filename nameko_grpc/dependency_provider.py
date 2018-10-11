@@ -1,5 +1,6 @@
 from nameko.extensions import DependencyProvider
 
+import select
 import socket
 from h2.config import H2Configuration
 from h2.connection import H2Connection
@@ -21,6 +22,9 @@ from nameko_grpc.inspection import Inspector
 from nameko_grpc.streams import ReceiveStream, SendStream
 from nameko_grpc.constants import Cardinality
 import itertools
+
+
+SELECT_TIMEOUT = 0.01
 
 
 class ClientConnectionManager(object):
@@ -48,16 +52,15 @@ class ClientConnectionManager(object):
 
         while True:
 
-            self.sock.settimeout(0.01)
-            try:
-                # XXX does receiving ANY data prevent the timeout?
+            ready = select.select([self.sock], [], [], SELECT_TIMEOUT)
+            if not ready[0]:
+                self.on_idle_iteration()
+                events = []
+            else:
                 data = self.sock.recv(65535)
                 if not data:
                     break
                 events = self.conn.receive_data(data)
-            except socket.timeout:
-                events = []
-                self.bump()
 
             for event in events:
                 if isinstance(event, ResponseReceived):
@@ -77,8 +80,7 @@ class ClientConnectionManager(object):
 
             self.sock.sendall(self.conn.data_to_send())
 
-    def bump(self):
-        # XXX rename, formalise
+    def on_idle_iteration(self):
         self.send_pending_requests()
         for stream_id in list(self.send_streams.keys()):
             self.send_data(stream_id)
@@ -103,12 +105,6 @@ class ClientConnectionManager(object):
 
     def response_received(self, headers, stream_id):
         print(">> response recvd", stream_id)
-
-        # inspector = Inspector(self.stub)
-        # output_type = inspector.output_type_for_method(self.method_name)
-
-        # stream = ReceiveStream(stream_id, output_type)
-        # self.receive_streams[stream_id] = stream
 
     def stream_ended(self, stream_id):
         print(">> response stream ended", stream_id)
@@ -164,7 +160,8 @@ class ClientConnectionManager(object):
         send_stream = self.send_streams.get(stream_id)
 
         if not send_stream:
-            # send_data may be called after everything is already sent?
+            # window updates trigger sending of data, but can happen after a stream
+            # has been completely sent
             return
 
         window_size = self.conn.local_flow_control_window(stream_id=stream_id)
