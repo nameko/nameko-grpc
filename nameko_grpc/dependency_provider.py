@@ -37,7 +37,6 @@ class ClientConnectionManager(object):
         self.send_streams = {}
 
         self.pending_requests = deque()
-        self.initial_requests_pending = Event()
 
         self.counter = itertools.count(start=1, step=2)
 
@@ -74,6 +73,7 @@ class ClientConnectionManager(object):
 
     def bump(self):
         # XXX rename, formalise
+        self.send_pending_requests()
         for stream_id in list(self.send_streams.keys()):
             self.send_data(stream_id)
 
@@ -91,11 +91,7 @@ class ClientConnectionManager(object):
         send_stream = SendStream(stream_id)
         self.send_streams[stream_id] = send_stream
 
-        # XXX is this enough? what happens if we idle after the first request?
-        # XXX probably don't need this anymore, now we have a timeout on the loop
         self.pending_requests.append((stream_id, method_name))
-        if not self.initial_requests_pending.ready():
-            self.initial_requests_pending.send()
 
         # XXX can we do this without another thread? yes, if we make
         # DependencyProvider.invoke do the puts (we can push from there, not rely on pull)
@@ -145,8 +141,6 @@ class ClientConnectionManager(object):
         self.send_data(stream_id)
 
     def send_pending_requests(self):
-
-        self.initial_requests_pending.wait()
 
         print(">> send pending requests", self.pending_requests)
 
