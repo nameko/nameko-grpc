@@ -141,7 +141,7 @@ class ClientConnectionManager(object):
             print(">> sending request", stream_id)
 
             request_headers = [
-                (":method", "GET"),
+                (":method", "POST"),
                 (":scheme", "http"),
                 (":authority", "127.0.0.1"),
                 (":path", "/example/{}".format(method_name)),

@@ -99,16 +99,7 @@ class ServerConnectionManager(object):
         print(">> request recvd", stream_id)
 
         headers = OrderedDict(headers)
-        http_method = headers[":method"]
         http_path = headers[":path"]
-
-        if http_method not in ("GET", "POST"):  # why?
-            response_headers = (
-                (":status", "405"),
-                ("content-length", "0"),
-                ("server", "nameko-grpc"),
-            )
-            self.conn.send_headers(stream_id, response_headers, end_stream=True)
 
         if http_path not in self.registered_paths:
             response_headers = (
