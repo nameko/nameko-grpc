@@ -74,11 +74,6 @@ class ClientConnectionManager(object):
                     pass
                 elif isinstance(event, TrailersReceived):
                     pass
-                else:
-                    import pdb
-
-                    pdb.set_trace()
-                    pass
 
             self.sock.sendall(self.conn.data_to_send())
 
@@ -172,12 +167,10 @@ class ClientConnectionManager(object):
             # send_data may be called after everything is already sent?
             return
 
-        final_send = False  # XXX possible when we use .bump()
-
         window_size = self.conn.local_flow_control_window(stream_id=stream_id)
         max_frame_size = self.conn.max_outbound_frame_size
 
-        for chunk in send_stream.read(window_size, max_frame_size, blocking=final_send):
+        for chunk in send_stream.read(window_size, max_frame_size):
             self.conn.send_data(stream_id=stream_id, data=chunk)
 
         if send_stream.exhausted:

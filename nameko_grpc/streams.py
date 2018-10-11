@@ -94,23 +94,9 @@ class SendStream:
             raise SendStream.Closed()
         self.queue.put(message)
 
-    def get(self, blocking):
-        # TODO can drop blocking mode now
-        if blocking:
-            message = self.queue.get()
-        else:
-            try:
-                message = self.queue.get_nowait()
-            except Empty:
-                message = None
-        return message
-
-    def read(self, max_bytes, chunk_size, blocking=True):
+    def read(self, max_bytes, chunk_size):
         """ Read up to `max_bytes` from the stream, yielding up to `chunk_size`
         bytes at a time.
-
-        Optionally blocks until sufficient messages are received or the stream is
-        closed.
         """
         sent = 0
 
@@ -120,9 +106,12 @@ class SendStream:
             yield chunk
 
         while True:
-            message = self.get(blocking)
-            if message is None:
-                break  # end
+            try:
+                message = self.queue.get_nowait()
+            except Empty:
+                break
+            if message is None:  # TODO use sentinel
+                break
 
             body = message.SerializeToString()
             data = struct.pack("?", False) + struct.pack(">I", len(body)) + body

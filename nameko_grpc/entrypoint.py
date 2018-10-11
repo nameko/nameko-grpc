@@ -51,9 +51,8 @@ class ServerConnectionManager(object):
         config = H2Configuration(client_side=False)
         self.conn = H2Connection(config=config)
 
-        # TODO rename to receive_streams, send_streams
-        self.streams = {}
-        self.responses = {}
+        self.receive_streams = {}
+        self.send_streams = {}
 
     def run_forever(self):
         self.conn.initiate_connection()
@@ -83,17 +82,12 @@ class ServerConnectionManager(object):
                     pass
                 elif isinstance(event, RemoteSettingsChanged):
                     pass
-                else:
-                    import pdb
-
-                    pdb.set_trace()
-                    pass
 
             self.sock.sendall(self.conn.data_to_send())
 
     def bump(self):
         # XXX rename, formalise
-        for stream_id in list(self.responses.keys()):
+        for stream_id in list(self.send_streams.keys()):
             self.send_data(stream_id)
 
     def request_received(self, headers, stream_id):
@@ -124,8 +118,8 @@ class ServerConnectionManager(object):
 
         request_stream = ReceiveStream(stream_id, request_type)
         response_stream = SendStream(stream_id)
-        self.streams[stream_id] = request_stream
-        self.responses[stream_id] = response_stream
+        self.receive_streams[stream_id] = request_stream
+        self.send_streams[stream_id] = response_stream
 
         self.handle_request(http_path, request_stream.messages(), response_stream)
 
@@ -143,7 +137,7 @@ class ServerConnectionManager(object):
 
         print(">> request data recvd", data[:100])
 
-        request_stream = self.streams.get(stream_id)
+        request_stream = self.receive_streams.get(stream_id)
         if request_stream is None:
             # data for unknown stream, exit?
             self.conn.reset_stream(stream_id, error_code=PROTOCOL_ERROR)
@@ -158,10 +152,9 @@ class ServerConnectionManager(object):
 
         print(">> request stream ended", stream_id)
 
-        receive_stream = self.streams.pop(stream_id)
-        receive_stream.close()
+        request_stream = self.receive_streams.pop(stream_id)
+        request_stream.close()
 
-        # now we send anything still left to send
         self.send_data(stream_id)
 
     def window_updated(self, stream_id):
@@ -170,15 +163,8 @@ class ServerConnectionManager(object):
         self.send_data(stream_id)
 
     def send_data(self, stream_id):
-        # if the receive stream is closed, there's nothing left for this connection
-        # to do except wait for the server to finish responding
-        # (what about handling new concurrent requests?)
-        # (do we actually _need_ to block here, or are there other hooks that'll
-        # bring us back to here to try again?)
-        block_until_sent = stream_id not in self.streams
-        block_until_sent = False  # XXX possible when we use .bump()
 
-        send_stream = self.responses.get(stream_id)
+        send_stream = self.send_streams.get(stream_id)
 
         if not send_stream:
             # send_data may be called after everything is already sent
@@ -188,15 +174,13 @@ class ServerConnectionManager(object):
         window_size = self.conn.local_flow_control_window(stream_id=stream_id)
         max_frame_size = self.conn.max_outbound_frame_size
 
-        for chunk in send_stream.read(
-            window_size, max_frame_size, blocking=block_until_sent
-        ):
+        for chunk in send_stream.read(window_size, max_frame_size):
             self.conn.send_data(stream_id=stream_id, data=chunk)
 
         if send_stream.exhausted:
             print(">> closing response", stream_id)
             self.conn.send_headers(stream_id, (("grpc-status", "0"),), end_stream=True)
-            self.responses.pop(stream_id)
+            self.send_streams.pop(stream_id)
 
 
 class GrpcServer(SharedExtension):
