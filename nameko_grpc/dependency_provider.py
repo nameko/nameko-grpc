@@ -203,7 +203,7 @@ class GrpcProxy(DependencyProvider):
         self.container.spawn_managed_thread(
             lambda: send_stream.populate(request), identifier="populate_request"
         )
-        return response_stream.messages()
+        return response_stream
 
     def get_dependency(self, worker_ctx):
         class Result:

@@ -277,7 +277,7 @@ class Grpc(Entrypoint):
         # where does this come from?
         context = None
 
-        request = request_stream.messages()
+        request = request_stream
 
         if self.cardinality in (Cardinality.UNARY_STREAM, Cardinality.UNARY_UNARY):
             request = next(request)

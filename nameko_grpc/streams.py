@@ -65,12 +65,14 @@ class ReceiveStream:
 
         self.message_queue.put(message)
 
-    def messages(self):
-        while True:
-            message = self.message_queue.get()
-            if message is STREAM_END:
-                break
-            yield message
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        message = self.message_queue.get()
+        if message is STREAM_END:
+            raise StopIteration()
+        return message
 
 
 class SendStream:
