@@ -22,6 +22,10 @@ from nameko_grpc.inspection import Inspector
 from nameko_grpc.streams import ReceiveStream, SendStream
 from nameko_grpc.constants import Cardinality
 import itertools
+from logging import getLogger
+
+
+log = getLogger(__name__)
 
 
 SELECT_TIMEOUT = 0.01
@@ -88,7 +92,6 @@ class ClientConnectionManager(object):
     def invoke_method(self, method_name):
 
         stream_id = next(self.counter)
-        print(">> queue_request", method_name, stream_id)
 
         inspector = Inspector(self.stub)
         output_type = inspector.output_type_for_method(method_name)
@@ -104,15 +107,15 @@ class ClientConnectionManager(object):
         return send_stream, receive_stream
 
     def response_received(self, headers, stream_id):
-        print(">> response recvd", stream_id)
+        log.debug("response received, stream %s", stream_id)
 
     def stream_ended(self, stream_id):
-        print(">> response stream ended", stream_id)
+        log.debug("stream ended, stream %s", stream_id)
         receive_stream = self.receive_streams.pop(stream_id)
         receive_stream.close()
 
     def data_received(self, data, stream_id):
-        print(">> response data recvd", data, stream_id)
+        log.debug("data received on stream %s: %s...", stream_id, data[:100])
 
         receive_stream = self.receive_streams.get(stream_id)
         if receive_stream is None:
@@ -123,22 +126,23 @@ class ClientConnectionManager(object):
         receive_stream.write(data)
 
     def settings_changed(self, event):
-        print(">> settings changed")
+        # XXX do we need this?
+        log.debug("settings changed")
         self.send_pending_requests()
 
     def window_updated(self, stream_id):
-        print(">> window updated")
+
+        log.debug("window updated, stream %s", stream_id)
+
         self.send_pending_requests()
         self.send_data(stream_id)
 
     def send_pending_requests(self):
 
-        print(">> send pending requests", self.pending_requests)
-
         while self.pending_requests:
             stream_id, method_name = self.pending_requests.popleft()
 
-            print(">> sending request", stream_id)
+            log.debug("initiating request to %s, new stream %s", method_name, stream_id)
 
             request_headers = [
                 (":method", "POST"),
@@ -168,9 +172,11 @@ class ClientConnectionManager(object):
         max_frame_size = self.conn.max_outbound_frame_size
 
         for chunk in send_stream.read(window_size, max_frame_size):
+            log.debug("sending data on stream %s: %s...", stream_id, chunk[:100])
             self.conn.send_data(stream_id=stream_id, data=chunk)
 
         if send_stream.exhausted:
+            log.debug("closing exhausted stream, stream %s", stream_id)
             self.conn.end_stream(stream_id=stream_id)
             self.send_streams.pop(stream_id)
 

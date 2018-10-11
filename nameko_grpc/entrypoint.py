@@ -22,6 +22,10 @@ from nameko_grpc.inspection import Inspector
 from nameko_grpc.streams import ReceiveStream, SendStream
 from .constants import Cardinality
 import socket
+from logging import getLogger
+
+
+log = getLogger(__name__)
 
 
 SELECT_TIMEOUT = 0.01
@@ -96,7 +100,7 @@ class ServerConnectionManager(object):
 
     def request_received(self, headers, stream_id):
 
-        print(">> request recvd", stream_id)
+        log.debug("request received, stream %s", stream_id)
 
         headers = OrderedDict(headers)
         http_path = headers[":path"]
@@ -130,7 +134,7 @@ class ServerConnectionManager(object):
 
     def data_received(self, data, stream_id):
 
-        print(">> request data recvd", data[:100])
+        log.debug("data received on stream %s: %s...", stream_id, data[:100])
 
         request_stream = self.receive_streams.get(stream_id)
         if request_stream is None:
@@ -145,7 +149,7 @@ class ServerConnectionManager(object):
 
     def stream_ended(self, stream_id):
 
-        print(">> request stream ended", stream_id)
+        log.debug("stream ended, stream %s", stream_id)
 
         request_stream = self.receive_streams.pop(stream_id)
         request_stream.close()
@@ -154,7 +158,8 @@ class ServerConnectionManager(object):
 
     def window_updated(self, stream_id):
 
-        print(">> window updated", stream_id)
+        log.debug("window updated, stream %s", stream_id)
+
         self.send_data(stream_id)
 
     def send_data(self, stream_id):
@@ -170,10 +175,11 @@ class ServerConnectionManager(object):
         max_frame_size = self.conn.max_outbound_frame_size
 
         for chunk in send_stream.read(window_size, max_frame_size):
+            log.debug("sending data on stream %s: %s...", stream_id, chunk[:100])
             self.conn.send_data(stream_id=stream_id, data=chunk)
 
         if send_stream.exhausted:
-            print(">> closing response", stream_id)
+            log.debug("closing exhausted stream, stream %s", stream_id)
             self.conn.send_headers(stream_id, (("grpc-status", "0"),), end_stream=True)
             self.send_streams.pop(stream_id)
 
