@@ -4,6 +4,8 @@ import struct
 
 HEADER_LENGTH = 5
 
+STREAM_END = object()
+
 
 class ByteBuffer:
     def __init__(self):
@@ -37,7 +39,7 @@ class ReceiveStream:
         self.buffer = ByteBuffer()
 
     def close(self):
-        self.message_queue.put(None)
+        self.message_queue.put(STREAM_END)
 
     def write(self, data):
 
@@ -66,7 +68,7 @@ class ReceiveStream:
     def messages(self):
         while True:
             message = self.message_queue.get()
-            if message is None:
+            if message is STREAM_END:
                 break
             yield message
 
@@ -88,7 +90,7 @@ class SendStream:
 
     def close(self):
         self.closed = True
-        self.queue.put(None)
+        self.queue.put(STREAM_END)
 
     def populate(self, iterable):
         for item in iterable:
@@ -116,7 +118,7 @@ class SendStream:
                 message = self.queue.get_nowait()
             except Empty:
                 break
-            if message is None:  # TODO use sentinel
+            if message is STREAM_END:
                 break
 
             body = message.SerializeToString()
