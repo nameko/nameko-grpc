@@ -13,6 +13,7 @@ from h2.events import (
 from eventlet.event import Event
 import eventlet
 
+from collections import deque
 from h2.errors import PROTOCOL_ERROR  # changed under h2 from 2.6.4?
 from nameko_grpc.inspection import Inspector
 from nameko_grpc.streams import ReceiveStream, SendStream
@@ -35,10 +36,10 @@ class ClientConnectionManager(object):
         self.receive_streams = {}
         self.send_streams = {}
 
-        self.pending_requests = []
+        self.pending_requests = deque()
         self.initial_requests_pending = Event()
 
-        self.counter = itertools.count(start=1)
+        self.counter = itertools.count(start=1, step=2)
 
     def run_forever(self):
         self.conn.initiate_connection()
@@ -150,7 +151,7 @@ class ClientConnectionManager(object):
         print(">> send pending requests", self.pending_requests)
 
         while self.pending_requests:
-            stream_id, method_name = self.pending_requests.pop()
+            stream_id, method_name = self.pending_requests.popleft()
 
             print(">> sending request", stream_id)
 

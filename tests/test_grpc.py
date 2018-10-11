@@ -191,20 +191,24 @@ class TestInspection:
 @pytest.fixture(params=["grpc_server", "nameko_server"])
 def server(request):
     if "grpc" in request.param:
-        # pytest.skip("pass")
+        if request.config.option.server not in ("grpc", "all"):
+            pytest.skip("grpc server not requested")
         request.getfixturevalue("grpc_server")
     elif "nameko" in request.param:
-        # pytest.skip("pass")
+        if request.config.option.server not in ("nameko", "all"):
+            pytest.skip("nameko server not requested")
         request.getfixturevalue("service")
 
 
 @pytest.fixture(params=["grpc_client", "nameko_client"])
 def client(request, server):
     if "grpc" in request.param:
-        # pytest.skip("pass")
+        if request.config.option.client not in ("grpc", "all"):
+            pytest.skip("grpc client not requested")
         return request.getfixturevalue("grpc_client")
     elif "nameko" in request.param:
-        # pytest.skip("pass")
+        if request.config.option.client not in ("nameko", "all"):
+            pytest.skip("nameko client not requested")
         return request.getfixturevalue("dependency_provider_client")
 
 
@@ -293,9 +297,79 @@ class TestFuture:
         ]
 
 
-# class TestConcurrency:
-#     def test_concurrent_unary_requests(self):
-#         pass
+class TestConcurrency:
+    # XXX how to assert both are in flight at the same time?
+
+    def test_unary_unary(self, client, protobufs):
+        response_a_future = client.unary_unary.future(
+            protobufs.ExampleRequest(value="A")
+        )
+        response_b_future = client.unary_unary.future(
+            protobufs.ExampleRequest(value="B")
+        )
+        response_a = response_a_future.result()
+        response_b = response_b_future.result()
+        assert response_a.message == "A"
+        assert response_b.message == "B"
+
+    def test_unary_stream(self, client, protobufs):
+        responses_a_future = client.unary_stream.future(
+            protobufs.ExampleRequest(value="A")
+        )
+        responses_b_future = client.unary_stream.future(
+            protobufs.ExampleRequest(value="B")
+        )
+        responses_a = responses_a_future.result()
+        responses_b = responses_b_future.result()
+        # TODO add random delays and generator consumer that grabs whatever comes first
+        # then verify streams are interleaved
+        assert [(response.message, response.seqno) for response in responses_a] == [
+            ("A", 1),
+            ("A", 2),
+        ]
+        assert [(response.message, response.seqno) for response in responses_b] == [
+            ("B", 1),
+            ("B", 2),
+        ]
+
+    def test_stream_unary(self, client, protobufs):
+        def generate_requests(values):
+            for value in values:
+                yield protobufs.ExampleRequest(value=value)
+
+        # XXX any way to verify that the input streams were interleaved?
+        response_1_future = client.stream_unary.future(generate_requests("AB"))
+        response_2_future = client.stream_unary.future(generate_requests("XY"))
+        response_1 = response_1_future.result()
+        response_2 = response_2_future.result()
+        assert response_1.message == "A,B"
+        assert response_2.message == "X,Y"
+
+    def test_stream_stream(self, client, protobufs):
+        def generate_requests(values):
+            for value in values:
+                yield protobufs.ExampleRequest(value=value)
+
+        # TODO add random delays and generator consumer that grabs whatever comes first
+        # then verify streams are interleaved
+        # XXX any way to verify that the input streams were interleaved? perhaos track
+        # the order the generators are pulled?
+        responses_1_future = client.stream_stream.future(generate_requests("AB"))
+        responses_2_future = client.stream_stream.future(generate_requests("XY"))
+        responses_1 = responses_1_future.result()
+        responses_2 = responses_2_future.result()
+        assert [(response.message, response.seqno) for response in responses_1] == [
+            ("A", 1),
+            ("B", 2),
+        ]
+        assert [(response.message, response.seqno) for response in responses_2] == [
+            ("X", 1),
+            ("Y", 2),
+        ]
+
 
 #     def test_concurrent_stream_requests(self):
 #         pass
+
+# class TestMultipleClients:
+#     pass
