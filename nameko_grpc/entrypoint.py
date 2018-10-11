@@ -4,7 +4,14 @@ from nameko.exceptions import ConfigurationError
 from collections import namedtuple, OrderedDict
 import re
 from h2.errors import PROTOCOL_ERROR  # changed under h2 from 2.6.4?
-from h2.events import RequestReceived, DataReceived, StreamEnded, WindowUpdated
+from h2.events import (
+    RequestReceived,
+    DataReceived,
+    StreamEnded,
+    WindowUpdated,
+    SettingsAcknowledged,
+    RemoteSettingsChanged,
+)
 from h2.config import H2Configuration
 from h2.connection import H2Connection
 import eventlet
@@ -72,6 +79,15 @@ class ServerConnectionManager(object):
                     self.stream_ended(event.stream_id)
                 elif isinstance(event, WindowUpdated):
                     self.window_updated(event.stream_id)
+                elif isinstance(event, SettingsAcknowledged):
+                    pass
+                elif isinstance(event, RemoteSettingsChanged):
+                    pass
+                else:
+                    import pdb
+
+                    pdb.set_trace()
+                    pass
 
             self.sock.sendall(self.conn.data_to_send())
 

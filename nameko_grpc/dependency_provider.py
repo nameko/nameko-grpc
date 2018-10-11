@@ -9,6 +9,8 @@ from h2.events import (
     StreamEnded,
     RemoteSettingsChanged,
     WindowUpdated,
+    SettingsAcknowledged,
+    TrailersReceived,
 )
 from eventlet.event import Event
 import eventlet
@@ -68,6 +70,15 @@ class ClientConnectionManager(object):
                     self.stream_ended(event.stream_id)
                 elif isinstance(event, WindowUpdated):
                     self.window_updated(event.stream_id)
+                elif isinstance(event, SettingsAcknowledged):
+                    pass
+                elif isinstance(event, TrailersReceived):
+                    pass
+                else:
+                    import pdb
+
+                    pdb.set_trace()
+                    pass
 
             self.sock.sendall(self.conn.data_to_send())
 
@@ -77,13 +88,15 @@ class ClientConnectionManager(object):
         for stream_id in list(self.send_streams.keys()):
             self.send_data(stream_id)
 
-    def invoke(self, method_name, request):
+    def invoke_method(self, method_name):
 
         stream_id = next(self.counter)
-        print(">> invoke", method_name, request, stream_id)
+        print(">> queue_request", method_name, stream_id)
 
         inspector = Inspector(self.stub)
         output_type = inspector.output_type_for_method(method_name)
+
+        self.pending_requests.append((stream_id, method_name))
 
         receive_stream = ReceiveStream(stream_id, output_type)
         self.receive_streams[stream_id] = receive_stream
@@ -91,18 +104,7 @@ class ClientConnectionManager(object):
         send_stream = SendStream(stream_id)
         self.send_streams[stream_id] = send_stream
 
-        self.pending_requests.append((stream_id, method_name))
-
-        # XXX can we do this without another thread? yes, if we make
-        # DependencyProvider.invoke do the puts (we can push from there, not rely on pull)
-        def puts():
-            for req in request:
-                send_stream.put(req)
-            send_stream.close()
-
-        eventlet.spawn_n(puts)
-
-        return receive_stream.messages()
+        return send_stream, receive_stream
 
     def response_received(self, headers, stream_id):
         print(">> response recvd", stream_id)
@@ -130,8 +132,6 @@ class ClientConnectionManager(object):
         receive_stream.write(data)
 
     def settings_changed(self, event):
-        # XXX is this the correct hook for sending the request?
-        # (probably, but we should be getting requests to send from outside)
         print(">> settings changed")
         self.send_pending_requests()
 
@@ -172,13 +172,6 @@ class ClientConnectionManager(object):
             # send_data may be called after everything is already sent?
             return
 
-        # XXX what about when self.request blocks? don't want to wait here
-        # until the input stream has finished.
-        # can we not put requests _directly_ into the stream?
-        # for request in self.request:
-        #     send_stream.put(request)
-        # send_stream.close()
-
         final_send = False  # XXX possible when we use .bump()
 
         window_size = self.conn.local_flow_control_window(stream_id=stream_id)
@@ -210,11 +203,11 @@ class GrpcProxy(DependencyProvider):
 
     def invoke(self, method_name, request):
 
-        # TODO make this method put the requests into the queue, rather than
-        # simply providing the generator? (i.e. change from pull to push)
-        response = self.manager.invoke(method_name, request)
-
-        return response
+        send_stream, response_stream = self.manager.invoke_method(method_name)
+        self.container.spawn_managed_thread(
+            lambda: send_stream.populate(request), identifier="populate_request"
+        )
+        return response_stream.messages()
 
     def get_dependency(self, worker_ctx):
         class Result:

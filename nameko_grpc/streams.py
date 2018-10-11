@@ -84,13 +84,18 @@ class SendStream:
         self.closed = True
         self.queue.put(None)
 
+    def populate(self, generator):
+        for item in generator:
+            self.put(item)
+        self.close()
+
     def put(self, message):
-        # XXX can we replace `put` with just passing a generator into the constructor?
         if self.closed:
             raise SendStream.Closed()
         self.queue.put(message)
 
     def get(self, blocking):
+        # TODO can drop blocking mode now
         if blocking:
             message = self.queue.get()
         else:
