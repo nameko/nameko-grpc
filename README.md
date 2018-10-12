@@ -11,10 +11,11 @@ All four of the request-response patterns are implemented and tested:
 
 Asynchronous calls are also supported for every pattern.
 
+Python 3.4+ is supported.
 
 ## Tests
 
-The (limited) tests are run against every permuation of GRPC server/client to Nameko server/client. This roughly demonstrates equivalence between the two implementations.
+The (limited) tests are run against every permutation of GRPC server/client to Nameko server/client. This roughly demonstrates equivalence between the two implementations.
 
 
 ## Style
