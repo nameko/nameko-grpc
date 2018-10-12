@@ -92,6 +92,44 @@ class ClientConnectionManager(ConnectionManager):
 
 
 class GrpcProxy(DependencyProvider):
+    class Future:
+        def __init__(self, response, cardinality):
+            self.response = response
+            self.cardinality = cardinality
+
+        def result(self):
+            response = self.response
+            if self.cardinality in (Cardinality.STREAM_UNARY, Cardinality.UNARY_UNARY):
+                response = next(response)
+            return response
+
+    class Method:
+        def __init__(self, invoke, stub, name):
+            self.invoke = invoke
+            self.stub = stub
+            self.name = name
+
+        def __call__(self, request):
+            return self.future(request).result()
+
+        def future(self, request):
+            inspector = Inspector(self.stub)
+            cardinality = inspector.cardinality_for_method(self.name)
+
+            if cardinality in (Cardinality.UNARY_UNARY, Cardinality.UNARY_STREAM):
+                request = (request,)
+            resp = self.invoke(self.name, request)
+
+            return GrpcProxy.Future(resp, cardinality)
+
+    class Proxy:
+        def __init__(self, invoke, stub):
+            self.invoke = invoke
+            self.stub = stub
+
+        def __getattr__(self, name):
+            return GrpcProxy.Method(self.invoke, self.stub, name)
+
     def __init__(self, stub, **kwargs):
         self.stub = stub
         self.inspector = Inspector(self.stub)
@@ -114,45 +152,4 @@ class GrpcProxy(DependencyProvider):
         return response_stream
 
     def get_dependency(self, worker_ctx):
-        class Result:
-            def __init__(self, response, cardinality):
-                self.response = response
-                self.cardinality = cardinality
-
-            def result(self):
-                response = self.response
-                if self.cardinality in (
-                    Cardinality.STREAM_UNARY,
-                    Cardinality.UNARY_UNARY,
-                ):
-                    response = next(response)
-                return response
-
-        class Method:
-            def __init__(self, invoke, stub, name):
-                self.invoke = invoke
-                self.stub = stub
-                self.name = name
-
-            def __call__(self, request):
-                return self.future(request).result()
-
-            def future(self, request):
-                inspector = Inspector(self.stub)
-                cardinality = inspector.cardinality_for_method(self.name)
-
-                if cardinality in (Cardinality.UNARY_UNARY, Cardinality.UNARY_STREAM):
-                    request = (request,)
-                resp = self.invoke(self.name, request)
-
-                return Result(resp, cardinality)
-
-        class Proxy:
-            def __init__(self, invoke, stub):
-                self.invoke = invoke
-                self.stub = stub
-
-            def __getattr__(self, name):
-                return Method(self.invoke, self.stub, name)
-
-        return Proxy(self.invoke, self.stub)
+        return GrpcProxy.Proxy(self.invoke, self.stub)
