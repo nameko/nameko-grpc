@@ -21,6 +21,8 @@ log = getLogger(__name__)
 class ClientConnectionManager(ConnectionManager):
     """
     An object that manages a single HTTP/2 connection on a GRPC client.
+
+    Extends the base `ConnectionManager` to make outbound GRPC requests.
     """
 
     def __init__(self, sock, stub):
@@ -33,11 +35,23 @@ class ClientConnectionManager(ConnectionManager):
         self.counter = itertools.count(start=1, step=2)
 
     def on_idle_iteration(self):
+        """ Extend `ConnectionManager.on_idle_iteration` to also send any pending
+        requests.
+        """
         self.send_pending_requests()
         super().on_idle_iteration()
 
     def invoke_method(self, method_name):
+        """ Called by the client to invoke a GRPC method.
 
+        Establish a `SendStream` to send the request payload and `ReceiveStream`
+        for receiving the eventual response. `SendStream` and `ReceiveStream` are
+        returned to the client for providing the request payload and iterating
+        over the response.
+
+        Invocations are queued and sent on the next idle iteration of the event loop.
+        XXX (this is bad; there should be more hooks)
+        """
         stream_id = next(self.counter)
 
         inspector = Inspector(self.stub)
@@ -54,7 +68,10 @@ class ClientConnectionManager(ConnectionManager):
         return send_stream, receive_stream
 
     def send_pending_requests(self):
+        """ Initiate requests for any pending invocations.
 
+        Sends initial headers and any request data that is ready to be sent.
+        """
         while self.pending_requests:
             stream_id, method_name = self.pending_requests.popleft()
 

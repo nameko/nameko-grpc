@@ -22,6 +22,10 @@ SELECT_TIMEOUT = 0.01
 class ConnectionManager(object):
     """
     Base class for managing a single GRPC HTTP/2 connection.
+
+    Provides the H2 event loop that manages the connection over a socket. Methods for
+    handling each HTTP2 event are fully or partially implemented and can be extended
+    by subclasses.
     """
 
     def __init__(self, sock, client_side):
@@ -34,6 +38,8 @@ class ConnectionManager(object):
         self.send_streams = {}
 
     def run_forever(self):
+        """ Event loop.
+        """
         self.conn.initiate_connection()
         self.sock.sendall(self.conn.data_to_send())
 
@@ -56,35 +62,46 @@ class ConnectionManager(object):
                     self.response_received(event.headers, event.stream_id)
                 elif isinstance(event, DataReceived):
                     self.data_received(event.data, event.stream_id)
-                elif isinstance(event, RemoteSettingsChanged):
-                    self.settings_changed(event)
                 elif isinstance(event, StreamEnded):
                     self.stream_ended(event.stream_id)
                 elif isinstance(event, WindowUpdated):
                     self.window_updated(event.stream_id)
+                elif isinstance(event, RemoteSettingsChanged):
+                    self.settings_changed(event)
                 elif isinstance(event, SettingsAcknowledged):
-                    pass
+                    self.settings_acknowledged(event)
                 elif isinstance(event, TrailersReceived):
-                    pass
+                    self.trailers_received(event.stream_id)
 
             self.sock.sendall(self.conn.data_to_send())
 
     def on_idle_iteration(self):
+        """ Called on every iteration of the event loop while the connection is idle.
+
+        If there are any current `SendStream`s with new data, try to send it.
+        """
         for stream_id in list(self.send_streams.keys()):
             self.send_data(stream_id)
 
     def request_received(self, headers, stream_id):
+        """ Called when a request is received on a stream.
+
+        Subclasses should extend this method to handle the request accordingly.
+        """
         log.debug("request received, stream %s", stream_id)
 
     def response_received(self, headers, stream_id):
+        """ Called when a response is received on a stream.
+
+        Subclasses should extend this method to handle the response accordingly.
+        """
         log.debug("response received, stream %s", stream_id)
 
-    def stream_ended(self, stream_id):
-        log.debug("stream ended, stream %s", stream_id)
-        receive_stream = self.receive_streams.pop(stream_id)
-        receive_stream.close()
-
     def data_received(self, data, stream_id):
+        """ Called when data is received on a stream.
+
+        If there is any open `ReceiveStream`, write the data to it.
+        """
         log.debug("data received on stream %s: %s...", stream_id, data[:100])
 
         receive_stream = self.receive_streams.get(stream_id)
@@ -95,15 +112,39 @@ class ConnectionManager(object):
 
         receive_stream.write(data)
 
-    def settings_changed(self, event):
-        log.debug("settings changed")
-
     def window_updated(self, stream_id):
+        """ Called when the flow control window for a stream is changed.
+
+        Any data waiting to be sent on the stream may fit in the window now.
+        """
         log.debug("window updated, stream %s", stream_id)
         self.send_data(stream_id)
 
-    def send_data(self, stream_id):
+    def stream_ended(self, stream_id):
+        """ Called when an incoming stream ends.
 
+        Close any `ReceiveStream` that was opened for this stream.
+        """
+        log.debug("stream ended, stream %s", stream_id)
+        receive_stream = self.receive_streams.pop(stream_id)
+        if receive_stream:
+            receive_stream.close()
+
+    def settings_changed(self, event):
+        log.debug("settings changed")
+
+    def settings_acknowledged(self, event):
+        log.debug("settings acknowledged")
+
+    def trailers_received(self, stream_id):
+        log.debug("trailers received, stream %s", stream_id)
+
+    def send_data(self, stream_id):
+        """ Attempt to send any pending data on a stream.
+
+        Up to the current flow-control window size bytes may be sent. If the
+        `SendStream` is exhausted (no more data to send), the stream is closed.
+        """
         send_stream = self.send_streams.get(stream_id)
 
         if not send_stream:
@@ -121,7 +162,9 @@ class ConnectionManager(object):
         if send_stream.exhausted:
             log.debug("closing exhausted stream, stream %s", stream_id)
             self.end_stream(stream_id)
+            self.send_streams.pop(stream_id)
 
     def end_stream(self, stream_id):
+        """ End an outbound stream.
+        """
         self.conn.end_stream(stream_id=stream_id)
-        self.send_streams.pop(stream_id)

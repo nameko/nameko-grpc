@@ -47,6 +47,8 @@ def parse_address(address_string):
 class ServerConnectionManager(ConnectionManager):
     """
     An object that manages a single HTTP/2 connection on a GRPC server.
+
+    Extends the base `ConnectionManager` to handle incoming GRPC requests.
     """
 
     def __init__(self, sock, registered_paths, handle_request):
@@ -55,6 +57,12 @@ class ServerConnectionManager(ConnectionManager):
         self.handle_request = handle_request
 
     def request_received(self, headers, stream_id):
+        """ Receive a GRPC request and pass it to the GrpcServer to fire any
+        appropriate entrypoint.
+
+        Establish a `ReceiveStream` to receive the request payload and `SendStream`
+        for sending the eventual response.
+        """
         super().request_received(headers, stream_id)
 
         headers = OrderedDict(headers)
@@ -88,8 +96,10 @@ class ServerConnectionManager(ConnectionManager):
         )
 
     def end_stream(self, stream_id):
+        """ Close the outbound response stream with trailers containing the status
+        of the GRPC request.
+        """
         self.conn.send_headers(stream_id, (("grpc-status", "0"),), end_stream=True)
-        self.send_streams.pop(stream_id)
 
 
 class GrpcServer(SharedExtension):
