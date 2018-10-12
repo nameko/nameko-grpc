@@ -1,12 +1,10 @@
 # -*- coding: utf-8 -*-
-import re
-from collections import OrderedDict, namedtuple
+from collections import OrderedDict
 from functools import partial
 from logging import getLogger
 
 import eventlet
-from nameko.constants import WEB_SERVER_CONFIG_KEY
-from nameko.exceptions import ConfigurationError, ContainerBeingKilled
+from nameko.exceptions import ContainerBeingKilled
 from nameko.extensions import Entrypoint, SharedExtension
 
 from nameko_grpc.connection import ConnectionManager
@@ -17,21 +15,6 @@ from .constants import Cardinality
 
 
 log = getLogger(__name__)
-
-
-def parse_address(address_string):
-    # lifted from nameko.web.server
-    BindAddress = namedtuple("BindAddress", ["address", "port"])
-    address_re = re.compile(r"^((?P<address>[^:]+):)?(?P<port>\d+)$")
-    match = address_re.match(address_string)
-    if match is None:
-        raise ConfigurationError(
-            "Misconfigured bind address `{}`. "
-            "Should be `[address:]port`".format(address_string)
-        )
-    address = match.group("address") or ""
-    port = int(match.group("port"))
-    return BindAddress(address, port)
 
 
 class ServerConnectionManager(ConnectionManager):
@@ -89,6 +72,7 @@ class ServerConnectionManager(ConnectionManager):
         """ Close the outbound response stream with trailers containing the status
         of the GRPC request.
         """
+        # XXX what if status is non-zero?
         self.conn.send_headers(stream_id, (("grpc-status", "0"),), end_stream=True)
 
 
@@ -107,8 +91,9 @@ class GrpcServer(SharedExtension):
 
     @property
     def bind_addr(self):
-        address_str = self.container.config.get(WEB_SERVER_CONFIG_KEY, "0.0.0.0:50051")
-        return parse_address(address_str)
+        host = self.container.config.get("GRPC_BIND_HOST", "0.0.0.0")
+        port = self.container.config.get("GRPC_BIND_PORT", 50051)
+        return host, port
 
     def register(self, entrypoint):
         self.entrypoints[entrypoint.method_path] = entrypoint

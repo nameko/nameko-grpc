@@ -152,7 +152,7 @@ def dependency_provider_client(container_factory, stubs):
     class Service:
         name = "caller"
 
-        example_grpc = GrpcProxy(stubs.exampleStub)
+        example_grpc = GrpcProxy("127.0.0.1", stubs.exampleStub)
 
         @dummy
         def call(self):
@@ -375,7 +375,7 @@ class TestConcurrency:
 class TestStandaloneClient:
     @pytest.fixture
     def client(self, stubs, server):
-        with Client(stubs.exampleStub) as client:
+        with Client("127.0.0.1", stubs.exampleStub) as client:
             yield client
 
     def test_unary_unary(self, client, protobufs):

@@ -132,8 +132,10 @@ class Client:
     """ Standalone GRPC client that uses native threads.
     """
 
-    def __init__(self, stub):
+    def __init__(self, host, stub, port=50051):
+        self.host = host
         self.stub = stub
+        self.port = port
 
     def __enter__(self):
         self.connect()
@@ -145,7 +147,7 @@ class Client:
 
     def connect(self):
         sock = socket.socket()
-        sock.connect(("127.0.0.1", 50051))
+        sock.connect((self.host, self.port))
 
         self.manager = ClientConnectionManager(sock, self.stub)
         threading.Thread(target=self.manager.run_forever).start()

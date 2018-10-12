@@ -96,8 +96,6 @@ class ClientService:
 
 * Implement context
 * Better concurrency tests
-* Configurable bind target on the server
-* Configurable server target on the client
 * Support timeouts
 * Support compression
 * Test server with multiple clients
