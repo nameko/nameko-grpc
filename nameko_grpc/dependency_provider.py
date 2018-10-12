@@ -1,13 +1,9 @@
 # -*- coding: utf-8 -*-
 from nameko.extensions import DependencyProvider
 
-import select
 import socket
-from eventlet.event import Event
-import eventlet
 
 from collections import deque
-from h2.errors import PROTOCOL_ERROR  # changed under h2 from 2.6.4?
 from nameko_grpc.connection import ConnectionManager
 from nameko_grpc.inspection import Inspector
 from nameko_grpc.streams import ReceiveStream, SendStream

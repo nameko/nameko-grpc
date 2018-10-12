@@ -4,18 +4,6 @@ from nameko.constants import WEB_SERVER_CONFIG_KEY
 from nameko.exceptions import ConfigurationError
 from collections import namedtuple, OrderedDict
 import re
-import select
-from h2.errors import PROTOCOL_ERROR  # changed under h2 from 2.6.4?
-from h2.events import (
-    RequestReceived,
-    DataReceived,
-    StreamEnded,
-    WindowUpdated,
-    SettingsAcknowledged,
-    RemoteSettingsChanged,
-)
-from h2.config import H2Configuration
-from h2.connection import H2Connection
 import eventlet
 from functools import partial
 from nameko.exceptions import ContainerBeingKilled
@@ -23,7 +11,6 @@ from nameko_grpc.connection import ConnectionManager
 from nameko_grpc.inspection import Inspector
 from nameko_grpc.streams import ReceiveStream, SendStream
 from .constants import Cardinality
-import socket
 from logging import getLogger
 
 

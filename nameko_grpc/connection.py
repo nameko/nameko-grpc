@@ -12,6 +12,7 @@ from h2.events import (
     SettingsAcknowledged,
     TrailersReceived,
 )
+from h2.errors import PROTOCOL_ERROR  # changed under h2 from 2.6.4?
 from logging import getLogger
 
 log = getLogger(__name__)

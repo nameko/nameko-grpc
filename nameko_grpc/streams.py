@@ -15,6 +15,9 @@ class ByteBuffer:
     def peek(self, slice):
         return self.bytes[slice]
 
+    def discard(self, max_bytes):
+        self.read(max_bytes)
+
     def read(self, max_bytes):
         length = min(max_bytes, len(self.bytes))
         data = self.bytes[:length]
@@ -59,7 +62,7 @@ class ReceiveStream:
         if len(self.buffer) < HEADER_LENGTH + message_length:
             return
 
-        _ = self.buffer.read(HEADER_LENGTH)
+        self.buffer.discard(HEADER_LENGTH)
 
         message = self.message_type()
         message.ParseFromString(bytes(self.buffer.read(message_length)))

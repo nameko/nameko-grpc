@@ -11,10 +11,10 @@ _ONE_DAY_IN_SECONDS = 60 * 60 * 24
 if __name__ == "__main__":
 
     sys.path.append(os.path.join(os.path.dirname(__file__), "spec"))
+
     import example_pb2_grpc
     from example_pb2 import ExampleReply
 
-    # TODO should be able to use the nameko service definition here too, just add the new base (entrypoints will be ignored)
     class example(example_pb2_grpc.exampleServicer):
         def unary_unary(self, request, context):
             message = request.value * (request.multiplier or 1)

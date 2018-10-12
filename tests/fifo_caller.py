@@ -3,15 +3,16 @@
 import eventlet
 
 eventlet.monkey_patch()
-import sys
-import os
 
-from helpers import receive, send, Config, FifoPipe
+import sys  # noqa: E402
+import os  # noqa: E402
 
+from helpers import receive, send, Config, FifoPipe  # noqa: E402
 
 if __name__ == "__main__":
 
     sys.path.append(os.path.join(os.path.dirname(__file__), "spec"))
+
     import example_pb2
 
     req = example_pb2.ExampleRequest(value="pickle1")
