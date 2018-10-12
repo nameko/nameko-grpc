@@ -6,6 +6,8 @@ install:
 
 matrix:
   include:
+    - stage: static
+      env: TOX_ENV=static
     - stage: test
       python: 3.4
       env: TOX_ENV=py34-test
