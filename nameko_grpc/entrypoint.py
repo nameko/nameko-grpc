@@ -1,17 +1,19 @@
 # -*- coding: utf-8 -*-
-from nameko.extensions import SharedExtension, Entrypoint
-from nameko.constants import WEB_SERVER_CONFIG_KEY
-from nameko.exceptions import ConfigurationError
-from collections import namedtuple, OrderedDict
 import re
-import eventlet
+from collections import OrderedDict, namedtuple
 from functools import partial
-from nameko.exceptions import ContainerBeingKilled
+from logging import getLogger
+
+import eventlet
+from nameko.constants import WEB_SERVER_CONFIG_KEY
+from nameko.exceptions import ConfigurationError, ContainerBeingKilled
+from nameko.extensions import Entrypoint, SharedExtension
+
 from nameko_grpc.connection import ConnectionManager
 from nameko_grpc.inspection import Inspector
 from nameko_grpc.streams import ReceiveStream, SendStream
+
 from .constants import Cardinality
-from logging import getLogger
 
 
 log = getLogger(__name__)

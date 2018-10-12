@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
 import os
 import sys
-import grpc
-from concurrent import futures
 import time
+from concurrent import futures
+
+import grpc
+
 
 _ONE_DAY_IN_SECONDS = 60 * 60 * 24
 

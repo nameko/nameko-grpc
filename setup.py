@@ -5,6 +5,7 @@ from codecs import open
 
 from setuptools import find_packages, setup
 
+
 here = os.path.abspath(os.path.dirname(__file__))
 
 with open(os.path.join(here, "README.md"), "r", "utf-8") as handle:

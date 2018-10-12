@@ -2,6 +2,7 @@
 from __future__ import print_function
 
 import time
+
 import grpc
 
 import example_pb2

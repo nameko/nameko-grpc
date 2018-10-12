@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
+import os
 import pickle
 import time
-import os
 import uuid
 
 from eventlet import tpool

@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
-from eventlet.queue import Queue, Empty
 import struct
+
+from eventlet.queue import Empty, Queue
 
 
 HEADER_LENGTH = 5

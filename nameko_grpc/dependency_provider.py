@@ -1,15 +1,15 @@
 # -*- coding: utf-8 -*-
+import itertools
+import socket
+from collections import deque
+from logging import getLogger
+
 from nameko.extensions import DependencyProvider
 
-import socket
-
-from collections import deque
 from nameko_grpc.connection import ConnectionManager
+from nameko_grpc.constants import Cardinality
 from nameko_grpc.inspection import Inspector
 from nameko_grpc.streams import ReceiveStream, SendStream
-from nameko_grpc.constants import Cardinality
-import itertools
-from logging import getLogger
 
 
 log = getLogger(__name__)

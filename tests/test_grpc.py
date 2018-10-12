@@ -1,19 +1,21 @@
 # -*- coding: utf-8 -*-
-import pytest
 import os
 import subprocess
 import sys
 import time
-from mock import Mock
 from importlib import import_module
+
+import pytest
+from mock import Mock
 from nameko.testing.services import dummy
 from nameko.testing.utils import get_extension
 
+from nameko_grpc.constants import Cardinality
 from nameko_grpc.dependency_provider import GrpcProxy
 from nameko_grpc.inspection import Inspector
-from nameko_grpc.constants import Cardinality
 
-from helpers import receive, send, Config, FifoPipe
+from helpers import Config, FifoPipe, receive, send
+
 
 last_modified = os.path.getmtime
 

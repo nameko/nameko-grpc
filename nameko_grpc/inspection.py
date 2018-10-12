@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
-from google.protobuf import descriptor
+import importlib
 import inspect
+
+from google.protobuf import descriptor
 from mock import Mock
 
 from nameko_grpc.constants import Cardinality
-import importlib
 
 
 class Inspector:

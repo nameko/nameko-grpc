@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
 import os
 import sys
-import grpc
 import threading
 
-from helpers import send, receive, FifoPipe
+import grpc
+
+from helpers import FifoPipe, receive, send
 
 
 def call(fifo_in, fifo_out, method):

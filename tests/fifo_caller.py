@@ -1,13 +1,15 @@
 # -*- coding: utf-8 -*-
 # monkeypatch is optional; enabling here demonstrates safety of the helpers
+import os  # noqa: E402
+import sys  # noqa: E402
+
 import eventlet
+
+from helpers import Config, FifoPipe, receive, send  # noqa: E402
+
 
 eventlet.monkey_patch()
 
-import sys  # noqa: E402
-import os  # noqa: E402
-
-from helpers import receive, send, Config, FifoPipe  # noqa: E402
 
 if __name__ == "__main__":
 

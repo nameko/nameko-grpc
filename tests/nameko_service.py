@@ -1,12 +1,14 @@
 # -*- coding: utf-8 -*-
 import os
 import sys
-from nameko_grpc.entrypoint import Grpc
 
-sys.path.append(os.path.join(os.path.dirname(__file__), "spec"))
+from nameko_grpc.entrypoint import Grpc
 
 from example_pb2 import ExampleReply  # noqa: E402
 from example_pb2_grpc import exampleStub  # noqa: E402
+
+
+sys.path.append(os.path.join(os.path.dirname(__file__), "spec"))
 
 
 grpc = Grpc.decorator(exampleStub)

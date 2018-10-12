@@ -1,19 +1,21 @@
 # -*- coding: utf-8 -*-
 import select
+from logging import getLogger
+
 from h2.config import H2Configuration
 from h2.connection import H2Connection
-from h2.events import (
-    ResponseReceived,
-    RequestReceived,
-    DataReceived,
-    StreamEnded,
-    RemoteSettingsChanged,
-    WindowUpdated,
-    SettingsAcknowledged,
-    TrailersReceived,
-)
 from h2.errors import PROTOCOL_ERROR  # changed under h2 from 2.6.4?
-from logging import getLogger
+from h2.events import (
+    DataReceived,
+    RemoteSettingsChanged,
+    RequestReceived,
+    ResponseReceived,
+    SettingsAcknowledged,
+    StreamEnded,
+    TrailersReceived,
+    WindowUpdated,
+)
+
 
 log = getLogger(__name__)
 
