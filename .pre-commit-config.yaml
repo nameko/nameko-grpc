@@ -10,3 +10,4 @@ repos:
     -   id: check-ast
     -   id: check-merge-conflict
     -   id: fix-encoding-pragma
+    -   id: flake8
