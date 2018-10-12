@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
 import os
 from codecs import open
 
@@ -20,7 +21,13 @@ setup(
     packages=find_packages(exclude=["test", "test.*"]),
     install_requires=["nameko", "h2==2.6.2"],
     extras_require={
-        "dev": ["pytest", "grpcio", "grpcio-tools", "googleapis-common-protos"]
+        "dev": [
+            "pytest",
+            "grpcio",
+            "grpcio-tools",
+            "googleapis-common-protos",
+            "pre-commit",
+        ]
     },
     zip_safe=True,
     license="Apache License, Version 2.0",
