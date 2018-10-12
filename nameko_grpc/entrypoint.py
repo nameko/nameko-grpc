@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from nameko.extensions import SharedExtension, Entrypoint
 from nameko.constants import WEB_SERVER_CONFIG_KEY
 from nameko.exceptions import ConfigurationError

@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from google.protobuf import descriptor
 import inspect
 from mock import Mock

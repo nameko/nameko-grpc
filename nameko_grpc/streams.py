@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from eventlet.queue import Queue, Empty
 import struct
 

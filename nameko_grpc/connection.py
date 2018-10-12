@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import select
 from h2.config import H2Configuration
 from h2.connection import H2Connection

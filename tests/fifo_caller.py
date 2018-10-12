@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # monkeypatch is optional; enabling here demonstrates safety of the helpers
 import eventlet
 
