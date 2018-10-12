@@ -34,12 +34,11 @@ class ClientConnectionManager(ConnectionManager):
 
         self.counter = itertools.count(start=1, step=2)
 
-    def on_idle_iteration(self):
-        """ Extend `ConnectionManager.on_idle_iteration` to also send any pending
-        requests.
+    def on_iteration(self):
+        """ On each iteration of the event loop, also initiate any pending requests.
         """
         self.send_pending_requests()
-        super().on_idle_iteration()
+        super().on_iteration()
 
     def invoke_method(self, method_name):
         """ Called by the client to invoke a GRPC method.
@@ -49,8 +48,7 @@ class ClientConnectionManager(ConnectionManager):
         returned to the client for providing the request payload and iterating
         over the response.
 
-        Invocations are queued and sent on the next idle iteration of the event loop.
-        XXX (this is bad; there should be more hooks)
+        Invocations are queued and sent on the next iteration of the event loop.
         """
         stream_id = next(self.counter)
 

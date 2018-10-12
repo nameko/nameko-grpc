@@ -41,19 +41,20 @@ class ConnectionManager(object):
         """ Event loop.
         """
         self.conn.initiate_connection()
-        self.sock.sendall(self.conn.data_to_send())
 
         while True:
 
+            self.on_iteration()
+            self.sock.sendall(self.conn.data_to_send())
+
             ready = select.select([self.sock], [], [], SELECT_TIMEOUT)
             if not ready[0]:
-                self.on_idle_iteration()
-                events = []
-            else:
-                data = self.sock.recv(65535)
-                if not data:
-                    break
-                events = self.conn.receive_data(data)
+                continue
+
+            data = self.sock.recv(65535)
+            if not data:
+                break
+            events = self.conn.receive_data(data)
 
             for event in events:
                 if isinstance(event, RequestReceived):
@@ -73,12 +74,10 @@ class ConnectionManager(object):
                 elif isinstance(event, TrailersReceived):
                     self.trailers_received(event.stream_id)
 
-            self.sock.sendall(self.conn.data_to_send())
+    def on_iteration(self):
+        """ Called on every iteration of the event loop.
 
-    def on_idle_iteration(self):
-        """ Called on every iteration of the event loop while the connection is idle.
-
-        If there are any current `SendStream`s with new data, try to send it.
+        If there are any open `SendStream`s with data to send, try to send it.
         """
         for stream_id in list(self.send_streams.keys()):
             self.send_data(stream_id)
