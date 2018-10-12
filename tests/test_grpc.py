@@ -10,6 +10,7 @@ from mock import Mock
 from nameko.testing.services import dummy
 from nameko.testing.utils import get_extension
 
+from nameko_grpc.client import Client
 from nameko_grpc.constants import Cardinality
 from nameko_grpc.dependency_provider import GrpcProxy
 from nameko_grpc.inspection import Inspector
@@ -368,6 +369,43 @@ class TestConcurrency:
         assert [(response.message, response.seqno) for response in responses_2] == [
             ("X", 1),
             ("Y", 2),
+        ]
+
+
+class TestStandaloneClient:
+    @pytest.fixture
+    def client(self, stubs, server):
+        with Client(stubs.exampleStub) as client:
+            yield client
+
+    def test_unary_unary(self, client, protobufs):
+        response = client.unary_unary(protobufs.ExampleRequest(value="A"))
+        assert response.message == "A"
+
+    def test_unary_stream(self, client, protobufs):
+        responses = client.unary_stream(protobufs.ExampleRequest(value="A"))
+        assert [(response.message, response.seqno) for response in responses] == [
+            ("A", 1),
+            ("A", 2),
+        ]
+
+    def test_stream_unary(self, client, protobufs):
+        def generate_requests():
+            for value in ["A", "B"]:
+                yield protobufs.ExampleRequest(value=value)
+
+        response = client.stream_unary(generate_requests())
+        assert response.message == "A,B"
+
+    def test_stream_stream(self, client, protobufs):
+        def generate_requests():
+            for value in ["A", "B"]:
+                yield protobufs.ExampleRequest(value=value)
+
+        responses = client.stream_stream(generate_requests())
+        assert [(response.message, response.seqno) for response in responses] == [
+            ("A", 1),
+            ("B", 2),
         ]
 
 

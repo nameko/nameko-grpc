@@ -41,12 +41,14 @@ class ConnectionManager(object):
         self.receive_streams = {}
         self.send_streams = {}
 
+        self.run = True
+
     def run_forever(self):
         """ Event loop.
         """
         self.conn.initiate_connection()
 
-        while True:
+        while self.run:
 
             self.on_iteration()
             self.sock.sendall(self.conn.data_to_send())
@@ -77,6 +79,11 @@ class ConnectionManager(object):
                     self.settings_acknowledged(event)
                 elif isinstance(event, TrailersReceived):
                     self.trailers_received(event.stream_id)
+        # XXX set "stopped" condition?
+
+    def stop(self):
+        self.run = False
+        # XXX return "stopped" condition
 
     def on_iteration(self):
         """ Called on every iteration of the event loop.

@@ -1,14 +1,18 @@
 # -*- coding: utf-8 -*-
 import os
 import sys
+from importlib import import_module
 
 from nameko_grpc.entrypoint import Grpc
 
-from example_pb2 import ExampleReply  # noqa: E402
-from example_pb2_grpc import exampleStub  # noqa: E402
-
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "spec"))
+
+example_pb2 = import_module("example_pb2")
+example_pb2_grpc = import_module("example_pb2_grpc")
+
+exampleStub = example_pb2_grpc.exampleStub
+ExampleReply = example_pb2.ExampleReply
 
 
 grpc = Grpc.decorator(exampleStub)
