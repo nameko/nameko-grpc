@@ -82,7 +82,7 @@ from nameko.rpc import rpc
 class ClientService:
     name = "client"
 
-    example_grpc = GrpcProxy(exampleStub)
+    example_grpc = GrpcProxy("127.0.0.1", exampleStub)
 
     @rpc
     def method(self):
@@ -91,6 +91,22 @@ class ClientService:
             print(response.message)
 
 ```
+
+Example standalone client, can be used with or without Eventlet:
+
+``` python
+from example_pb2 import ExampleReply
+from example_pb2_grpc import exampleStub
+
+from nameko_grpc.client import Client
+
+client = Client()
+
+```
+
+
+
+
 
 ## TODO
 
