@@ -100,11 +100,12 @@ from example_pb2_grpc import exampleStub
 
 from nameko_grpc.client import Client
 
-client = Client()
+with Client("127.0.0.1", exampleStub) as client:
+    responses = client.unary_stream(ExampleRequest(value="A"))
+    for response in responses:
+        print(response.message)
 
 ```
-
-
 
 
 
@@ -114,6 +115,5 @@ client = Client()
 * Better concurrency tests
 * Support timeouts
 * Support compression
-* Test server with multiple clients
 * Allow optional snake_case method names even with CamelCased proto definition
 

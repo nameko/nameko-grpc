@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 import os
+import random
+import string
 import subprocess
 import sys
 import time
@@ -409,8 +411,117 @@ class TestStandaloneClient:
         ]
 
 
-# class TestMultipleClients:
-#     pass
+class TestMultipleClients:
+    @pytest.fixture
+    def client_factory(self, stubs, server):
+        clients = []
+
+        def make():
+            client = Client("127.0.0.1", stubs.exampleStub)
+            clients.append(client)
+            return client.start()
+
+        yield make
+
+        for client in clients:
+            client.stop()
+
+    def test_unary_unary(self, client_factory, protobufs):
+
+        futures = []
+        number_of_clients = 10
+
+        for index in range(number_of_clients):
+            client = client_factory()
+            response_future = client.unary_unary.future(
+                protobufs.ExampleRequest(value=string.ascii_uppercase[index])
+            )
+            futures.append(response_future)
+
+        for index, future in enumerate(futures):
+            response = future.result()
+            assert response.message == string.ascii_uppercase[index]
+
+    def test_unary_stream(self, client_factory, protobufs):
+
+        futures = []
+        number_of_clients = 10
+
+        for index in range(number_of_clients):
+            client = client_factory()
+            responses_future = client.unary_stream.future(
+                protobufs.ExampleRequest(value=string.ascii_uppercase[index])
+            )
+            futures.append(responses_future)
+
+        for index, future in enumerate(futures):
+            responses = future.result()
+            assert [(response.message, response.seqno) for response in responses] == [
+                (string.ascii_uppercase[index], 1),
+                (string.ascii_uppercase[index], 2),
+            ]
+
+    def test_stream_unary(self, client_factory, protobufs):
+
+        number_of_clients = 10
+
+        def shuffled(string):
+            chars = list(string)
+            random.shuffle(chars)
+            return chars
+
+        streams = [shuffled(string.ascii_uppercase) for _ in range(number_of_clients)]
+
+        def generate_requests(values):
+            for value in values:
+                yield protobufs.ExampleRequest(value=value)
+
+        futures = []
+
+        for index in range(number_of_clients):
+            client = client_factory()
+            response_future = client.stream_unary.future(
+                generate_requests(streams[index])
+            )
+            futures.append(response_future)
+
+        for index, future in enumerate(futures):
+            response = future.result()
+            assert response.message == ",".join(streams[index])
+
+    def test_stream_stream(self, client_factory, protobufs):
+
+        number_of_clients = 10
+
+        def shuffled(string):
+            chars = list(string)
+            random.shuffle(chars)
+            return chars
+
+        streams = [shuffled(string.ascii_uppercase) for _ in range(number_of_clients)]
+
+        def generate_requests(values):
+            for value in values:
+                yield protobufs.ExampleRequest(value=value)
+
+        futures = []
+
+        for index in range(number_of_clients):
+            client = client_factory()
+            responses_future = client.stream_stream.future(
+                generate_requests(streams[index])
+            )
+            futures.append(responses_future)
+
+        for index, future in enumerate(futures):
+            responses = future.result()
+
+            expected = zip([(char, idx + 1) for idx, char in enumerate(streams[index])])
+
+            assert [
+                (response.message, response.seqno) for response in responses
+            ] == expected
+
 
 # class TestTimeouts:
 #     pass
