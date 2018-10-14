@@ -516,11 +516,10 @@ class TestMultipleClients:
         for index, future in enumerate(futures):
             responses = future.result()
 
-            expected = zip([(char, idx + 1) for idx, char in enumerate(streams[index])])
+            expected = [(char, idx + 1) for idx, char in enumerate(streams[index])]
+            received = [(response.message, response.seqno) for response in responses]
 
-            assert [
-                (response.message, response.seqno) for response in responses
-            ] == expected
+            assert received == expected
 
 
 # class TestTimeouts:
