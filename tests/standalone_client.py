@@ -18,7 +18,7 @@ if __name__ == "__main__":
         for i in range(50):
             yield example_pb2.ExampleRequest(value="pickle{}".format(i))
 
-    with Client("127.0.0.1", example_pb2_grpc.exampleStub) as client:
+    with Client("//127.0.0.1", example_pb2_grpc.exampleStub) as client:
 
         response = client.unary_unary(req)
         print(">> ", response)

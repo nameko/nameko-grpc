@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import socket
 from logging import getLogger
+from urllib.parse import urlparse
 
 from nameko.extensions import DependencyProvider
 
@@ -11,16 +12,16 @@ log = getLogger(__name__)
 
 
 class GrpcProxy(DependencyProvider):
-    def __init__(self, host, stub, port=50051, **kwargs):
-        self.host = host
+    def __init__(self, target, stub, **kwargs):
+        self.target = target
         self.stub = stub
-        self.port = port
         super().__init__(**kwargs)
 
     def start(self):
 
         sock = socket.socket()
-        sock.connect((self.host, self.port))
+        target = urlparse(self.target)
+        sock.connect((target.hostname, target.port or 50051))
 
         self.manager = ClientConnectionManager(sock, self.stub)
         self.container.spawn_managed_thread(self.manager.run_forever)
@@ -28,13 +29,15 @@ class GrpcProxy(DependencyProvider):
     def stop(self):
         self.manager.stop()
 
-    def invoke(self, method_name, request):
+    def invoke(self, request_headers, output_type, request):
 
-        send_stream, response_stream = self.manager.invoke_method(method_name)
+        send_stream, response_stream = self.manager.send_request(
+            request_headers, output_type
+        )
         self.container.spawn_managed_thread(
             lambda: send_stream.populate(request), identifier="populate_request"
         )
         return response_stream
 
     def get_dependency(self, worker_ctx):
-        return Proxy(self.invoke, self.stub)
+        return Proxy(self)

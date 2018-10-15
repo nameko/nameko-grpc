@@ -4,6 +4,7 @@ import socket
 import threading
 from collections import deque
 from logging import getLogger
+from urllib.parse import urlparse
 
 from nameko_grpc.connection import ConnectionManager
 from nameko_grpc.constants import Cardinality
@@ -12,6 +13,9 @@ from nameko_grpc.streams import ReceiveStream, SendStream
 
 
 log = getLogger(__name__)
+
+
+USER_AGENT = "grpc-python-nameko/0.0.1"
 
 
 class ClientConnectionManager(ConnectionManager):
@@ -24,7 +28,7 @@ class ClientConnectionManager(ConnectionManager):
     def __init__(self, sock, stub):
         super().__init__(sock, client_side=True)
 
-        self.stub = stub
+        self.stub = stub  # XXX no longer used.
 
         self.pending_requests = deque()
 
@@ -36,7 +40,7 @@ class ClientConnectionManager(ConnectionManager):
         self.send_pending_requests()
         super().on_iteration()
 
-    def invoke_method(self, method_name):
+    def send_request(self, request_headers, output_type):
         """ Called by the client to invoke a GRPC method.
 
         Establish a `SendStream` to send the request payload and `ReceiveStream`
@@ -48,10 +52,7 @@ class ClientConnectionManager(ConnectionManager):
         """
         stream_id = next(self.counter)
 
-        inspector = Inspector(self.stub)
-        output_type = inspector.output_type_for_method(method_name)
-
-        self.pending_requests.append((stream_id, method_name))
+        self.pending_requests.append((stream_id, request_headers))
 
         receive_stream = ReceiveStream(stream_id, output_type)
         self.receive_streams[stream_id] = receive_stream
@@ -67,21 +68,9 @@ class ClientConnectionManager(ConnectionManager):
         Sends initial headers and any request data that is ready to be sent.
         """
         while self.pending_requests:
-            stream_id, method_name = self.pending_requests.popleft()
+            stream_id, request_headers = self.pending_requests.popleft()
 
-            log.debug("initiating request to %s, new stream %s", method_name, stream_id)
-
-            request_headers = [
-                (":method", "POST"),
-                (":scheme", "http"),
-                (":authority", "127.0.0.1"),
-                (":path", "/example/{}".format(method_name)),
-                ("te", "trailers"),
-                ("content-type", "application/grpc"),
-                ("user-agent", "nameko-grc-proxy"),
-                ("grpc-accept-encoding", "identity,deflate,gzip"),
-                ("accept-encoding", "identity,gzip"),
-            ]
+            log.debug("initiating request, new stream %s", stream_id)
 
             self.conn.send_headers(stream_id, request_headers)
             self.send_data(stream_id)
@@ -100,59 +89,88 @@ class Future:
 
 
 class Method:
-    def __init__(self, invoke, stub, name):
-        self.invoke = invoke
-        self.stub = stub
+    def __init__(self, client, name):
+        self.client = client
         self.name = name
 
     def __call__(self, request):
         return self.future(request).result()
 
     def future(self, request):
-        inspector = Inspector(self.stub)
+        inspector = Inspector(self.client.stub)
+
         cardinality = inspector.cardinality_for_method(self.name)
+        input_type = inspector.input_type_for_method(self.name)
+        output_type = inspector.output_type_for_method(self.name)
+
+        request_headers = [
+            (":method", "POST"),
+            (":scheme", "http"),
+            (":authority", urlparse(self.client.target).hostname),
+            (":path", "/{}/{}".format(inspector.service_name, self.name)),
+            # TODO timeout support
+            # ("grpc-timeout", "5M"),
+            ("te", "trailers"),
+            ("content-type", "application/grpc+proto"),
+            ("user-agent", USER_AGENT),
+            # TODO compression support
+            ("grpc-encoding", "identity"),  # gzip, deflate, snappy
+            (
+                "grpc-message-type",
+                "{}.{}".format(inspector.service_name, input_type.__name__),
+            ),
+            # TODO compression support
+            ("grpc-accept-encoding", "identity"),  # gzip, deflate, snappy
+            # TODO applicatiom headers
+            # application headers, base64 or binary
+        ]
 
         if cardinality in (Cardinality.UNARY_UNARY, Cardinality.UNARY_STREAM):
             request = (request,)
-        resp = self.invoke(self.name, request)
+        resp = self.client.invoke(request_headers, output_type, request)
 
         return Future(resp, cardinality)
 
 
 class Proxy:
-    def __init__(self, invoke, stub):
-        self.invoke = invoke
-        self.stub = stub
+    def __init__(self, client):
+        self.client = client
 
     def __getattr__(self, name):
-        return Method(self.invoke, self.stub, name)
+        return Method(self.client, name)
 
 
 class Client:
     """ Standalone GRPC client that uses native threads.
     """
 
-    def __init__(self, host, stub, port=50051):
-        self.host = host
+    def __init__(self, target, stub):
+        self.target = target
         self.stub = stub
-        self.port = port
 
     def __enter__(self):
-        self.connect()
-        return Proxy(self.invoke, self.stub)
+        return self.start()
 
     def __exit__(self, *args):
-        self.manager.stop()
-        # TODO socket tidyup
+        self.stop()
 
-    def connect(self):
+    def start(self):
         sock = socket.socket()
-        sock.connect((self.host, self.port))
+        target = urlparse(self.target)
+        sock.connect((target.hostname, target.port or 50051))
 
         self.manager = ClientConnectionManager(sock, self.stub)
         threading.Thread(target=self.manager.run_forever).start()
 
-    def invoke(self, method_name, request):
-        send_stream, response_stream = self.manager.invoke_method(method_name)
+        return Proxy(self)
+
+    def stop(self):
+        self.manager.stop()  # TODO make blocking
+        # TODO socket tidyup, after manager has stopped
+
+    def invoke(self, request_headers, output_type, request):
+        send_stream, response_stream = self.manager.send_request(
+            request_headers, output_type
+        )
         threading.Thread(target=send_stream.populate, args=(request,)).start()
         return response_stream

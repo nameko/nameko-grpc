@@ -56,6 +56,8 @@ class ServerConnectionManager(ConnectionManager):
         self.receive_streams[stream_id] = request_stream
         self.send_streams[stream_id] = response_stream
 
+        # XXX could have handle_request raise if the method didn't exist, rather
+        # than having to pass the registered_paths in here.
         self.handle_request(http_path, request_stream, response_stream)
 
         self.conn.send_headers(

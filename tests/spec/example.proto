@@ -1,5 +1,7 @@
 syntax = "proto3";
 
+package nameko;
+
 service example {
   rpc unary_unary (ExampleRequest) returns (ExampleReply) {}
   rpc unary_stream (ExampleRequest) returns (stream ExampleReply) {}

@@ -154,7 +154,7 @@ def dependency_provider_client(container_factory, stubs):
     class Service:
         name = "caller"
 
-        example_grpc = GrpcProxy("127.0.0.1", stubs.exampleStub)
+        example_grpc = GrpcProxy("//127.0.0.1", stubs.exampleStub)
 
         @dummy
         def call(self):
@@ -172,11 +172,21 @@ class TestInspection:
     def inspector(self, stubs):
         return Inspector(stubs.exampleStub)
 
+    def test_service_name(self, inspector):
+        assert inspector.service_name == "nameko.example"
+
     def test_path_for_method(self, inspector):
-        assert inspector.path_for_method("unary_unary") == "/example/unary_unary"
-        assert inspector.path_for_method("unary_stream") == "/example/unary_stream"
-        assert inspector.path_for_method("stream_stream") == "/example/stream_stream"
-        assert inspector.path_for_method("stream_unary") == "/example/stream_unary"
+        assert inspector.path_for_method("unary_unary") == "/nameko.example/unary_unary"
+        assert (
+            inspector.path_for_method("unary_stream") == "/nameko.example/unary_stream"
+        )
+        assert (
+            inspector.path_for_method("stream_stream")
+            == "/nameko.example/stream_stream"
+        )
+        assert (
+            inspector.path_for_method("stream_unary") == "/nameko.example/stream_unary"
+        )
 
     def test_input_type_for_method(self, inspector, protobufs):
         assert (
@@ -377,7 +387,7 @@ class TestConcurrency:
 class TestStandaloneClient:
     @pytest.fixture
     def client(self, stubs, server):
-        with Client("127.0.0.1", stubs.exampleStub) as client:
+        with Client("//127.0.0.1", stubs.exampleStub) as client:
             yield client
 
     def test_unary_unary(self, client, protobufs):
@@ -417,7 +427,7 @@ class TestMultipleClients:
         clients = []
 
         def make():
-            client = Client("127.0.0.1", stubs.exampleStub)
+            client = Client("//127.0.0.1", stubs.exampleStub)
             clients.append(client)
             return client.start()
 
