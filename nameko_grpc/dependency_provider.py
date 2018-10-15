@@ -12,6 +12,10 @@ log = getLogger(__name__)
 
 
 class GrpcProxy(DependencyProvider):
+
+    manager = None
+    sock = None
+
     def __init__(self, target, stub, **kwargs):
         self.target = target
         self.stub = stub
@@ -19,15 +23,17 @@ class GrpcProxy(DependencyProvider):
 
     def start(self):
 
-        sock = socket.socket()
         target = urlparse(self.target)
-        sock.connect((target.hostname, target.port or 50051))
 
-        self.manager = ClientConnectionManager(sock, self.stub)
+        self.sock = socket.socket()
+        self.sock.connect((target.hostname, target.port or 50051))
+
+        self.manager = ClientConnectionManager(self.sock)
         self.container.spawn_managed_thread(self.manager.run_forever)
 
     def stop(self):
         self.manager.stop()
+        self.sock.close()
 
     def invoke(self, request_headers, output_type, request):
 

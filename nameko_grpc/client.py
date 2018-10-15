@@ -25,10 +25,8 @@ class ClientConnectionManager(ConnectionManager):
     Extends the base `ConnectionManager` to make outbound GRPC requests.
     """
 
-    def __init__(self, sock, stub):
+    def __init__(self, sock):
         super().__init__(sock, client_side=True)
-
-        self.stub = stub  # XXX no longer used.
 
         self.pending_requests = deque()
 
@@ -144,6 +142,7 @@ class Client:
     """
 
     manager = None
+    sock = None
 
     def __init__(self, target, stub):
         self.target = target
@@ -156,19 +155,20 @@ class Client:
         self.stop()
 
     def start(self):
-        sock = socket.socket()
         target = urlparse(self.target)
-        sock.connect((target.hostname, target.port or 50051))
 
-        self.manager = ClientConnectionManager(sock, self.stub)
+        self.sock = socket.socket()
+        self.sock.connect((target.hostname, target.port or 50051))
+
+        self.manager = ClientConnectionManager(self.sock)
         threading.Thread(target=self.manager.run_forever).start()
 
         return Proxy(self)
 
     def stop(self):
         if self.manager:
-            self.manager.stop()  # TODO make blocking
-        # TODO socket tidyup, after manager has stopped
+            self.manager.stop()
+            self.sock.close()
 
     def invoke(self, request_headers, output_type, request):
         send_stream, response_stream = self.manager.send_request(request_headers)
