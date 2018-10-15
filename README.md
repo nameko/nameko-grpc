@@ -82,7 +82,7 @@ from nameko.rpc import rpc
 class ClientService:
     name = "client"
 
-    example_grpc = GrpcProxy("127.0.0.1", exampleStub)
+    example_grpc = GrpcProxy("//127.0.0.1", exampleStub)
 
     @rpc
     def method(self):
@@ -100,7 +100,7 @@ from example_pb2_grpc import exampleStub
 
 from nameko_grpc.client import Client
 
-with Client("127.0.0.1", exampleStub) as client:
+with Client("//127.0.0.1", exampleStub) as client:
     responses = client.unary_stream(ExampleRequest(value="A"))
     for response in responses:
         print(response.message)
