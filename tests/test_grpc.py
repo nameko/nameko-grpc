@@ -25,8 +25,7 @@ last_modified = os.path.getmtime
 
 @pytest.fixture
 def compile_proto():
-    def codegen(service_name):
-        spec_dir = os.path.join(os.path.dirname(__file__), "spec")
+    def codegen(service_name, spec_dir):
         proto_path = os.path.join(spec_dir, "{}.proto".format(service_name))
         proto_last_modified = last_modified(proto_path)
 
@@ -64,13 +63,15 @@ def compile_proto():
 
 @pytest.fixture
 def protobufs(compile_proto):
-    protobufs, _ = compile_proto("example")
+    spec_dir = os.path.join(os.path.dirname(__file__), "spec")
+    protobufs, _ = compile_proto("example", spec_dir)
     return protobufs
 
 
 @pytest.fixture
 def stubs(compile_proto):
-    _, stubs = compile_proto("example")
+    spec_dir = os.path.join(os.path.dirname(__file__), "spec")
+    _, stubs = compile_proto("example", spec_dir)
     return stubs
 
 
@@ -150,21 +151,9 @@ def service(container_factory, protobufs, stubs):
 
 
 @pytest.fixture
-def dependency_provider_client(container_factory, stubs):
-    class Service:
-        name = "caller"
-
-        example_grpc = GrpcProxy("//127.0.0.1", stubs.exampleStub)
-
-        @dummy
-        def call(self):
-            pass
-
-    container = container_factory(Service, {})
-    container.start()
-
-    grpc_proxy = get_extension(container, GrpcProxy)
-    return grpc_proxy.get_dependency(Mock())
+def nameko_client(stubs, server):
+    with Client("//127.0.0.1", stubs.exampleStub) as client:
+        yield client
 
 
 class TestInspection:
@@ -225,7 +214,7 @@ def client(request, server):
     elif "nameko" in request.param:
         if request.config.option.client not in ("nameko", "all"):
             pytest.skip("nameko client not requested")
-        return request.getfixturevalue("dependency_provider_client")
+        return request.getfixturevalue("nameko_client")
 
 
 class TestStandard:
@@ -384,11 +373,23 @@ class TestConcurrency:
         ]
 
 
-class TestStandaloneClient:
+class TestDependencyProvider:
     @pytest.fixture
-    def client(self, stubs, server):
-        with Client("//127.0.0.1", stubs.exampleStub) as client:
-            yield client
+    def client(self, container_factory, stubs, server):
+        class Service:
+            name = "caller"
+
+            example_grpc = GrpcProxy("//127.0.0.1", stubs.exampleStub)
+
+            @dummy
+            def call(self):
+                pass
+
+        container = container_factory(Service, {})
+        container.start()
+
+        grpc_proxy = get_extension(container, GrpcProxy)
+        return grpc_proxy.get_dependency(Mock())
 
     def test_unary_unary(self, client, protobufs):
         response = client.unary_unary(protobufs.ExampleRequest(value="A"))
