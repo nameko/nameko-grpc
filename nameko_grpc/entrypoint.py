@@ -17,6 +17,10 @@ from .constants import Cardinality
 log = getLogger(__name__)
 
 
+class NotFound(Exception):
+    pass
+
+
 class ServerConnectionManager(ConnectionManager):
     """
     An object that manages a single HTTP/2 connection on a GRPC server.
@@ -24,9 +28,8 @@ class ServerConnectionManager(ConnectionManager):
     Extends the base `ConnectionManager` to handle incoming GRPC requests.
     """
 
-    def __init__(self, sock, registered_paths, handle_request):
+    def __init__(self, sock, handle_request):
         super().__init__(sock, client_side=False)
-        self.registered_paths = registered_paths
         self.handle_request = handle_request
 
     def request_received(self, headers, stream_id):
@@ -41,34 +44,29 @@ class ServerConnectionManager(ConnectionManager):
         headers = OrderedDict(headers)
         http_path = headers[":path"]
 
-        if http_path not in self.registered_paths:
+        request_stream = ReceiveStream(stream_id)
+        response_stream = SendStream(stream_id)
+        self.receive_streams[stream_id] = request_stream
+        self.send_streams[stream_id] = response_stream
+
+        try:
+            self.handle_request(http_path, request_stream, response_stream)
+            self.conn.send_headers(
+                stream_id,
+                (
+                    (":status", "200"),
+                    ("content-type", "application/grpc+proto"),
+                    ("server", "nameko-grpc"),
+                ),
+                end_stream=False,
+            )
+        except NotFound:
             response_headers = (
                 (":status", "404"),
                 ("content-length", "0"),
                 ("server", "nameko-grpc"),
             )
             self.conn.send_headers(stream_id, response_headers, end_stream=True)
-
-        request_type = self.registered_paths[http_path]
-
-        request_stream = ReceiveStream(stream_id, request_type)
-        response_stream = SendStream(stream_id)
-        self.receive_streams[stream_id] = request_stream
-        self.send_streams[stream_id] = response_stream
-
-        # XXX could have handle_request raise if the method didn't exist, rather
-        # than having to pass the registered_paths in here.
-        self.handle_request(http_path, request_stream, response_stream)
-
-        self.conn.send_headers(
-            stream_id,
-            (
-                (":status", "200"),
-                ("content-type", "application/grpc+proto"),
-                ("server", "nameko-grpc"),
-            ),
-            end_stream=False,
-        )
 
     def end_stream(self, stream_id):
         """ Close the outbound response stream with trailers containing the status
@@ -85,13 +83,6 @@ class GrpcServer(SharedExtension):
         self.entrypoints = {}
 
     @property
-    def method_path_map(self):
-        return {
-            entrypoint.method_path: entrypoint.input_type
-            for entrypoint in self.entrypoints.values()
-        }
-
-    @property
     def bind_addr(self):
         host = self.container.config.get("GRPC_BIND_HOST", "0.0.0.0")
         port = self.container.config.get("GRPC_BIND_PORT", 50051)
@@ -104,7 +95,11 @@ class GrpcServer(SharedExtension):
         self.entrypoints.pop(entrypoint.method_path, None)
 
     def handle_request(self, method_path, request_stream, response_stream):
-        entrypoint = self.entrypoints[method_path]
+        try:
+            entrypoint = self.entrypoints[method_path]
+            request_stream.message_type = entrypoint.input_type
+        except KeyError:
+            raise NotFound(method_path)
         self.container.spawn_managed_thread(
             partial(entrypoint.handle_request, request_stream, response_stream)
         )
@@ -112,9 +107,7 @@ class GrpcServer(SharedExtension):
     def run(self):
         while self.is_accepting:
             new_sock, _ = self.server_socket.accept()
-            manager = ServerConnectionManager(
-                new_sock, self.method_path_map, self.handle_request
-            )
+            manager = ServerConnectionManager(new_sock, self.handle_request)
             self.container.spawn_managed_thread(manager.run_forever)
 
     def start(self):

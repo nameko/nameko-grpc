@@ -40,7 +40,7 @@ class ClientConnectionManager(ConnectionManager):
         self.send_pending_requests()
         super().on_iteration()
 
-    def send_request(self, request_headers, output_type):
+    def send_request(self, request_headers):
         """ Called by the client to invoke a GRPC method.
 
         Establish a `SendStream` to send the request payload and `ReceiveStream`
@@ -54,13 +54,12 @@ class ClientConnectionManager(ConnectionManager):
 
         self.pending_requests.append((stream_id, request_headers))
 
-        receive_stream = ReceiveStream(stream_id, output_type)
-        self.receive_streams[stream_id] = receive_stream
+        request_stream = SendStream(stream_id)
+        response_stream = ReceiveStream(stream_id)
+        self.receive_streams[stream_id] = response_stream
+        self.send_streams[stream_id] = request_stream
 
-        send_stream = SendStream(stream_id)
-        self.send_streams[stream_id] = send_stream
-
-        return send_stream, receive_stream
+        return request_stream, response_stream
 
     def send_pending_requests(self):
         """ Initiate requests for any pending invocations.
@@ -169,8 +168,7 @@ class Client:
         # TODO socket tidyup, after manager has stopped
 
     def invoke(self, request_headers, output_type, request):
-        send_stream, response_stream = self.manager.send_request(
-            request_headers, output_type
-        )
+        send_stream, response_stream = self.manager.send_request(request_headers)
+        response_stream.message_type = output_type
         threading.Thread(target=send_stream.populate, args=(request,)).start()
         return response_stream

@@ -31,9 +31,8 @@ class GrpcProxy(DependencyProvider):
 
     def invoke(self, request_headers, output_type, request):
 
-        send_stream, response_stream = self.manager.send_request(
-            request_headers, output_type
-        )
+        send_stream, response_stream = self.manager.send_request(request_headers)
+        response_stream.message_type = output_type
         self.container.spawn_managed_thread(
             lambda: send_stream.populate(request), identifier="populate_request"
         )
