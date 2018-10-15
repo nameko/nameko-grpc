@@ -143,6 +143,8 @@ class Client:
     """ Standalone GRPC client that uses native threads.
     """
 
+    manager = None
+
     def __init__(self, target, stub):
         self.target = target
         self.stub = stub
@@ -164,7 +166,8 @@ class Client:
         return Proxy(self)
 
     def stop(self):
-        self.manager.stop()  # TODO make blocking
+        if self.manager:
+            self.manager.stop()  # TODO make blocking
         # TODO socket tidyup, after manager has stopped
 
     def invoke(self, request_headers, output_type, request):

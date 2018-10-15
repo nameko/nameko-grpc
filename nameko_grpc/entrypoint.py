@@ -2,6 +2,7 @@
 from collections import OrderedDict
 from functools import partial
 from logging import getLogger
+from urllib import parse
 
 import eventlet
 from nameko.exceptions import ContainerBeingKilled
@@ -42,7 +43,6 @@ class ServerConnectionManager(ConnectionManager):
         super().request_received(headers, stream_id)
 
         headers = OrderedDict(headers)
-        http_path = headers[":path"]
 
         request_stream = ReceiveStream(stream_id)
         response_stream = SendStream(stream_id)
@@ -50,13 +50,14 @@ class ServerConnectionManager(ConnectionManager):
         self.send_streams[stream_id] = response_stream
 
         try:
-            self.handle_request(http_path, request_stream, response_stream)
+            self.handle_request(headers, request_stream, response_stream)
             self.conn.send_headers(
                 stream_id,
                 (
                     (":status", "200"),
                     ("content-type", "application/grpc+proto"),
-                    ("server", "nameko-grpc"),
+                    # TODO compression support
+                    ("grpc-encoding", "identity"),  # gzip, deflate, snappy
                 ),
                 end_stream=False,
             )
@@ -64,7 +65,8 @@ class ServerConnectionManager(ConnectionManager):
             response_headers = (
                 (":status", "404"),
                 ("content-length", "0"),
-                ("server", "nameko-grpc"),
+                ("grpc-status", "1"),
+                ("grpc-status-message", parse.quote("Method not found", safe="")),
             )
             self.conn.send_headers(stream_id, response_headers, end_stream=True)
 
@@ -94,8 +96,10 @@ class GrpcServer(SharedExtension):
     def unregister(self, entrypoint):
         self.entrypoints.pop(entrypoint.method_path, None)
 
-    def handle_request(self, method_path, request_stream, response_stream):
+    def handle_request(self, headers, request_stream, response_stream):
         try:
+            # TODO handle timeout
+            method_path = headers[":path"]
             entrypoint = self.entrypoints[method_path]
             request_stream.message_type = entrypoint.input_type
         except KeyError:
