@@ -82,7 +82,7 @@ from nameko.rpc import rpc
 class ClientService:
     name = "client"
 
-    example_grpc = GrpcProxy(exampleStub)
+    example_grpc = GrpcProxy("//127.0.0.1", exampleStub)
 
     @rpc
     def method(self):
@@ -92,14 +92,28 @@ class ClientService:
 
 ```
 
+Example standalone client, can be used with or without Eventlet:
+
+``` python
+from example_pb2 import ExampleReply
+from example_pb2_grpc import exampleStub
+
+from nameko_grpc.client import Client
+
+with Client("//127.0.0.1", exampleStub) as client:
+    responses = client.unary_stream(ExampleRequest(value="A"))
+    for response in responses:
+        print(response.message)
+
+```
+
+
+
 ## TODO
 
 * Implement context
 * Better concurrency tests
-* Configurable bind target on the server
-* Configurable server target on the client
 * Support timeouts
 * Support compression
-* Test server with multiple clients
 * Allow optional snake_case method names even with CamelCased proto definition
 

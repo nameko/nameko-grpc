@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import select
 from logging import getLogger
+from threading import Event
 
 from h2.config import H2Configuration
 from h2.connection import H2Connection
@@ -42,6 +43,7 @@ class ConnectionManager(object):
         self.send_streams = {}
 
         self.run = True
+        self.stopped = Event()
 
     def run_forever(self):
         """ Event loop.
@@ -79,11 +81,12 @@ class ConnectionManager(object):
                     self.settings_acknowledged(event)
                 elif isinstance(event, TrailersReceived):
                     self.trailers_received(event.stream_id)
-        # XXX set "stopped" condition?
+
+        self.stopped.set()
 
     def stop(self):
         self.run = False
-        # XXX return "stopped" condition
+        self.stopped.wait()
 
     def on_iteration(self):
         """ Called on every iteration of the event loop.

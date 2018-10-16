@@ -35,12 +35,23 @@ class ByteBuffer:
 
 
 class ReceiveStream:
-    def __init__(self, stream_id, message_type):
+    _message_type = None
+
+    def __init__(self, stream_id):
         self.stream_id = stream_id
-        self.message_type = message_type
 
         self.message_queue = Queue()
         self.buffer = ByteBuffer()
+
+    @property
+    def message_type(self):
+        return self._message_type
+
+    @message_type.setter
+    def message_type(self, value):
+        if self._message_type is not None:
+            raise ValueError("Message type already set")
+        self._message_type = value
 
     def close(self):
         self.message_queue.put(STREAM_END)
@@ -48,6 +59,9 @@ class ReceiveStream:
     def write(self, data):
 
         self.buffer.write(data)
+
+        if self.message_type is None:
+            return
 
         if len(self.buffer) < HEADER_LENGTH:
             return

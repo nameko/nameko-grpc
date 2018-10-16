@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 import os
+import random
+import string
 import subprocess
 import sys
 import time
@@ -23,8 +25,7 @@ last_modified = os.path.getmtime
 
 @pytest.fixture
 def compile_proto():
-    def codegen(service_name):
-        spec_dir = os.path.join(os.path.dirname(__file__), "spec")
+    def codegen(service_name, spec_dir):
         proto_path = os.path.join(spec_dir, "{}.proto".format(service_name))
         proto_last_modified = last_modified(proto_path)
 
@@ -62,13 +63,15 @@ def compile_proto():
 
 @pytest.fixture
 def protobufs(compile_proto):
-    protobufs, _ = compile_proto("example")
+    spec_dir = os.path.join(os.path.dirname(__file__), "spec")
+    protobufs, _ = compile_proto("example", spec_dir)
     return protobufs
 
 
 @pytest.fixture
 def stubs(compile_proto):
-    _, stubs = compile_proto("example")
+    spec_dir = os.path.join(os.path.dirname(__file__), "spec")
+    _, stubs = compile_proto("example", spec_dir)
     return stubs
 
 
@@ -148,21 +151,9 @@ def service(container_factory, protobufs, stubs):
 
 
 @pytest.fixture
-def dependency_provider_client(container_factory, stubs):
-    class Service:
-        name = "caller"
-
-        example_grpc = GrpcProxy(stubs.exampleStub)
-
-        @dummy
-        def call(self):
-            pass
-
-    container = container_factory(Service, {})
-    container.start()
-
-    grpc_proxy = get_extension(container, GrpcProxy)
-    return grpc_proxy.get_dependency(Mock())
+def nameko_client(stubs, server):
+    with Client("//127.0.0.1", stubs.exampleStub) as client:
+        yield client
 
 
 class TestInspection:
@@ -170,11 +161,21 @@ class TestInspection:
     def inspector(self, stubs):
         return Inspector(stubs.exampleStub)
 
+    def test_service_name(self, inspector):
+        assert inspector.service_name == "nameko.example"
+
     def test_path_for_method(self, inspector):
-        assert inspector.path_for_method("unary_unary") == "/example/unary_unary"
-        assert inspector.path_for_method("unary_stream") == "/example/unary_stream"
-        assert inspector.path_for_method("stream_stream") == "/example/stream_stream"
-        assert inspector.path_for_method("stream_unary") == "/example/stream_unary"
+        assert inspector.path_for_method("unary_unary") == "/nameko.example/unary_unary"
+        assert (
+            inspector.path_for_method("unary_stream") == "/nameko.example/unary_stream"
+        )
+        assert (
+            inspector.path_for_method("stream_stream")
+            == "/nameko.example/stream_stream"
+        )
+        assert (
+            inspector.path_for_method("stream_unary") == "/nameko.example/stream_unary"
+        )
 
     def test_input_type_for_method(self, inspector, protobufs):
         assert (
@@ -213,7 +214,7 @@ def client(request, server):
     elif "nameko" in request.param:
         if request.config.option.client not in ("nameko", "all"):
             pytest.skip("nameko client not requested")
-        return request.getfixturevalue("dependency_provider_client")
+        return request.getfixturevalue("nameko_client")
 
 
 class TestStandard:
@@ -372,11 +373,23 @@ class TestConcurrency:
         ]
 
 
-class TestStandaloneClient:
+class TestDependencyProvider:
     @pytest.fixture
-    def client(self, stubs, server):
-        with Client(stubs.exampleStub) as client:
-            yield client
+    def client(self, container_factory, stubs, server):
+        class Service:
+            name = "caller"
+
+            example_grpc = GrpcProxy("//127.0.0.1", stubs.exampleStub)
+
+            @dummy
+            def call(self):
+                pass
+
+        container = container_factory(Service, {})
+        container.start()
+
+        grpc_proxy = get_extension(container, GrpcProxy)
+        return grpc_proxy.get_dependency(Mock())
 
     def test_unary_unary(self, client, protobufs):
         response = client.unary_unary(protobufs.ExampleRequest(value="A"))
@@ -409,8 +422,116 @@ class TestStandaloneClient:
         ]
 
 
-# class TestMultipleClients:
-#     pass
+class TestMultipleClients:
+    @pytest.fixture
+    def client_factory(self, stubs, server):
+        clients = []
+
+        def make():
+            client = Client("//127.0.0.1", stubs.exampleStub)
+            clients.append(client)
+            return client.start()
+
+        yield make
+
+        for client in clients:
+            client.stop()
+
+    def test_unary_unary(self, client_factory, protobufs):
+
+        futures = []
+        number_of_clients = 10
+
+        for index in range(number_of_clients):
+            client = client_factory()
+            response_future = client.unary_unary.future(
+                protobufs.ExampleRequest(value=string.ascii_uppercase[index])
+            )
+            futures.append(response_future)
+
+        for index, future in enumerate(futures):
+            response = future.result()
+            assert response.message == string.ascii_uppercase[index]
+
+    def test_unary_stream(self, client_factory, protobufs):
+
+        futures = []
+        number_of_clients = 10
+
+        for index in range(number_of_clients):
+            client = client_factory()
+            responses_future = client.unary_stream.future(
+                protobufs.ExampleRequest(value=string.ascii_uppercase[index])
+            )
+            futures.append(responses_future)
+
+        for index, future in enumerate(futures):
+            responses = future.result()
+            assert [(response.message, response.seqno) for response in responses] == [
+                (string.ascii_uppercase[index], 1),
+                (string.ascii_uppercase[index], 2),
+            ]
+
+    def test_stream_unary(self, client_factory, protobufs):
+
+        number_of_clients = 10
+
+        def shuffled(string):
+            chars = list(string)
+            random.shuffle(chars)
+            return chars
+
+        streams = [shuffled(string.ascii_uppercase) for _ in range(number_of_clients)]
+
+        def generate_requests(values):
+            for value in values:
+                yield protobufs.ExampleRequest(value=value)
+
+        futures = []
+
+        for index in range(number_of_clients):
+            client = client_factory()
+            response_future = client.stream_unary.future(
+                generate_requests(streams[index])
+            )
+            futures.append(response_future)
+
+        for index, future in enumerate(futures):
+            response = future.result()
+            assert response.message == ",".join(streams[index])
+
+    def test_stream_stream(self, client_factory, protobufs):
+
+        number_of_clients = 10
+
+        def shuffled(string):
+            chars = list(string)
+            random.shuffle(chars)
+            return chars
+
+        streams = [shuffled(string.ascii_uppercase) for _ in range(number_of_clients)]
+
+        def generate_requests(values):
+            for value in values:
+                yield protobufs.ExampleRequest(value=value)
+
+        futures = []
+
+        for index in range(number_of_clients):
+            client = client_factory()
+            responses_future = client.stream_stream.future(
+                generate_requests(streams[index])
+            )
+            futures.append(responses_future)
+
+        for index, future in enumerate(futures):
+            responses = future.result()
+
+            expected = [(char, idx + 1) for idx, char in enumerate(streams[index])]
+            received = [(response.message, response.seqno) for response in responses]
+
+            assert received == expected
+
 
 # class TestTimeouts:
 #     pass

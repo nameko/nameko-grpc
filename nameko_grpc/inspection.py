@@ -76,17 +76,25 @@ class Inspector:
 
         return self._cardinality_map
 
+    @property
+    def service_name(self):
+        return self.service_descriptor.full_name
+
     def get_symbol(self, name):
         return self.protobufs_module._sym_db.GetSymbol(name)
 
     def path_for_method(self, method_name):
-        return "/{}/{}".format(self.service_descriptor.name, method_name)
+        return "/{}/{}".format(self.service_name, method_name)
 
     def input_type_for_method(self, method_name):
-        return self.get_symbol(self.method_descriptors[method_name].input_type.name)
+        return self.get_symbol(
+            self.method_descriptors[method_name].input_type.full_name
+        )
 
     def output_type_for_method(self, method_name):
-        return self.get_symbol(self.method_descriptors[method_name].output_type.name)
+        return self.get_symbol(
+            self.method_descriptors[method_name].output_type.full_name
+        )
 
     def cardinality_for_method(self, method_name):
         return self.cardinality_map[method_name]
