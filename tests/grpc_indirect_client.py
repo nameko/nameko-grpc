@@ -1,29 +1,38 @@
 # -*- coding: utf-8 -*-
-import os
 import sys
 import threading
+from importlib import import_module
 
 import grpc
 
-from helpers import FifoPipe, receive, send
+from helpers import FifoPipe, GrpcError, receive, send
 
 
 def call(fifo_in, fifo_out, method):
     request = receive(fifo_in)
-    response = method(request)
+    try:
+        response = method(request)
+    except grpc.RpcError as exc:
+        state = exc._state
+        response = GrpcError(state.code, state.details, state.debug_error_string)
     send(fifo_out, response)
 
 
 if __name__ == "__main__":
 
-    sys.path.append(os.path.join(os.path.dirname(__file__), "spec"))
-    import example_pb2_grpc
+    spec_path = sys.argv[1]
+    sys.path.append(spec_path)
 
-    command_fifo_path = sys.argv[1]
+    service_name = sys.argv[2]
+
+    grpc_module = import_module("{}_pb2_grpc".format(service_name))
+    stub_cls = getattr(grpc_module, "{}Stub".format(service_name))
+
+    command_fifo_path = sys.argv[3]
     command_fifo = FifoPipe.wrap(command_fifo_path)
 
     channel = grpc.insecure_channel("127.0.0.1:50051")
-    stub = example_pb2_grpc.exampleStub(channel)
+    stub = stub_cls(channel)
 
     while True:
         config = receive(command_fifo)

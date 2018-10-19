@@ -1,11 +1,6 @@
 # -*- coding: utf-8 -*-
-import os
 import random
 import string
-import subprocess
-import sys
-import time
-from importlib import import_module
 
 import pytest
 from mock import Mock
@@ -17,146 +12,36 @@ from nameko_grpc.constants import Cardinality
 from nameko_grpc.dependency_provider import GrpcProxy
 from nameko_grpc.inspection import Inspector
 
-from helpers import Config, FifoPipe, receive, send
 
-
-last_modified = os.path.getmtime
+@pytest.fixture
+def grpc_server(start_grpc_server):
+    return start_grpc_server("example")
 
 
 @pytest.fixture
-def compile_proto():
-    def codegen(service_name, spec_dir):
-        proto_path = os.path.join(spec_dir, "{}.proto".format(service_name))
-        proto_last_modified = last_modified(proto_path)
-
-        for generated_file in (
-            "{}_pb2.py".format(service_name),
-            "{}_pb2_grpc.py".format(service_name),
-        ):
-            generated_path = os.path.join(spec_dir, generated_file)
-            if (
-                not os.path.exists(generated_path)
-                or last_modified(generated_path) < proto_last_modified
-            ):
-                protoc_args = [
-                    "-I{}".format(spec_dir),
-                    "--python_out",
-                    spec_dir,
-                    "--grpc_python_out",
-                    spec_dir,
-                    proto_path,
-                ]
-                # protoc.main is confused by absolute paths, so use subprocess instead
-                python_args = ["python", "-m", "grpc_tools.protoc"] + protoc_args
-                subprocess.call(python_args)
-
-        if spec_dir not in sys.path:
-            sys.path.append(spec_dir)
-
-        protobufs = import_module("{}_pb2".format(service_name))
-        stubs = import_module("{}_pb2_grpc".format(service_name))
-
-        return protobufs, stubs
-
-    return codegen
+def grpc_client(start_grpc_client):
+    return start_grpc_client("example")
 
 
 @pytest.fixture
-def protobufs(compile_proto):
-    spec_dir = os.path.join(os.path.dirname(__file__), "spec")
-    protobufs, _ = compile_proto("example", spec_dir)
-    return protobufs
+def nameko_server(start_nameko_server):
+    return start_nameko_server("example")
 
 
 @pytest.fixture
-def stubs(compile_proto):
-    spec_dir = os.path.join(os.path.dirname(__file__), "spec")
-    _, stubs = compile_proto("example", spec_dir)
-    return stubs
-
-
-@pytest.fixture
-def grpc_server():
-    """ Standard GRPC server, running in another process
-    """
-    server_script = os.path.join(os.path.dirname(__file__), "grpc_server.py")
-    with subprocess.Popen([sys.executable, server_script]) as proc:
-        # wait until server has started
-        time.sleep(0.5)
-        yield
-        proc.terminate()
-
-
-@pytest.fixture
-def grpc_client(stubs, tmpdir):
-    """ Standard GRPC client, running in another process
-    """
-    # TODO allow multiple clients in the same test
-    with FifoPipe.new(tmpdir.strpath) as command_fifo:
-
-        client_script = os.path.join(
-            os.path.dirname(__file__), "grpc_indirect_client.py"
-        )
-        with subprocess.Popen([sys.executable, client_script, command_fifo.path]):
-
-            fifos = []
-
-            def new_fifo():
-                fifo = FifoPipe.new(tmpdir.strpath)
-                fifos.append(fifo)
-                fifo.open()
-                return fifo
-
-            class Result:
-                def __init__(self, fifo):
-                    self.fifo = fifo
-
-                def result(self):
-                    return receive(self.fifo)
-
-            class Method:
-                def __init__(self, name):
-                    self.name = name
-
-                def __call__(self, request):
-                    return self.future(request).result()
-
-                def future(self, request):
-                    in_fifo = new_fifo()
-                    out_fifo = new_fifo()
-                    send(command_fifo, Config(self.name, in_fifo.path, out_fifo.path))
-                    send(in_fifo, request)
-                    return Result(out_fifo)
-
-            class Client:
-                def __getattr__(self, name):
-                    return Method(name)
-
-            yield Client()
-            send(command_fifo, None)
-
-            for fifo in fifos:
-                fifo.close()
-
-
-@pytest.fixture
-def service(container_factory, protobufs, stubs):
-
-    from nameko_service import ExampleService
-
-    container = container_factory(ExampleService, {})
-    container.start()
-
-    return container
-
-
-@pytest.fixture
-def nameko_client(stubs, server):
-    with Client("//127.0.0.1", stubs.exampleStub) as client:
-        yield client
+def nameko_client(start_nameko_client):
+    return start_nameko_client("example")
 
 
 class TestInspection:
+    @pytest.fixture
+    def stubs(self, compile_stubs):
+        return compile_stubs("example")
+
+    @pytest.fixture
+    def protobufs(self, compile_protobufs):
+        return compile_protobufs("example")
+
     @pytest.fixture
     def inspector(self, stubs):
         return Inspector(stubs.exampleStub)
@@ -202,7 +87,7 @@ def server(request):
     elif "nameko" in request.param:
         if request.config.option.server not in ("nameko", "all"):
             pytest.skip("nameko server not requested")
-        request.getfixturevalue("service")
+        request.getfixturevalue("nameko_server")
 
 
 @pytest.fixture(params=["grpc_client", "nameko_client"])
@@ -218,6 +103,14 @@ def client(request, server):
 
 
 class TestStandard:
+    @pytest.fixture
+    def stubs(self, compile_stubs):
+        return compile_stubs("example")
+
+    @pytest.fixture
+    def protobufs(self, compile_protobufs):
+        return compile_protobufs("example")
+
     def test_unary_unary(self, client, protobufs):
         response = client.unary_unary(protobufs.ExampleRequest(value="A"))
         assert response.message == "A"
@@ -250,6 +143,14 @@ class TestStandard:
 
 
 class TestLarge:
+    @pytest.fixture
+    def stubs(self, compile_stubs):
+        return compile_stubs("example")
+
+    @pytest.fixture
+    def protobufs(self, compile_protobufs):
+        return compile_protobufs("example")
+
     def test_large_request(self, client, protobufs):
         response = client.unary_unary(
             protobufs.ExampleRequest(value="A", blob="B" * 20000)
@@ -265,6 +166,14 @@ class TestLarge:
 
 
 class TestFuture:
+    @pytest.fixture
+    def stubs(self, compile_stubs):
+        return compile_stubs("example")
+
+    @pytest.fixture
+    def protobufs(self, compile_protobufs):
+        return compile_protobufs("example")
+
     def test_unary_unary(self, client, protobufs):
         response_future = client.unary_unary.future(protobufs.ExampleRequest(value="A"))
         response = response_future.result()
@@ -304,6 +213,13 @@ class TestFuture:
 
 class TestConcurrency:
     # XXX how to assert both are in flight at the same time?
+    @pytest.fixture
+    def stubs(self, compile_stubs):
+        return compile_stubs("example")
+
+    @pytest.fixture
+    def protobufs(self, compile_protobufs):
+        return compile_protobufs("example")
 
     def test_unary_unary(self, client, protobufs):
         response_a_future = client.unary_unary.future(
@@ -375,6 +291,14 @@ class TestConcurrency:
 
 class TestDependencyProvider:
     @pytest.fixture
+    def stubs(self, compile_stubs):
+        return compile_stubs("example")
+
+    @pytest.fixture
+    def protobufs(self, compile_protobufs):
+        return compile_protobufs("example")
+
+    @pytest.fixture
     def client(self, container_factory, stubs, server):
         class Service:
             name = "caller"
@@ -423,6 +347,15 @@ class TestDependencyProvider:
 
 
 class TestMultipleClients:
+    @pytest.fixture
+    def stubs(self, compile_stubs):
+        return compile_stubs("example")
+
+    @pytest.fixture
+    def protobufs(self, compile_protobufs):
+        return compile_protobufs("example")
+
+    # XXX
     @pytest.fixture
     def client_factory(self, stubs, server):
         clients = []
