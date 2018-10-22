@@ -3,6 +3,7 @@ import random
 import string
 
 import pytest
+from grpc import StatusCode
 from mock import Mock
 from nameko.testing.services import dummy
 from nameko.testing.utils import get_extension
@@ -11,6 +12,8 @@ from nameko_grpc.client import Client
 from nameko_grpc.constants import Cardinality
 from nameko_grpc.dependency_provider import GrpcProxy
 from nameko_grpc.inspection import Inspector
+
+from helpers import GrpcError
 
 
 @pytest.fixture
@@ -464,6 +467,38 @@ class TestMultipleClients:
             received = [(response.message, response.seqno) for response in responses]
 
             assert received == expected
+
+
+class TestMethodNotFound:
+    @pytest.fixture
+    def grpc_server(self, start_grpc_server):
+        return start_grpc_server("echo", proto_name="echo_server")
+
+    @pytest.fixture
+    def nameko_server(self, start_nameko_server):
+        return start_nameko_server("echo", proto_name="echo_server")
+
+    @pytest.fixture
+    def grpc_client(self, start_grpc_client):
+        return start_grpc_client("echo", proto_name="echo_client")
+
+    @pytest.fixture
+    def nameko_client(self, start_nameko_client):
+        return start_nameko_client("echo", proto_name="echo_client")
+
+    @pytest.fixture
+    def protobufs(self, compile_proto, spec_dir):
+        protobufs, _ = compile_proto("echo_client")
+        return protobufs
+
+    def test_method_not_found(self, client, protobufs):
+        response = client.foo(protobufs.EchoRequest(value="hello"))
+        assert response.message == "hello"
+
+        with pytest.raises(GrpcError) as error:
+            client.bar(protobufs.EchoRequest(value="hello"))
+        assert error.value.status == StatusCode.UNIMPLEMENTED
+        assert error.value.details == "Method not found!"
 
 
 # class TestTimeouts:

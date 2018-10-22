@@ -23,12 +23,13 @@ if __name__ == "__main__":
     spec_path = sys.argv[1]
     sys.path.append(spec_path)
 
-    service_name = sys.argv[2]
+    proto_name = sys.argv[2]
+    service_name = sys.argv[3]
 
-    grpc_module = import_module("{}_pb2_grpc".format(service_name))
+    grpc_module = import_module("{}_pb2_grpc".format(proto_name))
     stub_cls = getattr(grpc_module, "{}Stub".format(service_name))
 
-    command_fifo_path = sys.argv[3]
+    command_fifo_path = sys.argv[4]
     command_fifo = FifoPipe.wrap(command_fifo_path)
 
     channel = grpc.insecure_channel("127.0.0.1:50051")

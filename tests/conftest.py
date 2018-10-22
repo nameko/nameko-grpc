@@ -45,18 +45,25 @@ def spec_dir(tmpdir_factory):
             copy = temp.join(filename)
             with open(path) as file:
                 copy.write(file.read())
-    return temp
+
+    sys.path.append(temp.strpath)
+    yield temp
+    sys.path.remove(temp.strpath)
 
 
 @pytest.fixture
-def compile_proto():
-    def codegen(service_name, spec_path):
-        proto_path = os.path.join(spec_path, "{}.proto".format(service_name))
+def compile_proto(spec_dir):
+
+    spec_path = spec_dir.strpath
+
+    def codegen(proto_name):
+
+        proto_path = os.path.join(spec_path, "{}.proto".format(proto_name))
         proto_last_modified = os.path.getmtime(proto_path)
 
         for generated_file in (
-            "{}_pb2.py".format(service_name),
-            "{}_pb2_grpc.py".format(service_name),
+            "{}_pb2.py".format(proto_name),
+            "{}_pb2_grpc.py".format(proto_name),
         ):
             generated_path = os.path.join(spec_path, generated_file)
             if (
@@ -75,11 +82,8 @@ def compile_proto():
                 python_args = ["python", "-m", "grpc_tools.protoc"] + protoc_args
                 subprocess.call(python_args)
 
-        if spec_path not in sys.path:
-            sys.path.append(spec_path)
-
-        protobufs = import_module("{}_pb2".format(service_name))
-        stubs = import_module("{}_pb2_grpc".format(service_name))
+        protobufs = import_module("{}_pb2".format(proto_name))
+        stubs = import_module("{}_pb2_grpc".format(proto_name))
 
         return protobufs, stubs
 
@@ -89,8 +93,8 @@ def compile_proto():
 # XXX do we actually want these?
 @pytest.fixture
 def compile_protobufs(compile_proto, spec_dir):
-    def make(service_name):
-        protobufs, _ = compile_proto(service_name, spec_dir.strpath)
+    def make(service_name):  # XXX should be proto_name
+        protobufs, _ = compile_proto(service_name)
         return protobufs
 
     return make
@@ -99,8 +103,8 @@ def compile_protobufs(compile_proto, spec_dir):
 # XXX do we actually want these?
 @pytest.fixture
 def compile_stubs(compile_proto, spec_dir):
-    def make(service_name):
-        _, stubs = compile_proto(service_name, spec_dir.strpath)
+    def make(service_name):  # XXX should be proto_name
+        _, stubs = compile_proto(service_name)
         return stubs
 
     return make
@@ -144,13 +148,12 @@ def start_grpc_server(compile_proto, spawn_process, spec_dir):
 
     server_script = os.path.join(os.path.dirname(__file__), "grpc_indirect_server.py")
 
-    def make(service_name, spec_path=None):
-        if spec_path is None:
-            spec_path = spec_dir.strpath
-        compile_proto(service_name, spec_path)
+    def make(service_name, proto_name=None):
+        if proto_name is None:
+            proto_name = service_name
+        compile_proto(proto_name)
 
-        service_path = "{}_grpc.{}".format(service_name, service_name)
-        spawn_process(server_script, service_path, spec_path)
+        spawn_process(server_script, spec_dir.strpath, proto_name, service_name)
         # wait until server has started
         time.sleep(0.5)
 
@@ -196,16 +199,17 @@ def start_grpc_client(compile_proto, tmpdir, make_fifo, spawn_process, spec_dir)
         def __getattr__(self, name):
             return Method(self.fifo, name)
 
-    def make(service_name, spec_path=None):
-        if spec_path is None:
-            spec_path = spec_dir.strpath
-
-        compile_proto(service_name, spec_path)
+    def make(service_name, proto_name=None):
+        if proto_name is None:
+            proto_name = service_name
+        compile_proto(proto_name)
 
         client_fifo = make_fifo()
         client_fifos.append(client_fifo)
 
-        spawn_process(client_script, spec_path, service_name, client_fifo.path)
+        spawn_process(
+            client_script, spec_dir.strpath, proto_name, service_name, client_fifo.path
+        )
 
         return Client(client_fifo)
 
@@ -217,14 +221,11 @@ def start_grpc_client(compile_proto, tmpdir, make_fifo, spawn_process, spec_dir)
 
 @pytest.fixture
 def start_nameko_server(compile_proto, spec_dir, container_factory):
-    def make(service_name, spec_path=None):
-        if spec_path is None:
-            spec_path = spec_dir.strpath
-
-        sys.path.append(spec_path)  # XXX  remove this again?
-
-        compile_proto(service_name, spec_path)
-        service_module = import_module("{}_nameko".format(service_name))
+    def make(service_name, proto_name=None):
+        if proto_name is None:
+            proto_name = service_name
+        compile_proto(proto_name)
+        service_module = import_module("{}_nameko".format(proto_name))
         service_cls = getattr(service_module, service_name)
 
         container = container_factory(service_cls, {})
@@ -240,10 +241,10 @@ def start_nameko_client(compile_proto, spec_dir):
 
     clients = []
 
-    def make(service_name, spec_path=None):
-        if spec_path is None:
-            spec_path = spec_dir.strpath
-        _, stubs = compile_proto(service_name, spec_path)
+    def make(service_name, proto_name=None):
+        if proto_name is None:
+            proto_name = service_name
+        _, stubs = compile_proto(proto_name)
 
         stub_cls = getattr(stubs, "{}Stub".format(service_name))
         client = Client("//127.0.0.1", stub_cls)
