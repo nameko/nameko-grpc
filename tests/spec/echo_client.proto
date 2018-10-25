@@ -1,16 +1,10 @@
 syntax = "proto3";
 
+import "echo.proto";
+
 package nameko;
 
 service echo {
   rpc foo (EchoRequest) returns (EchoReply) {}
   rpc bar (EchoRequest) returns (EchoReply) {}
-}
-
-message EchoRequest {
-  string value = 1;
-}
-
-message EchoReply {
-  string message = 1;
 }

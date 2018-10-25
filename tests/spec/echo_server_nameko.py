@@ -2,7 +2,7 @@
 from nameko_grpc.entrypoint import Grpc
 
 import echo_server_pb2_grpc
-from echo_server_pb2 import EchoReply
+from echo_pb2 import EchoReply
 
 
 grpc = Grpc.decorator(echo_server_pb2_grpc.echoStub)

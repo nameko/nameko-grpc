@@ -470,24 +470,24 @@ class TestMultipleClients:
 
 class TestMethodNotFound:
     @pytest.fixture
-    def grpc_server(self, start_grpc_server):
+    def grpc_server(self, start_grpc_server, protobufs):
         return start_grpc_server("echo", proto_name="echo_server")
 
     @pytest.fixture
-    def nameko_server(self, start_nameko_server):
+    def nameko_server(self, start_nameko_server, protobufs):
         return start_nameko_server("echo", proto_name="echo_server")
 
     @pytest.fixture
-    def grpc_client(self, start_grpc_client):
+    def grpc_client(self, start_grpc_client, protobufs):
         return start_grpc_client("echo", proto_name="echo_client")
 
     @pytest.fixture
-    def nameko_client(self, start_nameko_client):
+    def nameko_client(self, start_nameko_client, protobufs):
         return start_nameko_client("echo", proto_name="echo_client")
 
     @pytest.fixture
     def protobufs(self, compile_proto, spec_dir):
-        protobufs, _ = compile_proto("echo_client")
+        protobufs, _ = compile_proto("echo")
         return protobufs
 
     def test_method_not_found(self, client, protobufs):
