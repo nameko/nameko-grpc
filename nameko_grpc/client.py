@@ -2,9 +2,11 @@
 import itertools
 import socket
 import threading
-from collections import deque
+from collections import OrderedDict, deque
 from logging import getLogger
 from urllib.parse import urlparse
+
+from h2.errors import PROTOCOL_ERROR  # changed under h2 from 2.6.4?
 
 from nameko_grpc.connection import ConnectionManager
 from nameko_grpc.constants import Cardinality
@@ -58,6 +60,18 @@ class ClientConnectionManager(ConnectionManager):
         self.send_streams[stream_id] = request_stream
 
         return request_stream, response_stream
+
+    def response_received(self, headers, stream_id):
+        """ Called when a response is received on a stream.
+
+        If the response contains an error, we should capture it here.
+        """
+        super().response_received(headers, stream_id)
+        response_stream = self.receive_streams.get(stream_id)
+        if response_stream is None:
+            # response for unknown stream, exit?
+            self.conn.reset_stream(stream_id, error_code=PROTOCOL_ERROR)
+        response_stream.headers = OrderedDict(headers)
 
     def send_pending_requests(self):
         """ Initiate requests for any pending invocations.

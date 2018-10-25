@@ -11,9 +11,8 @@ from nameko.testing.utils import get_extension
 from nameko_grpc.client import Client
 from nameko_grpc.constants import Cardinality
 from nameko_grpc.dependency_provider import GrpcProxy
+from nameko_grpc.exceptions import GrpcError
 from nameko_grpc.inspection import Inspector
-
-from helpers import GrpcError
 
 
 @pytest.fixture

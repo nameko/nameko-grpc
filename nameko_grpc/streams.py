@@ -2,6 +2,10 @@
 import struct
 from queue import Empty, Queue
 
+from grpc._common import CYGRPC_STATUS_CODE_TO_STATUS_CODE
+
+from nameko_grpc.exceptions import GrpcError
+
 
 HEADER_LENGTH = 5
 
@@ -35,11 +39,13 @@ class ByteBuffer:
 
 
 class ReceiveStream:
+
     _message_type = None
 
     def __init__(self, stream_id):
         self.stream_id = stream_id
 
+        self.headers = {}  # XXX should this live here?
         self.message_queue = Queue()
         self.buffer = ByteBuffer()
 
@@ -83,17 +89,31 @@ class ReceiveStream:
 
         self.message_queue.put(message)
 
+    def check_status(self):
+        status = int(self.headers.get("grpc-status", 0))
+        if status > 0:
+            message = self.headers.get("grpc-message", "")
+            raise GrpcError(
+                status=CYGRPC_STATUS_CODE_TO_STATUS_CODE[status],
+                details=message,
+                debug_error_string="<generate traceback>",
+            )
+
     def __iter__(self):
         return self
 
     def __next__(self):
         message = self.message_queue.get()
+        self.check_status()
         if message is STREAM_END:
             raise StopIteration()
         return message
 
 
 class SendStream:
+
+    # TODO send-stream should have headers for capturing metadata too?
+
     class Closed(Exception):
         pass
 

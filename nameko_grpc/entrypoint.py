@@ -2,7 +2,6 @@
 from collections import OrderedDict
 from functools import partial
 from logging import getLogger
-from urllib import parse
 
 import eventlet
 from nameko.exceptions import ContainerBeingKilled
@@ -65,8 +64,8 @@ class ServerConnectionManager(ConnectionManager):
             response_headers = (
                 (":status", "404"),
                 ("content-length", "0"),
-                ("grpc-status", "1"),
-                ("grpc-status-message", parse.quote("Method not found", safe="")),
+                ("grpc-status", "12"),
+                ("grpc-message", "Method not found!"),
             )
             self.conn.send_headers(stream_id, response_headers, end_stream=True)
 

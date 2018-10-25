@@ -8,8 +8,9 @@ from importlib import import_module
 import pytest
 
 from nameko_grpc.client import Client
+from nameko_grpc.exceptions import GrpcError
 
-from helpers import Config, FifoPipe, GrpcError, receive, send
+from helpers import Config, FifoPipe, receive, send
 
 
 def pytest_addoption(parser):

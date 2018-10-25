@@ -5,7 +5,9 @@ from importlib import import_module
 
 import grpc
 
-from helpers import FifoPipe, GrpcError, receive, send
+from nameko_grpc.exceptions import GrpcError
+
+from helpers import FifoPipe, receive, send
 
 
 def call(fifo_in, fifo_out, method):
