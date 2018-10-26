@@ -146,7 +146,8 @@ def spawn_process():
 
 @pytest.fixture
 def start_grpc_server(compile_proto, spawn_process, spec_dir):
-
+    # XXX we never use more than one at once; will port clash
+    # is that a reason to change this? prob not, since we want it dynamic anyway
     server_script = os.path.join(os.path.dirname(__file__), "grpc_indirect_server.py")
 
     def make(service_name, proto_name=None):
@@ -222,6 +223,10 @@ def start_grpc_client(compile_proto, tmpdir, make_fifo, spawn_process, spec_dir)
 
 @pytest.fixture
 def start_nameko_server(compile_proto, spec_dir, container_factory):
+    # XXX we never use more than one at once; will port clash
+    # is that a reason to change this? prob not, since we want it dynamic anyway,
+    # at least while tests aren't ALL against the example proto
+    # (but if they can be, would be better to make this non-dynamic)
     def make(service_name, proto_name=None):
         if proto_name is None:
             proto_name = service_name

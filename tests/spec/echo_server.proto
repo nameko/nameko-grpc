@@ -1,9 +1,0 @@
-syntax = "proto3";
-
-import "echo.proto";
-
-package nameko;
-
-service echo {
-  rpc foo (EchoRequest) returns (EchoReply) {}
-}

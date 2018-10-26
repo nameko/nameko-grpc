@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import random
+import re
 import string
 
 import pytest
@@ -470,32 +471,32 @@ class TestMultipleClients:
 
 class TestMethodNotFound:
     @pytest.fixture
-    def grpc_server(self, start_grpc_server, protobufs):
-        return start_grpc_server("echo", proto_name="echo_server")
+    def stubs(self, compile_stubs):
+        return compile_stubs("example")
 
     @pytest.fixture
-    def nameko_server(self, start_nameko_server, protobufs):
-        return start_nameko_server("echo", proto_name="echo_server")
+    def protobufs(self, compile_protobufs):
+        return compile_protobufs("example")
 
-    @pytest.fixture
-    def grpc_client(self, start_grpc_client, protobufs):
-        return start_grpc_client("echo", proto_name="echo_client")
+    @pytest.fixture(autouse=True)
+    def unregister_grpc_method(self, stubs):
+        with open(stubs.__file__) as fh:
+            original_service = fh.read()
 
-    @pytest.fixture
-    def nameko_client(self, start_nameko_client, protobufs):
-        return start_nameko_client("echo", proto_name="echo_client")
+        pattern = re.compile("'not_found': grpc.\w+\(.*?\),", re.DOTALL)
+        modified_service = re.sub(pattern, "", original_service)
 
-    @pytest.fixture
-    def protobufs(self, compile_proto, spec_dir):
-        protobufs, _ = compile_proto("echo")
-        return protobufs
+        with open(stubs.__file__, "w") as fh:
+            fh.write(modified_service)
+
+        yield
+
+        with open(stubs.__file__, "w") as fh:
+            fh.write(original_service)
 
     def test_method_not_found(self, client, protobufs):
-        response = client.foo(protobufs.EchoRequest(value="hello"))
-        assert response.message == "hello"
-
         with pytest.raises(GrpcError) as error:
-            client.bar(protobufs.EchoRequest(value="hello"))
+            client.not_found(protobufs.ExampleRequest(value="hello"))
         assert error.value.status == StatusCode.UNIMPLEMENTED
         assert error.value.details == "Method not found!"
 
