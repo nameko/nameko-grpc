@@ -370,7 +370,7 @@ class TestMethodNotFound:
         with open(stubs.__file__) as fh:
             original_service = fh.read()
 
-        pattern = re.compile("'not_found': grpc.\w+\(.*?\),", re.DOTALL)
+        pattern = re.compile(r"'not_found': grpc.\w+\(.*?\),", re.DOTALL)
         modified_service = re.sub(pattern, "", original_service)
 
         with open(stubs.__file__, "w") as fh:
