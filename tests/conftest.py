@@ -258,6 +258,30 @@ def nameko_client(start_nameko_client):
     return start_nameko_client("example")
 
 
+@pytest.fixture(params=["grpc_server", "nameko_server"])
+def server(request):
+    if "grpc" in request.param:
+        if request.config.option.server not in ("grpc", "all"):
+            pytest.skip("grpc server not requested")
+        request.getfixturevalue("grpc_server")
+    elif "nameko" in request.param:
+        if request.config.option.server not in ("nameko", "all"):
+            pytest.skip("nameko server not requested")
+        request.getfixturevalue("nameko_server")
+
+
+@pytest.fixture(params=["grpc_client", "nameko_client"])
+def client(request, server):
+    if "grpc" in request.param:
+        if request.config.option.client not in ("grpc", "all"):
+            pytest.skip("grpc client not requested")
+        return request.getfixturevalue("grpc_client")
+    elif "nameko" in request.param:
+        if request.config.option.client not in ("nameko", "all"):
+            pytest.skip("nameko client not requested")
+        return request.getfixturevalue("nameko_client")
+
+
 @pytest.fixture
 def stubs(compile_proto):
     _, stubs = compile_proto("example")

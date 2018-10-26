@@ -9,7 +9,6 @@ from mock import Mock
 from nameko.testing.services import dummy
 from nameko.testing.utils import get_extension
 
-from nameko_grpc.client import Client
 from nameko_grpc.constants import Cardinality
 from nameko_grpc.dependency_provider import GrpcProxy
 from nameko_grpc.exceptions import GrpcError
@@ -51,30 +50,6 @@ class TestInspection:
         assert insp.cardinality_for_method("unary_stream") == Cardinality.UNARY_STREAM
         assert insp.cardinality_for_method("stream_unary") == Cardinality.STREAM_UNARY
         assert insp.cardinality_for_method("stream_stream") == Cardinality.STREAM_STREAM
-
-
-@pytest.fixture(params=["grpc_server", "nameko_server"])
-def server(request):
-    if "grpc" in request.param:
-        if request.config.option.server not in ("grpc", "all"):
-            pytest.skip("grpc server not requested")
-        request.getfixturevalue("grpc_server")
-    elif "nameko" in request.param:
-        if request.config.option.server not in ("nameko", "all"):
-            pytest.skip("nameko server not requested")
-        request.getfixturevalue("nameko_server")
-
-
-@pytest.fixture(params=["grpc_client", "nameko_client"])
-def client(request, server):
-    if "grpc" in request.param:
-        if request.config.option.client not in ("grpc", "all"):
-            pytest.skip("grpc client not requested")
-        return request.getfixturevalue("grpc_client")
-    elif "nameko" in request.param:
-        if request.config.option.client not in ("nameko", "all"):
-            pytest.skip("nameko client not requested")
-        return request.getfixturevalue("nameko_client")
 
 
 class TestStandard:
@@ -282,29 +257,24 @@ class TestDependencyProvider:
 
 
 class TestMultipleClients:
-
-    # XXX
-    @pytest.fixture
-    def client_factory(self, stubs, server):
-        clients = []
-
-        def make():
-            client = Client("//127.0.0.1", stubs.exampleStub)
-            clients.append(client)
-            return client.start()
-
-        yield make
-
-        for client in clients:
-            client.stop()
+    @pytest.fixture(params=["grpc_client", "nameko_client"])
+    def client_factory(self, request, server):
+        if "grpc" in request.param:
+            if request.config.option.client not in ("grpc", "all"):
+                pytest.skip("grpc client not requested")
+            return request.getfixturevalue("start_grpc_client")
+        elif "nameko" in request.param:
+            if request.config.option.client not in ("nameko", "all"):
+                pytest.skip("nameko client not requested")
+            return request.getfixturevalue("start_nameko_client")
 
     def test_unary_unary(self, client_factory, protobufs):
 
         futures = []
-        number_of_clients = 10
+        number_of_clients = 5
 
         for index in range(number_of_clients):
-            client = client_factory()
+            client = client_factory("example")
             response_future = client.unary_unary.future(
                 protobufs.ExampleRequest(value=string.ascii_uppercase[index])
             )
@@ -317,10 +287,10 @@ class TestMultipleClients:
     def test_unary_stream(self, client_factory, protobufs):
 
         futures = []
-        number_of_clients = 10
+        number_of_clients = 5
 
         for index in range(number_of_clients):
-            client = client_factory()
+            client = client_factory("example")
             responses_future = client.unary_stream.future(
                 protobufs.ExampleRequest(value=string.ascii_uppercase[index])
             )
@@ -335,7 +305,7 @@ class TestMultipleClients:
 
     def test_stream_unary(self, client_factory, protobufs):
 
-        number_of_clients = 10
+        number_of_clients = 5
 
         def shuffled(string):
             chars = list(string)
@@ -351,7 +321,7 @@ class TestMultipleClients:
         futures = []
 
         for index in range(number_of_clients):
-            client = client_factory()
+            client = client_factory("example")
             response_future = client.stream_unary.future(
                 generate_requests(streams[index])
             )
@@ -363,7 +333,7 @@ class TestMultipleClients:
 
     def test_stream_stream(self, client_factory, protobufs):
 
-        number_of_clients = 10
+        number_of_clients = 5
 
         def shuffled(string):
             chars = list(string)
@@ -379,7 +349,7 @@ class TestMultipleClients:
         futures = []
 
         for index in range(number_of_clients):
-            client = client_factory()
+            client = client_factory("example")
             responses_future = client.stream_stream.future(
                 generate_requests(streams[index])
             )
