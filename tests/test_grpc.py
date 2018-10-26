@@ -16,35 +16,7 @@ from nameko_grpc.exceptions import GrpcError
 from nameko_grpc.inspection import Inspector
 
 
-@pytest.fixture
-def grpc_server(start_grpc_server):
-    return start_grpc_server("example")
-
-
-@pytest.fixture
-def grpc_client(start_grpc_client):
-    return start_grpc_client("example")
-
-
-@pytest.fixture
-def nameko_server(start_nameko_server):
-    return start_nameko_server("example")
-
-
-@pytest.fixture
-def nameko_client(start_nameko_client):
-    return start_nameko_client("example")
-
-
 class TestInspection:
-    @pytest.fixture
-    def stubs(self, compile_stubs):
-        return compile_stubs("example")
-
-    @pytest.fixture
-    def protobufs(self, compile_protobufs):
-        return compile_protobufs("example")
-
     @pytest.fixture
     def inspector(self, stubs):
         return Inspector(stubs.exampleStub)
@@ -106,14 +78,6 @@ def client(request, server):
 
 
 class TestStandard:
-    @pytest.fixture
-    def stubs(self, compile_stubs):
-        return compile_stubs("example")
-
-    @pytest.fixture
-    def protobufs(self, compile_protobufs):
-        return compile_protobufs("example")
-
     def test_unary_unary(self, client, protobufs):
         response = client.unary_unary(protobufs.ExampleRequest(value="A"))
         assert response.message == "A"
@@ -146,14 +110,6 @@ class TestStandard:
 
 
 class TestLarge:
-    @pytest.fixture
-    def stubs(self, compile_stubs):
-        return compile_stubs("example")
-
-    @pytest.fixture
-    def protobufs(self, compile_protobufs):
-        return compile_protobufs("example")
-
     def test_large_request(self, client, protobufs):
         response = client.unary_unary(
             protobufs.ExampleRequest(value="A", blob="B" * 20000)
@@ -169,14 +125,6 @@ class TestLarge:
 
 
 class TestFuture:
-    @pytest.fixture
-    def stubs(self, compile_stubs):
-        return compile_stubs("example")
-
-    @pytest.fixture
-    def protobufs(self, compile_protobufs):
-        return compile_protobufs("example")
-
     def test_unary_unary(self, client, protobufs):
         response_future = client.unary_unary.future(protobufs.ExampleRequest(value="A"))
         response = response_future.result()
@@ -216,14 +164,6 @@ class TestFuture:
 
 class TestConcurrency:
     # XXX how to assert both are in flight at the same time?
-    @pytest.fixture
-    def stubs(self, compile_stubs):
-        return compile_stubs("example")
-
-    @pytest.fixture
-    def protobufs(self, compile_protobufs):
-        return compile_protobufs("example")
-
     def test_unary_unary(self, client, protobufs):
         response_a_future = client.unary_unary.future(
             protobufs.ExampleRequest(value="A")
@@ -294,14 +234,6 @@ class TestConcurrency:
 
 class TestDependencyProvider:
     @pytest.fixture
-    def stubs(self, compile_stubs):
-        return compile_stubs("example")
-
-    @pytest.fixture
-    def protobufs(self, compile_protobufs):
-        return compile_protobufs("example")
-
-    @pytest.fixture
     def client(self, container_factory, stubs, server):
         class Service:
             name = "caller"
@@ -350,13 +282,6 @@ class TestDependencyProvider:
 
 
 class TestMultipleClients:
-    @pytest.fixture
-    def stubs(self, compile_stubs):
-        return compile_stubs("example")
-
-    @pytest.fixture
-    def protobufs(self, compile_protobufs):
-        return compile_protobufs("example")
 
     # XXX
     @pytest.fixture
@@ -470,14 +395,6 @@ class TestMultipleClients:
 
 
 class TestMethodNotFound:
-    @pytest.fixture
-    def stubs(self, compile_stubs):
-        return compile_stubs("example")
-
-    @pytest.fixture
-    def protobufs(self, compile_protobufs):
-        return compile_protobufs("example")
-
     @pytest.fixture(autouse=True)
     def unregister_grpc_method(self, stubs):
         with open(stubs.__file__) as fh:

@@ -91,26 +91,6 @@ def compile_proto(spec_dir):
     return codegen
 
 
-# XXX do we actually want these?
-@pytest.fixture
-def compile_protobufs(compile_proto, spec_dir):
-    def make(service_name):  # XXX should be proto_name
-        protobufs, _ = compile_proto(service_name)
-        return protobufs
-
-    return make
-
-
-# XXX do we actually want these?
-@pytest.fixture
-def compile_stubs(compile_proto, spec_dir):
-    def make(service_name):  # XXX should be proto_name
-        _, stubs = compile_proto(service_name)
-        return stubs
-
-    return make
-
-
 @pytest.fixture
 def make_fifo(tmpdir):
 
@@ -146,8 +126,7 @@ def spawn_process():
 
 @pytest.fixture
 def start_grpc_server(compile_proto, spawn_process, spec_dir):
-    # XXX we never use more than one at once; will port clash
-    # is that a reason to change this? prob not, since we want it dynamic anyway
+
     server_script = os.path.join(os.path.dirname(__file__), "grpc_indirect_server.py")
 
     def make(service_name, proto_name=None):
@@ -223,10 +202,6 @@ def start_grpc_client(compile_proto, tmpdir, make_fifo, spawn_process, spec_dir)
 
 @pytest.fixture
 def start_nameko_server(compile_proto, spec_dir, container_factory):
-    # XXX we never use more than one at once; will port clash
-    # is that a reason to change this? prob not, since we want it dynamic anyway,
-    # at least while tests aren't ALL against the example proto
-    # (but if they can be, would be better to make this non-dynamic)
     def make(service_name, proto_name=None):
         if proto_name is None:
             proto_name = service_name
@@ -261,3 +236,35 @@ def start_nameko_client(compile_proto, spec_dir):
 
     for client in clients:
         client.stop()
+
+
+@pytest.fixture
+def grpc_server(start_grpc_server):
+    return start_grpc_server("example")
+
+
+@pytest.fixture
+def grpc_client(start_grpc_client):
+    return start_grpc_client("example")
+
+
+@pytest.fixture
+def nameko_server(start_nameko_server):
+    return start_nameko_server("example")
+
+
+@pytest.fixture
+def nameko_client(start_nameko_client):
+    return start_nameko_client("example")
+
+
+@pytest.fixture
+def stubs(compile_proto):
+    _, stubs = compile_proto("example")
+    return stubs
+
+
+@pytest.fixture
+def protobufs(compile_proto):
+    protobufs, _ = compile_proto("example")
+    return protobufs

@@ -42,7 +42,6 @@ class ServerConnectionManager(ConnectionManager):
         super().request_received(headers, stream_id)
 
         headers = OrderedDict(headers)
-
         request_stream = ReceiveStream(stream_id)
         response_stream = SendStream(stream_id)
         self.receive_streams[stream_id] = request_stream
@@ -64,7 +63,7 @@ class ServerConnectionManager(ConnectionManager):
             response_headers = (
                 (":status", "404"),
                 ("content-length", "0"),
-                ("grpc-status", "12"),
+                ("grpc-status", "12"),  # TODO use enum instead
                 ("grpc-message", "Method not found!"),
             )
             self.conn.send_headers(stream_id, response_headers, end_stream=True)
