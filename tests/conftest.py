@@ -6,6 +6,7 @@ import time
 from importlib import import_module
 
 import pytest
+from nameko.testing.utils import find_free_port
 
 from nameko_grpc.client import Client
 from nameko_grpc.exceptions import GrpcError
@@ -125,7 +126,12 @@ def spawn_process():
 
 
 @pytest.fixture
-def start_grpc_server(compile_proto, spawn_process, spec_dir):
+def grpc_port():
+    return find_free_port()
+
+
+@pytest.fixture
+def start_grpc_server(compile_proto, spawn_process, spec_dir, grpc_port):
 
     server_script = os.path.join(os.path.dirname(__file__), "grpc_indirect_server.py")
 
@@ -134,7 +140,9 @@ def start_grpc_server(compile_proto, spawn_process, spec_dir):
             proto_name = service_name
         compile_proto(proto_name)
 
-        spawn_process(server_script, spec_dir.strpath, proto_name, service_name)
+        spawn_process(
+            server_script, str(grpc_port), spec_dir.strpath, proto_name, service_name
+        )
         # wait until server has started
         time.sleep(0.5)
 
@@ -142,7 +150,9 @@ def start_grpc_server(compile_proto, spawn_process, spec_dir):
 
 
 @pytest.fixture
-def start_grpc_client(compile_proto, tmpdir, make_fifo, spawn_process, spec_dir):
+def start_grpc_client(
+    compile_proto, tmpdir, make_fifo, spawn_process, spec_dir, grpc_port
+):
 
     client_script = os.path.join(os.path.dirname(__file__), "grpc_indirect_client.py")
 
@@ -189,7 +199,12 @@ def start_grpc_client(compile_proto, tmpdir, make_fifo, spawn_process, spec_dir)
         client_fifos.append(client_fifo)
 
         spawn_process(
-            client_script, spec_dir.strpath, proto_name, service_name, client_fifo.path
+            client_script,
+            str(grpc_port),
+            spec_dir.strpath,
+            proto_name,
+            service_name,
+            client_fifo.path,
         )
 
         return Client(client_fifo)
@@ -201,7 +216,7 @@ def start_grpc_client(compile_proto, tmpdir, make_fifo, spawn_process, spec_dir)
 
 
 @pytest.fixture
-def start_nameko_server(compile_proto, spec_dir, container_factory):
+def start_nameko_server(compile_proto, spec_dir, container_factory, grpc_port):
     def make(service_name, proto_name=None):
         if proto_name is None:
             proto_name = service_name
@@ -209,7 +224,7 @@ def start_nameko_server(compile_proto, spec_dir, container_factory):
         service_module = import_module("{}_nameko".format(proto_name))
         service_cls = getattr(service_module, service_name)
 
-        container = container_factory(service_cls, {})
+        container = container_factory(service_cls, {"GRPC_BIND_PORT": grpc_port})
         container.start()
 
         return container
@@ -218,7 +233,7 @@ def start_nameko_server(compile_proto, spec_dir, container_factory):
 
 
 @pytest.fixture
-def start_nameko_client(compile_proto, spec_dir):
+def start_nameko_client(compile_proto, spec_dir, grpc_port):
 
     clients = []
 
@@ -228,7 +243,7 @@ def start_nameko_client(compile_proto, spec_dir):
         _, stubs = compile_proto(proto_name)
 
         stub_cls = getattr(stubs, "{}Stub".format(service_name))
-        client = Client("//127.0.0.1", stub_cls)
+        client = Client("//127.0.0.1:{}".format(grpc_port), stub_cls)
         clients.append(client)
         return client.start()
 

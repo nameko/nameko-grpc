@@ -22,19 +22,21 @@ def call(fifo_in, fifo_out, method):
 
 if __name__ == "__main__":
 
-    spec_path = sys.argv[1]
+    port = sys.argv[1]
+
+    spec_path = sys.argv[2]
     sys.path.append(spec_path)
 
-    proto_name = sys.argv[2]
-    service_name = sys.argv[3]
+    proto_name = sys.argv[3]
+    service_name = sys.argv[4]
 
     grpc_module = import_module("{}_pb2_grpc".format(proto_name))
     stub_cls = getattr(grpc_module, "{}Stub".format(service_name))
 
-    command_fifo_path = sys.argv[4]
+    command_fifo_path = sys.argv[5]
     command_fifo = FifoPipe.wrap(command_fifo_path)
 
-    channel = grpc.insecure_channel("127.0.0.1:50051")
+    channel = grpc.insecure_channel("127.0.0.1:{}".format(port))
     stub = stub_cls(channel)
 
     while True:

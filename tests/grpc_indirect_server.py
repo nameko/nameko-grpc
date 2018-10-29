@@ -12,11 +12,13 @@ _ONE_DAY_IN_SECONDS = 60 * 60 * 24
 
 if __name__ == "__main__":
 
-    source_dir = sys.argv[1]
+    port = sys.argv[1]
+
+    source_dir = sys.argv[2]
     sys.path.append(source_dir)
 
-    proto_name = sys.argv[2]
-    service_name = sys.argv[3]
+    proto_name = sys.argv[3]
+    service_name = sys.argv[4]
 
     service_module = import_module("{}_grpc".format(proto_name))
     service_cls = getattr(service_module, service_name)
@@ -27,7 +29,7 @@ if __name__ == "__main__":
     def serve():
         server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
         add_servicer(service_cls(), server)
-        server.add_insecure_port("[::]:50051")
+        server.add_insecure_port("[::]:{}".format(port))
         server.start()
         try:
             while True:
