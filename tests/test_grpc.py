@@ -59,7 +59,9 @@ class TestStandard:
         assert response.message == "A"
 
     def test_unary_stream(self, client, protobufs):
-        responses = client.unary_stream(protobufs.ExampleRequest(value="A"))
+        responses = client.unary_stream(
+            protobufs.ExampleRequest(value="A", response_count=2)
+        )
         assert [(response.message, response.seqno) for response in responses] == [
             ("A", 1),
             ("A", 2),
@@ -108,7 +110,7 @@ class TestFuture:
 
     def test_unary_stream(self, client, protobufs):
         responses_future = client.unary_stream.future(
-            protobufs.ExampleRequest(value="A")
+            protobufs.ExampleRequest(value="A", response_count=2)
         )
         responses = responses_future.result()
         assert [(response.message, response.seqno) for response in responses] == [
@@ -154,10 +156,10 @@ class TestConcurrency:
 
     def test_unary_stream(self, client, protobufs):
         responses_a_future = client.unary_stream.future(
-            protobufs.ExampleRequest(value="A")
+            protobufs.ExampleRequest(value="A", response_count=2)
         )
         responses_b_future = client.unary_stream.future(
-            protobufs.ExampleRequest(value="B")
+            protobufs.ExampleRequest(value="B", response_count=2)
         )
         responses_a = responses_a_future.result()
         responses_b = responses_b_future.result()
@@ -233,7 +235,9 @@ class TestDependencyProvider:
         assert response.message == "A"
 
     def test_unary_stream(self, client, protobufs):
-        responses = client.unary_stream(protobufs.ExampleRequest(value="A"))
+        responses = client.unary_stream(
+            protobufs.ExampleRequest(value="A", response_count=2)
+        )
         assert [(response.message, response.seqno) for response in responses] == [
             ("A", 1),
             ("A", 2),
@@ -297,7 +301,9 @@ class TestMultipleClients:
         for index in range(number_of_clients):
             client = client_factory("example")
             responses_future = client.unary_stream.future(
-                protobufs.ExampleRequest(value=string.ascii_uppercase[index])
+                protobufs.ExampleRequest(
+                    value=string.ascii_uppercase[index], response_count=2
+                )
             )
             futures.append(responses_future)
 
@@ -422,7 +428,8 @@ class TestDeadlineExceededAtClient:
     def test_timeout_while_streaming_result(self, client, protobufs):
 
         res = client.unary_stream(
-            protobufs.ExampleRequest(value="A", delay=50), timeout=0.05
+            protobufs.ExampleRequest(value="A", delay=10, response_count=10),
+            timeout=0.05,
         )
         with pytest.raises(GrpcError) as error:
             list(res)
