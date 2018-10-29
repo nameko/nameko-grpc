@@ -116,7 +116,14 @@ class Future:
 
 def bucket_timeout(value):
     buckets = OrderedDict(
-        {0.000000001: "n", 0.000001: "u", 0.001: "m", 1: "S", 60: "M", 3600: "H"}
+        [
+            (0.000000001, "n"),
+            (0.000001, "u"),
+            (0.001, "m"),
+            (1, "S"),
+            (60, "M"),
+            (3600, "H"),
+        ]
     )
     for period in buckets:
         if value // period > 1:
