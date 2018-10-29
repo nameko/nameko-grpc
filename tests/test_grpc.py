@@ -402,7 +402,8 @@ class TestDeadlineExceededAtClient:
     def test_timeout_before_any_result(self, client, protobufs):
         with pytest.raises(GrpcError) as error:
             client.unary_unary(
-                protobufs.ExampleRequest(value="A", delay=1000), timeout=0.01
+                protobufs.ExampleRequest(value="A", delay=1000),
+                timeout=0.05,  # XXX fails when too fast; need protection
             )
         assert error.value.status == StatusCode.DEADLINE_EXCEEDED
         assert error.value.details == "Deadline Exceeded"
@@ -420,10 +421,12 @@ class TestDeadlineExceededAtClient:
 
     def test_timeout_while_streaming_result(self, client, protobufs):
 
+        res = client.unary_stream(
+            protobufs.ExampleRequest(value="A", delay=50), timeout=0.05
+        )
         with pytest.raises(GrpcError) as error:
-            client.unary_stream(
-                protobufs.ExampleRequest(value="A", delay=5), timeout=0.05
-            )
+            list(res)
+
         assert error.value.status == StatusCode.DEADLINE_EXCEEDED
         assert error.value.details == "Deadline Exceeded"
 

@@ -10,9 +10,16 @@ import pytest
 from nameko.testing.utils import find_free_port
 
 from nameko_grpc.client import Client
-from nameko_grpc.exceptions import GrpcError
 
-from helpers import Config, FifoPipe, StreamAborted, isiterable, receive, send
+from helpers import (
+    Config,
+    FifoPipe,
+    StreamAborted,
+    isiterable,
+    receive,
+    receive_wrapper,
+    send,
+)
 
 
 def pytest_addoption(parser):
@@ -173,9 +180,8 @@ def start_grpc_client(
 
         def result(self):
             res = receive(self.fifo)
-            if isinstance(res, GrpcError):
-                raise res
-            return res
+            # inspect and re-raise any GrpcErrors in the stream
+            return receive_wrapper(res)
 
     class Method:
         def __init__(self, fifo, name):
@@ -221,6 +227,7 @@ def start_grpc_client(
         return Client(client_fifo)
 
     yield make
+
     populate.abort = True
 
     for fifo in client_fifos:

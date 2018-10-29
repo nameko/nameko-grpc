@@ -7,45 +7,24 @@ import grpc
 
 from nameko_grpc.exceptions import GrpcError
 
-from helpers import FifoPipe, StreamAborted, isiterable, receive, send
-
-
-def populate(iterable):
-    print(">>> POP ITER")
-    for item in iterable:
-        print(">>> SEND", item)
-        if populate.abort:
-            print(">> ABORT")
-            raise StreamAborted()
-        yield item
-
-
-populate.abort = False
+from helpers import FifoPipe, receive, send, send_wrapper
 
 
 def call(fifo_in, fifo_out, method, kwargs):
-    request = receive(fifo_in)
     try:
+        request = receive(fifo_in)
         response = method(request, **kwargs)
-        if isiterable(response):
-            response = populate(response)
     except grpc.RpcError as exc:
         state = exc._state
         response = GrpcError(state.code, state.details, state.debug_error_string)
 
-    try:
-        print(">>> FIRST SEND", response)
-        send(fifo_out, response)  # XXX what happens when THIS errors?
-    except grpc.RpcError as exc:
-        populate.abort = True
-        state = exc._state
-        response = GrpcError(state.code, state.details, state.debug_error_string)
-        print(">>> TWOND SEND", response)
-        import pdb
+    response = send_wrapper(response)  # catch and send any GrpcErrors in the stream
+    send(fifo_out, response)
 
-        pdb.set_trace()
-        send(fifo_out, response)
-        print(">>> DONE")
+    # (additionally sender wrapper could support early termination so we can get
+    # rid of StreamAborted ugliness. just "close" it like we do in the normal
+    # client; only difference is that here we don't have the explicit "closing
+    # because fo a timeout" hook, we close because the test is over)
 
 
 if __name__ == "__main__":

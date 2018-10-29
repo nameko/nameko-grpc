@@ -4,7 +4,10 @@ import pickle
 import time
 import uuid
 
+import grpc
 from eventlet import tpool
+
+from nameko_grpc.exceptions import GrpcError
 
 
 class StreamAborted(Exception):
@@ -35,10 +38,34 @@ def isiterable(req):
         return False
 
 
-# def abortable_request(request):
-#     if isiterable(request):
-#         request = make_abortable(request)
-#     return request
+def receive_wrapper(res):
+    if not isiterable(res):
+        if isinstance(res, GrpcError):
+            raise res
+        return res
+    return receive_iter(res)
+
+
+def receive_iter(res):
+    for item in res:
+        if isinstance(item, GrpcError):
+            raise item
+        yield item
+
+
+def send_wrapper(res):
+    if not isiterable(res):
+        return res
+    return send_iter(res)
+
+
+def send_iter(res):
+    try:
+        for item in res:
+            yield item
+    except grpc.RpcError as exc:
+        state = exc._state
+        yield GrpcError(state.code, state.details, state.debug_error_string)
 
 
 class FifoPipe:

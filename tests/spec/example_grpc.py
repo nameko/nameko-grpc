@@ -13,10 +13,12 @@ class example(example_pb2_grpc.exampleServicer):
         return ExampleReply(message=message)
 
     def unary_stream(self, request, context):
+        message = request.value * (request.multiplier or 1)
         if request.delay:
             time.sleep(request.delay / 1000)
-        message = request.value * (request.multiplier or 1)
         yield ExampleReply(message=message, seqno=1)
+        if request.delay:
+            time.sleep(request.delay / 1000)
         yield ExampleReply(message=message, seqno=2)
 
     def stream_unary(self, request, context):
