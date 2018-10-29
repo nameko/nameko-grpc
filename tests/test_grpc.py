@@ -209,11 +209,13 @@ class TestConcurrency:
 
 class TestDependencyProvider:
     @pytest.fixture
-    def client(self, container_factory, stubs, server):
+    def client(self, container_factory, stubs, server, grpc_port):
         class Service:
             name = "caller"
 
-            example_grpc = GrpcProxy("//127.0.0.1", stubs.exampleStub)
+            example_grpc = GrpcProxy(
+                "//127.0.0.1:{}".format(grpc_port), stubs.exampleStub
+            )
 
             @dummy
             def call(self):
