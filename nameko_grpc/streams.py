@@ -2,10 +2,6 @@
 import struct
 from queue import Empty, Queue
 
-from grpc._common import CYGRPC_STATUS_CODE_TO_STATUS_CODE
-
-from nameko_grpc.exceptions import GrpcError
-
 
 HEADER_LENGTH = 5
 
@@ -40,12 +36,15 @@ class ByteBuffer:
 
 class ReceiveStream:
 
+    # XXX better API?: replace iterator with a .consume(message_type) interface
+    # so the message type lives _outside_ this class. bytes in, messages(of_type) out.
+    # move smarts of dealing with message types and headers outside to whatever is
+    # iterating over the messages [this is the client, though :/]
     _message_type = None
 
     def __init__(self, stream_id):
         self.stream_id = stream_id
 
-        self.headers = {}  # XXX should this live here?
         self.message_queue = Queue()
         self.buffer = ByteBuffer()
 
@@ -59,8 +58,8 @@ class ReceiveStream:
             raise ValueError("Message type already set")
         self._message_type = value
 
-    def close(self):
-        self.message_queue.put(STREAM_END)
+    def close(self, exception=None):
+        self.message_queue.put(exception or STREAM_END)
 
     def write(self, data):
 
@@ -89,31 +88,19 @@ class ReceiveStream:
 
         self.message_queue.put(message)
 
-    def check_status(self):
-        status = int(self.headers.get("grpc-status", 0))
-        if status > 0:
-            message = self.headers.get("grpc-message", "")
-            raise GrpcError(
-                status=CYGRPC_STATUS_CODE_TO_STATUS_CODE[status],
-                details=message,
-                debug_error_string="<generate traceback>",
-            )
-
     def __iter__(self):
         return self
 
     def __next__(self):
         message = self.message_queue.get()
-        self.check_status()
-        if message is STREAM_END:
+        if isinstance(message, Exception):
+            raise message
+        elif message is STREAM_END:
             raise StopIteration()
         return message
 
 
 class SendStream:
-
-    # TODO send-stream should have headers for capturing metadata too?
-
     class Closed(Exception):
         pass
 
@@ -133,9 +120,12 @@ class SendStream:
         self.queue.put(STREAM_END)
 
     def populate(self, iterable):
-        for item in iterable:
-            self.put(item)
-        self.close()
+        try:
+            for item in iterable:
+                self.put(item)
+            self.close()
+        except SendStream.Closed:
+            pass  # closed early
 
     def put(self, message):
         if self.closed:

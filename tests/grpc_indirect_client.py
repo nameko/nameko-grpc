@@ -7,17 +7,45 @@ import grpc
 
 from nameko_grpc.exceptions import GrpcError
 
-from helpers import FifoPipe, receive, send
+from helpers import FifoPipe, StreamAborted, isiterable, receive, send
 
 
-def call(fifo_in, fifo_out, method):
+def populate(iterable):
+    print(">>> POP ITER")
+    for item in iterable:
+        print(">>> SEND", item)
+        if populate.abort:
+            print(">> ABORT")
+            raise StreamAborted()
+        yield item
+
+
+populate.abort = False
+
+
+def call(fifo_in, fifo_out, method, kwargs):
     request = receive(fifo_in)
     try:
-        response = method(request)
+        response = method(request, **kwargs)
+        if isiterable(response):
+            response = populate(response)
     except grpc.RpcError as exc:
         state = exc._state
         response = GrpcError(state.code, state.details, state.debug_error_string)
-    send(fifo_out, response)
+
+    try:
+        print(">>> FIRST SEND", response)
+        send(fifo_out, response)  # XXX what happens when THIS errors?
+    except grpc.RpcError as exc:
+        populate.abort = True
+        state = exc._state
+        response = GrpcError(state.code, state.details, state.debug_error_string)
+        print(">>> TWOND SEND", response)
+        import pdb
+
+        pdb.set_trace()
+        send(fifo_out, response)
+        print(">>> DONE")
 
 
 if __name__ == "__main__":
@@ -53,6 +81,8 @@ if __name__ == "__main__":
         method = getattr(stub, config.method_name)
 
         thread = threading.Thread(
-            target=call, name=config.method_name, args=(in_fifo, out_fifo, method)
+            target=call,
+            name=config.method_name,
+            args=(in_fifo, out_fifo, method, config.kwargs),
         )
         thread.start()

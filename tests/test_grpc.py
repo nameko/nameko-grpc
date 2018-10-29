@@ -2,6 +2,7 @@
 import random
 import re
 import string
+import time
 
 import pytest
 from grpc import StatusCode
@@ -259,6 +260,8 @@ class TestDependencyProvider:
 
 
 class TestMultipleClients:
+
+    # TODO really no point checking this with grpc client?
     @pytest.fixture(params=["grpc_client", "nameko_client"])
     def client_factory(self, request, server):
         if "grpc" in request.param:
@@ -390,5 +393,44 @@ class TestMethodNotFound:
         assert error.value.details == "Method not found!"
 
 
-# class TestTimeouts:
-#     pass
+class TestDeadlineExceededAtClient:
+    @pytest.fixture
+    def protobufs(self, compile_proto, spec_dir):
+        protobufs, _ = compile_proto("example")
+        return protobufs
+
+    def test_timeout_before_any_result(self, client, protobufs):
+        with pytest.raises(GrpcError) as error:
+            client.unary_unary(
+                protobufs.ExampleRequest(value="A", delay=1000), timeout=0.01
+            )
+        assert error.value.status == StatusCode.DEADLINE_EXCEEDED
+        assert error.value.details == "Deadline Exceeded"
+
+    def test_timeout_while_streaming_request(self, client, protobufs):
+        def generate_requests(values):
+            for value in values:
+                time.sleep(0.01)
+                yield protobufs.ExampleRequest(value=value)
+
+        with pytest.raises(GrpcError) as error:
+            client.stream_unary(generate_requests(string.ascii_uppercase), timeout=0.05)
+        assert error.value.status == StatusCode.DEADLINE_EXCEEDED
+        assert error.value.details == "Deadline Exceeded"
+
+    def test_timeout_while_streaming_result(self, client, protobufs):
+
+        with pytest.raises(GrpcError) as error:
+            client.unary_stream(
+                protobufs.ExampleRequest(value="A", delay=5), timeout=0.05
+            )
+        assert error.value.status == StatusCode.DEADLINE_EXCEEDED
+        assert error.value.details == "Deadline Exceeded"
+
+
+class TestDeadlineExceededAtServer:
+    # must use nameko client here and mock it to ignore client timeouts
+    # OR allow client to raise but also assert that the (nameko) server gave up
+    # (need some way to insert a delay on the server side so we don't just process
+    # immediately? or is it ok to abort mid-response-stream?)
+    pass

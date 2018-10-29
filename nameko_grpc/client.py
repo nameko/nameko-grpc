@@ -2,14 +2,18 @@
 import itertools
 import socket
 import threading
+import time
 from collections import OrderedDict, deque
 from logging import getLogger
 from urllib.parse import urlparse
 
+from grpc import StatusCode
+from grpc._common import CYGRPC_STATUS_CODE_TO_STATUS_CODE
 from h2.errors import PROTOCOL_ERROR  # changed under h2 from 2.6.4?
 
 from nameko_grpc.connection import ConnectionManager
 from nameko_grpc.constants import Cardinality
+from nameko_grpc.exceptions import GrpcError
 from nameko_grpc.inspection import Inspector
 from nameko_grpc.streams import ReceiveStream, SendStream
 
@@ -71,7 +75,18 @@ class ClientConnectionManager(ConnectionManager):
         if response_stream is None:
             # response for unknown stream, exit?
             self.conn.reset_stream(stream_id, error_code=PROTOCOL_ERROR)
-        response_stream.headers = OrderedDict(headers)
+            return
+
+        headers = OrderedDict(headers)
+        status = int(headers.get("grpc-status", 0))
+        if status > 0:
+            message = headers.get("grpc-message", "")
+            exc = GrpcError(
+                status=CYGRPC_STATUS_CODE_TO_STATUS_CODE[status],
+                details=message,
+                debug_error_string="<generate traceback>",
+            )
+            response_stream.close(exc)
 
     def send_pending_requests(self):
         """ Initiate requests for any pending invocations.
@@ -99,46 +114,57 @@ class Future:
         return response
 
 
+def bucket_timeout(value):
+    buckets = OrderedDict(
+        {0.000000001: "n", 0.000001: "u", 0.001: "m", 1: "S", 60: "M", 3600: "H"}
+    )
+    for period in buckets:
+        if value // period > 1:
+            last_period = period
+        else:
+            break
+    return "{}{}".format(int(value / last_period), buckets[last_period])
+
+
 class Method:
     def __init__(self, client, name):
         self.client = client
         self.name = name
 
-    def __call__(self, request):
-        return self.future(request).result()
+    def __call__(self, request, timeout=None):
+        return self.future(request, timeout=timeout).result()
 
-    def future(self, request):
+    def future(self, request, timeout=None):
         inspector = Inspector(self.client.stub)
 
         cardinality = inspector.cardinality_for_method(self.name)
         input_type = inspector.input_type_for_method(self.name)
         output_type = inspector.output_type_for_method(self.name)
+        service_name = inspector.service_name
 
         request_headers = [
             (":method", "POST"),
             (":scheme", "http"),
             (":authority", urlparse(self.client.target).hostname),
             (":path", "/{}/{}".format(inspector.service_name, self.name)),
-            # TODO timeout support
-            # ("grpc-timeout", "5M"),
             ("te", "trailers"),
             ("content-type", "application/grpc+proto"),
             ("user-agent", USER_AGENT),
             # TODO compression support
             ("grpc-encoding", "identity"),  # gzip, deflate, snappy
-            (
-                "grpc-message-type",
-                "{}.{}".format(inspector.service_name, input_type.__name__),
-            ),
+            ("grpc-message-type", "{}.{}".format(service_name, input_type.__name__)),
             # TODO compression support
             ("grpc-accept-encoding", "identity"),  # gzip, deflate, snappy
             # TODO applicatiom headers
             # application headers, base64 or binary
         ]
 
+        if timeout is not None:
+            request_headers.append(("grpc-timeout", bucket_timeout(timeout)))
+
         if cardinality in (Cardinality.UNARY_UNARY, Cardinality.UNARY_STREAM):
             request = (request,)
-        resp = self.client.invoke(request_headers, output_type, request)
+        resp = self.client.invoke(request_headers, output_type, request, timeout)
 
         return Future(resp, cardinality)
 
@@ -184,8 +210,33 @@ class Client:
             self.manager.stop()
             self.sock.close()
 
-    def invoke(self, request_headers, output_type, request):
+    def timeout(self, send_stream, response_stream, deadline):
+        start = time.time()
+        while True:
+            elapsed = time.time() - start
+            if elapsed > deadline:
+                exc = GrpcError(
+                    status=StatusCode.DEADLINE_EXCEEDED,
+                    details="Deadline Exceeded",
+                    debug_error_string="<traceback>",
+                )
+                try:
+                    response_stream.close(exc)
+                except ReceiveStream.Closed:  # XXX not a thing; do we need this?
+                    pass  # already completed
+                try:
+                    send_stream.close()
+                except SendStream.Closed:
+                    pass  # already sent all the data
+                break
+            time.sleep(0.001)
+
+    def invoke(self, request_headers, output_type, request, timeout):
         send_stream, response_stream = self.manager.send_request(request_headers)
         response_stream.message_type = output_type
+        if timeout:
+            threading.Thread(
+                target=self.timeout, args=(send_stream, response_stream, timeout)
+            ).start()
         threading.Thread(target=send_stream.populate, args=(request,)).start()
         return response_stream

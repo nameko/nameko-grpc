@@ -7,11 +7,16 @@ import uuid
 from eventlet import tpool
 
 
+class StreamAborted(Exception):
+    pass
+
+
 class Config:
-    def __init__(self, method_name, in_fifo, out_fifo):
+    def __init__(self, method_name, in_fifo, out_fifo, kwargs):
         self.method_name = method_name
         self.in_fifo = in_fifo
         self.out_fifo = out_fifo
+        self.kwargs = kwargs
 
 
 class NewStream:
@@ -28,6 +33,12 @@ def isiterable(req):
         return True
     except TypeError:
         return False
+
+
+# def abortable_request(request):
+#     if isiterable(request):
+#         request = make_abortable(request)
+#     return request
 
 
 class FifoPipe:
@@ -96,10 +107,13 @@ def receive(fifo):
 
 
 def send_stream(stream_fifo, result):
-    for msg in result:
-        stream_fifo.dump(msg)
-        time.sleep(0.01)
-    stream_fifo.dump(None)
+    try:
+        for msg in result:
+            stream_fifo.dump(msg)
+            time.sleep(0.01)
+        stream_fifo.dump(None)
+    except StreamAborted:
+        pass
 
 
 def send(fifo, result):

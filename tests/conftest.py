@@ -2,6 +2,7 @@
 import os
 import subprocess
 import sys
+import threading
 import time
 from importlib import import_module
 
@@ -11,7 +12,7 @@ from nameko.testing.utils import find_free_port
 from nameko_grpc.client import Client
 from nameko_grpc.exceptions import GrpcError
 
-from helpers import Config, FifoPipe, receive, send
+from helpers import Config, FifoPipe, StreamAborted, isiterable, receive, send
 
 
 def pytest_addoption(parser):
@@ -158,6 +159,14 @@ def start_grpc_client(
 
     client_fifos = []
 
+    def populate(request):
+        for req in request:
+            if populate.abort:
+                raise StreamAborted()
+            yield req
+
+    populate.abort = False
+
     class Result:
         def __init__(self, fifo):
             self.fifo = fifo
@@ -173,14 +182,16 @@ def start_grpc_client(
             self.fifo = fifo
             self.name = name
 
-        def __call__(self, request):
-            return self.future(request).result()
+        def __call__(self, request, **kwargs):
+            return self.future(request, **kwargs).result()
 
-        def future(self, request):
+        def future(self, request, **kwargs):
             in_fifo = make_fifo()
             out_fifo = make_fifo()
-            send(self.fifo, Config(self.name, in_fifo.path, out_fifo.path))
-            send(in_fifo, request)
+            send(self.fifo, Config(self.name, in_fifo.path, out_fifo.path, kwargs))
+            if isiterable(request):
+                request = populate(request)
+            threading.Thread(target=send, args=(in_fifo, request)).start()
             return Result(out_fifo)
 
     class Client:
@@ -210,6 +221,7 @@ def start_grpc_client(
         return Client(client_fifo)
 
     yield make
+    populate.abort = True
 
     for fifo in client_fifos:
         send(fifo, None)
