@@ -8,7 +8,6 @@ from logging import getLogger
 from urllib.parse import urlparse
 
 from grpc import StatusCode
-from grpc._common import CYGRPC_STATUS_CODE_TO_STATUS_CODE
 from h2.errors import PROTOCOL_ERROR  # changed under h2 from 2.6.4?
 
 from nameko_grpc.connection import ConnectionManager
@@ -16,6 +15,7 @@ from nameko_grpc.constants import Cardinality
 from nameko_grpc.exceptions import GrpcError
 from nameko_grpc.inspection import Inspector
 from nameko_grpc.streams import ReceiveStream, SendStream
+from nameko_grpc.timeout import bucket_timeout
 
 
 log = getLogger(__name__)
@@ -68,24 +68,31 @@ class ClientConnectionManager(ConnectionManager):
     def response_received(self, headers, stream_id):
         """ Called when a response is received on a stream.
 
-        If the response contains an error, we should capture it here.
+        If the headers contain an error, we should raise it here.
         """
         super().response_received(headers, stream_id)
+        self.handle_status(headers, stream_id)
+
+    def trailers_received(self, headers, stream_id):
+        """ Called when trailers are received on a stream.
+
+        If the trailers contain an error, we should raise it here.
+        """
+        super().trailers_received(headers, stream_id)
+        self.handle_status(headers, stream_id)
+
+    def handle_status(self, headers, stream_id):
+        """ Handle the status of a GRPC stream.
+        """
         response_stream = self.receive_streams.get(stream_id)
         if response_stream is None:
-            # response for unknown stream, exit?
             self.conn.reset_stream(stream_id, error_code=PROTOCOL_ERROR)
             return
 
         headers = OrderedDict(headers)
         status = int(headers.get("grpc-status", 0))
         if status > 0:
-            message = headers.get("grpc-message", "")
-            exc = GrpcError(
-                status=CYGRPC_STATUS_CODE_TO_STATUS_CODE[status],
-                details=message,
-                debug_error_string="<generate traceback>",
-            )
+            exc = GrpcError.from_headers(headers)
             response_stream.close(exc)
 
     def send_pending_requests(self):
@@ -112,25 +119,6 @@ class Future:
         if self.cardinality in (Cardinality.STREAM_UNARY, Cardinality.UNARY_UNARY):
             response = next(response)
         return response
-
-
-def bucket_timeout(value):
-    buckets = OrderedDict(
-        [
-            (0.000000001, "n"),
-            (0.000001, "u"),
-            (0.001, "m"),
-            (1, "S"),
-            (60, "M"),
-            (3600, "H"),
-        ]
-    )
-    for period in buckets:
-        if value // period > 1:
-            last_period = period
-        else:
-            break
-    return "{}{}".format(int(value / last_period), buckets[last_period])
 
 
 class Method:

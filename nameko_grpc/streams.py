@@ -38,8 +38,7 @@ class ReceiveStream:
 
     # XXX better API?: replace iterator with a .consume(message_type) interface
     # so the message type lives _outside_ this class. bytes in, messages(of_type) out.
-    # move smarts of dealing with message types and headers outside to whatever is
-    # iterating over the messages [this is the client, though :/]
+
     _message_type = None
 
     def __init__(self, stream_id):
@@ -88,6 +87,10 @@ class ReceiveStream:
 
         self.message_queue.put(message)
 
+    def consume(self, message_type):
+        # TODO
+        pass
+
     def __iter__(self):
         return self
 
@@ -115,9 +118,9 @@ class SendStream:
     def exhausted(self):
         return self.closed and self.queue.empty() and self.buffer.empty()
 
-    def close(self):
+    def close(self, exception=None):
         self.closed = True
-        self.queue.put(STREAM_END)
+        self.queue.put(exception or STREAM_END)
 
     def populate(self, iterable):
         try:
@@ -150,6 +153,8 @@ class SendStream:
                 break
             if message is STREAM_END:
                 break
+            if isinstance(message, Exception):
+                raise message
 
             body = message.SerializeToString()
             data = struct.pack("?", False) + struct.pack(">I", len(body)) + body

@@ -4,6 +4,7 @@ import subprocess
 import sys
 import threading
 import time
+import uuid
 from importlib import import_module
 
 import pytest
@@ -14,6 +15,7 @@ from nameko_grpc.client import Client
 from helpers import (
     Config,
     FifoPipe,
+    RequestResponseStash,
     StreamAborted,
     isiterable,
     receive,
@@ -326,3 +328,10 @@ def stubs(compile_proto):
 def protobufs(compile_proto):
     protobufs, _ = compile_proto("example")
     return protobufs
+
+
+@pytest.fixture
+def instrumented(tmpdir_factory):
+    stashes = tmpdir_factory.mktemp("instrument_stashes")
+    stash_file = stashes.join(str(uuid.uuid4()))
+    return RequestResponseStash(stash_file.strpath)

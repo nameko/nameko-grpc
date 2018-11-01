@@ -5,6 +5,7 @@ import time
 import uuid
 
 import grpc
+import wrapt
 from eventlet import tpool
 
 from nameko_grpc.exceptions import GrpcError
@@ -66,6 +67,87 @@ def send_iter(res):
     except grpc.RpcError as exc:
         state = exc._state
         yield GrpcError(state.code, state.details, state.debug_error_string)
+
+
+class RequestResponseStash:
+
+    REQUEST = "REQ"
+    RESPONSE = "RES"
+
+    def __init__(self, path):
+        self.path = path
+
+    def write(self, value, type_):
+        if not self.path:
+            return
+
+        with open(self.path, "ab") as fh:
+            fh.write(pickle.dumps((type_, value)) + b"|")
+
+    def write_request(self, req):
+        self.write(req, self.REQUEST)
+
+    def write_response(self, res):
+        self.write(res, self.RESPONSE)
+
+    def read(self):
+        if not self.path or not os.path.exists(self.path):
+            return []
+
+        with open(self.path, "rb") as fh:
+            data = fh.read()
+
+        for item in data.split(b"|"):
+            if item:
+                yield pickle.loads(item)
+
+    def requests(self):
+        for type_, item in self.read():
+            if type_ == self.REQUEST:
+                yield item
+
+    def responses(self):
+        for type_, item in self.read():
+            if type_ == self.RESPONSE:
+                yield item
+
+
+@wrapt.decorator
+def instrumented(wrapped, instance, args, kwargs):
+    """ Decorator for instrumenting GRPC implementation methods.
+
+    Stores requests and responses to file for later inspection.
+    """
+    (request, context) = args
+
+    stash = None
+
+    def stashing_iterator(iterable, type_):
+        for item in iterable:
+            nonlocal stash
+            if stash is None:
+                stash = RequestResponseStash(item.stash)
+            stash.write(item, type_)
+            yield item
+
+    if not isiterable(request):
+        if stash is None:
+            stash = RequestResponseStash(request.stash)
+        stash = RequestResponseStash(request.stash)
+        stash.write_request(request)
+    else:
+        request = stashing_iterator(request, RequestResponseStash.REQUEST)
+
+    response = wrapped(*args, **kwargs)
+
+    if not isiterable(response):
+        if stash is None:
+            stash = RequestResponseStash(response.stash)
+        stash.write_response(response)
+    else:
+        response = stashing_iterator(response, RequestResponseStash.RESPONSE)
+
+    return response
 
 
 class FifoPipe:
