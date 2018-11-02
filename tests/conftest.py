@@ -13,13 +13,12 @@ from nameko.testing.utils import find_free_port
 from nameko_grpc.client import Client
 
 from helpers import (
+    AbortableIterator,
     Config,
     FifoPipe,
+    RaisingReceiver,
     RequestResponseStash,
-    StreamAborted,
-    isiterable,
     receive,
-    receive_wrapper,
     send,
 )
 
@@ -167,14 +166,12 @@ def start_grpc_client(
     client_script = os.path.join(os.path.dirname(__file__), "grpc_indirect_client.py")
 
     client_fifos = []
+    aborts = []
 
-    def populate(request):
-        for req in request:
-            if populate.abort:
-                raise StreamAborted()
-            yield req
-
-    populate.abort = False
+    def make_abortable(value):
+        abort, iterable = AbortableIterator.wrap(value)
+        aborts.append(abort)
+        return iterable
 
     class Result:
         def __init__(self, fifo):
@@ -182,8 +179,7 @@ def start_grpc_client(
 
         def result(self):
             res = receive(self.fifo)
-            # inspect and re-raise any GrpcErrors in the stream
-            return receive_wrapper(res)
+            return RaisingReceiver.wrap(res)
 
     class Method:
         def __init__(self, fifo, name):
@@ -197,8 +193,7 @@ def start_grpc_client(
             in_fifo = make_fifo()
             out_fifo = make_fifo()
             send(self.fifo, Config(self.name, in_fifo.path, out_fifo.path, kwargs))
-            if isiterable(request):
-                request = populate(request)
+            request = make_abortable(request)
             threading.Thread(target=send, args=(in_fifo, request)).start()
             return Result(out_fifo)
 
@@ -230,8 +225,11 @@ def start_grpc_client(
 
     yield make
 
-    populate.abort = True
+    # abort any streams still sending
+    for abort in aborts:
+        abort()
 
+    # shut down indirect clients
     for fifo in client_fifos:
         send(fifo, None)
 

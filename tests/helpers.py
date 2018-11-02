@@ -39,34 +39,82 @@ def isiterable(req):
         return False
 
 
-def receive_wrapper(res):
-    if not isiterable(res):
-        if isinstance(res, GrpcError):
-            raise res
-        return res
-    return receive_iter(res)
+class AbortableIterator:
+    class Aborted(Exception):
+        pass
 
+    def __init__(self, value):
+        self.value = value
+        self.aborted = False
 
-def receive_iter(res):
-    for item in res:
-        if isinstance(item, GrpcError):
-            raise item
-        yield item
+    def abort(self):
+        self.aborted = True
 
-
-def send_wrapper(res):
-    if not isiterable(res):
-        return res
-    return send_iter(res)
-
-
-def send_iter(res):
-    try:
-        for item in res:
+    def iterate(self):
+        for item in self.value:
+            if self.aborted:
+                raise AbortableIterator.Aborted()
             yield item
-    except grpc.RpcError as exc:
-        state = exc._state
-        yield GrpcError(state.code, state.details, state.debug_error_string)
+
+    def result(self):
+        if not isiterable(self.value):
+            return self.value
+        return self.iterate()
+
+    @classmethod
+    def wrap(cls, value):
+        instance = cls(value)
+        return instance.abort, instance.result()
+
+
+class RaisingReceiver:
+    """ Inspect and re-raise any GrpcErrors in the stream
+    """
+
+    def __init__(self, value):
+        self.value = value
+
+    def iterate(self):
+        for item in self.value:
+            if isinstance(item, GrpcError):
+                raise item
+            yield item
+
+    def result(self):
+        if not isiterable(self.value):
+            if isinstance(self.value, GrpcError):
+                raise self.value
+            return self.value
+        return self.iterate()
+
+    @classmethod
+    def wrap(cls, value):
+        return cls(value).result()
+
+
+class SafeSender:
+    """ Catch and send any GrpcErrors in the stream
+    """
+
+    def __init__(self, value):
+        self.value = value
+
+    def iterate(self):
+        try:
+            for item in self.value:
+                yield item
+        except grpc.RpcError as exc:
+            state = exc._state
+            yield GrpcError(state.code, state.details, state.debug_error_string)
+
+    def result(self):
+        if not isiterable(self.value):
+            return self.value
+        return self.iterate()
+
+    @classmethod
+    def wrap(cls, value):
+        return cls(value).result()
 
 
 class RequestResponseStash:
@@ -221,7 +269,7 @@ def send_stream(stream_fifo, result):
             stream_fifo.dump(msg)
             time.sleep(0.01)
         stream_fifo.dump(None)
-    except StreamAborted:
+    except AbortableIterator.Aborted:
         pass
 
 

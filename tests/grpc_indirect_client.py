@@ -7,24 +7,19 @@ import grpc
 
 from nameko_grpc.exceptions import GrpcError
 
-from helpers import FifoPipe, receive, send, send_wrapper
+from helpers import FifoPipe, SafeSender, receive, send
 
 
 def call(fifo_in, fifo_out, method, kwargs):
+    request = receive(fifo_in)
     try:
-        request = receive(fifo_in)
         response = method(request, **kwargs)
     except grpc.RpcError as exc:
         state = exc._state
         response = GrpcError(state.code, state.details, state.debug_error_string)
 
-    response = send_wrapper(response)  # catch and send any GrpcErrors in the stream
+    response = SafeSender.wrap(response)
     send(fifo_out, response)
-
-    # (additionally sender wrapper could support early termination so we can get
-    # rid of StreamAborted ugliness. just "close" it like we do in the normal
-    # client; only difference is that here we don't have the explicit "closing
-    # because fo a timeout" hook, we close because the test is over)
 
 
 if __name__ == "__main__":

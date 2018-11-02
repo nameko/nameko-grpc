@@ -111,13 +111,12 @@ class GrpcServer(SharedExtension):
             if elapsed > deadline:
                 request_stream.close()
                 # XXX does server actually need to do this according to the spec?
-                # perhaps we could just _stop_ processing (somehow?)
+                # perhaps we could just close the stream.
                 exc = GrpcError(
                     status=StatusCode.DEADLINE_EXCEEDED,
                     details="Deadline Exceeded",
                     debug_error_string="<traceback>",
                 )
-                print(">>> TIMEOUT")
                 response_stream.close(exc)
                 break
             time.sleep(0.001)
