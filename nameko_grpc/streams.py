@@ -34,79 +34,7 @@ class ByteBuffer:
         return len(self.bytes)
 
 
-class ReceiveStream:
-
-    # XXX better API?: replace iterator with a .consume(message_type) interface
-    # so the message type lives _outside_ this class. bytes in, messages(of_type) out.
-
-    _message_type = None
-
-    def __init__(self, stream_id):
-        self.stream_id = stream_id
-
-        self.message_queue = Queue()
-        self.buffer = ByteBuffer()
-
-    @property
-    def message_type(self):
-        return self._message_type
-
-    @message_type.setter
-    def message_type(self, value):
-        if self._message_type is not None:
-            raise ValueError("Message type already set")
-        self._message_type = value
-
-    def close(self, exception=None):
-        self.message_queue.put(exception or STREAM_END)
-
-    def write(self, data):
-
-        self.buffer.write(data)
-
-        if self.message_type is None:
-            return
-
-        if len(self.buffer) < HEADER_LENGTH:
-            return
-
-        compressed_flag = struct.unpack("?", self.buffer.peek(slice(0, 1)))[0]
-        message_length = struct.unpack(">I", self.buffer.peek(slice(1, 5)))[0]
-
-        # TODO handle compression
-        if compressed_flag:
-            raise NotImplementedError
-
-        if len(self.buffer) < HEADER_LENGTH + message_length:
-            return
-
-        self.buffer.discard(HEADER_LENGTH)
-
-        message = self.message_type()
-        message.ParseFromString(bytes(self.buffer.read(message_length)))
-
-        self.message_queue.put(message)
-
-    def consume(self, message_type):
-        # TODO
-        pass
-
-    def __iter__(self):
-        return self
-
-    def __next__(self):
-        message = self.message_queue.get()
-        if isinstance(message, Exception):
-            raise message
-        elif message is STREAM_END:
-            raise StopIteration()
-        return message
-
-
-class SendStream:
-    class Closed(Exception):
-        pass
-
+class StreamBase:
     def __init__(self, stream_id):
         self.stream_id = stream_id
 
@@ -119,21 +47,73 @@ class SendStream:
         return self.closed and self.queue.empty() and self.buffer.empty()
 
     def close(self, exception=None):
+        """ Close this stream.
+
+        If closed with an exception, the exception will be raised when reading
+        or consuming from this stream.
+        """
         self.closed = True
         self.queue.put(exception or STREAM_END)
 
-    def populate(self, iterable):
-        try:
-            for item in iterable:
-                self.put(item)
-            self.close()
-        except SendStream.Closed:
-            pass  # closed early
 
-    def put(self, message):
+class ReceiveStream(StreamBase):
+    """ A stream that receives data as bytes to be iterated over as GRPC messages.
+    """
+
+    def write(self, data):
+        """ Write data to this stream, separating it into message-sized chunks.
+        """
         if self.closed:
-            raise SendStream.Closed()
-        self.queue.put(message)
+            return
+
+        self.buffer.write(data)
+
+        while True:
+
+            if len(self.buffer) < HEADER_LENGTH:
+                break
+
+            compressed_flag = struct.unpack("?", self.buffer.peek(slice(0, 1)))[0]
+            message_length = struct.unpack(">I", self.buffer.peek(slice(1, 5)))[0]
+
+            # TODO handle compression
+            if compressed_flag:
+                raise NotImplementedError
+
+            if len(self.buffer) < HEADER_LENGTH + message_length:
+                break
+
+            self.buffer.discard(HEADER_LENGTH)
+            message_data = bytes(self.buffer.read(message_length))
+            self.queue.put(message_data)
+
+    def consume(self, message_type):
+        """ Consume the data in this stream by yielding `message_type` messages,
+        or raising if the stream was closed with an exception.
+        """
+        while True:
+            item = self.queue.get()
+            if isinstance(item, Exception):
+                raise item
+            elif item is STREAM_END:
+                break
+            message = message_type()
+            message.ParseFromString(item)
+            yield message
+
+
+class SendStream(StreamBase):
+    """ A stream that receives data as GRPC messages to be read as chunks of bytes.
+    """
+
+    def populate(self, iterable):
+        """ Populate this stream with an iterable of messages.
+        """
+        for item in iterable:
+            if self.closed:
+                return
+            self.queue.put(item)
+        self.close()
 
     def read(self, max_bytes, chunk_size):
         """ Read up to `max_bytes` from the stream, yielding up to `chunk_size`

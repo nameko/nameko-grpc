@@ -117,6 +117,7 @@ class GrpcServer(SharedExtension):
                     details="Deadline Exceeded",
                     debug_error_string="<traceback>",
                 )
+                print(">>> TIMEOUT")
                 response_stream.close(exc)
                 break
             time.sleep(0.001)
@@ -125,7 +126,6 @@ class GrpcServer(SharedExtension):
         try:
             method_path = headers[":path"]
             entrypoint = self.entrypoints[method_path]
-            request_stream.message_type = entrypoint.input_type
         except KeyError:
             raise GrpcError(
                 status=StatusCode.UNIMPLEMENTED,
@@ -205,7 +205,7 @@ class Grpc(Entrypoint):
         # where does this come from?
         context = None
 
-        request = request_stream
+        request = request_stream.consume(self.input_type)
 
         if self.cardinality in (Cardinality.UNARY_STREAM, Cardinality.UNARY_UNARY):
             request = next(request)

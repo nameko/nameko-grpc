@@ -159,9 +159,10 @@ class Method:
 
         if cardinality in (Cardinality.UNARY_UNARY, Cardinality.UNARY_STREAM):
             request = (request,)
-        resp = self.client.invoke(request_headers, output_type, request, timeout)
 
-        return Future(resp, cardinality)
+        response_stream = self.client.invoke(request_headers, request, timeout)
+
+        return Future(response_stream.consume(output_type), cardinality)
 
 
 class Proxy:
@@ -215,20 +216,12 @@ class Client:
                     details="Deadline Exceeded",
                     debug_error_string="<traceback>",
                 )
-                try:
-                    response_stream.close(exc)
-                except ReceiveStream.Closed:  # XXX not a thing; do we need this?
-                    pass  # already completed
-                try:
-                    send_stream.close()
-                except SendStream.Closed:
-                    pass  # already sent all the data
-                break
+                response_stream.close(exc)
+                send_stream.close()
             time.sleep(0.001)
 
-    def invoke(self, request_headers, output_type, request, timeout):
+    def invoke(self, request_headers, request, timeout):
         send_stream, response_stream = self.manager.send_request(request_headers)
-        response_stream.message_type = output_type
         if timeout:
             threading.Thread(
                 target=self.timeout, args=(send_stream, response_stream, timeout)

@@ -9,7 +9,6 @@ from nameko.extensions import DependencyProvider
 
 from nameko_grpc.client import ClientConnectionManager, Proxy
 from nameko_grpc.exceptions import GrpcError
-from nameko_grpc.streams import ReceiveStream, SendStream
 
 
 log = getLogger(__name__)
@@ -52,21 +51,14 @@ class GrpcProxy(DependencyProvider):
                     details="Deadline Exceeded",
                     debug_error_string="<traceback>",
                 )
-                try:
-                    response_stream.close(exc)
-                except ReceiveStream.Closed:  # XXX not a thing; do we need this?
-                    pass  # already completed
-                try:
-                    send_stream.close()
-                except SendStream.Closed:
-                    pass  # already sent all the data
+                response_stream.close(exc)
+                send_stream.close()
                 break
             time.sleep(0.001)
 
-    def invoke(self, request_headers, output_type, request, timeout):
+    def invoke(self, request_headers, request, timeout):
 
         send_stream, response_stream = self.manager.send_request(request_headers)
-        response_stream.message_type = output_type
         if timeout:
             self.container.spawn_managed_thread(
                 lambda: self.timeout(send_stream, response_stream, timeout),
