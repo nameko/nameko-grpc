@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 import time
 
+from helpers import instrumented
+
 import example_pb2_grpc
 from example_pb2 import ExampleReply
-
-from helpers import instrumented
 
 
 # TODO move stash to context once applciation headers are implemented
