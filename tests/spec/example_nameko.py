@@ -3,10 +3,10 @@ import time
 
 from nameko_grpc.entrypoint import Grpc
 
+from helpers import instrumented
+
 import example_pb2_grpc
 from example_pb2 import ExampleReply
-
-from helpers import instrumented
 
 
 # TODO move stash to context once applciation headers are implemented
