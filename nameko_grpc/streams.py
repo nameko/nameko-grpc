@@ -67,7 +67,6 @@ class ReceiveStream(StreamBase):
             return
 
         self.buffer.write(data)
-
         while True:
 
             if len(self.buffer) < HEADER_LENGTH:

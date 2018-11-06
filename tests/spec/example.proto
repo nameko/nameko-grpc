@@ -18,6 +18,7 @@ message ExampleRequest {
   int32 delay = 4;
   int32 response_count = 5;
   string stash = 6;
+  string compression = 7;
 }
 
 

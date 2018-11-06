@@ -144,13 +144,24 @@ def start_grpc_server(compile_proto, spawn_process, spec_dir, grpc_port):
 
     server_script = os.path.join(os.path.dirname(__file__), "grpc_indirect_server.py")
 
-    def make(service_name, proto_name=None):
+    def make(
+        service_name,
+        proto_name=None,
+        compression_algorithm="none",
+        compression_level="high",
+    ):
         if proto_name is None:
             proto_name = service_name
         compile_proto(proto_name)
 
         spawn_process(
-            server_script, str(grpc_port), spec_dir.strpath, proto_name, service_name
+            server_script,
+            str(grpc_port),
+            spec_dir.strpath,
+            proto_name,
+            service_name,
+            compression_algorithm,
+            compression_level,
         )
         # wait until server has started
         time.sleep(0.5)
@@ -204,7 +215,12 @@ def start_grpc_client(
         def __getattr__(self, name):
             return Method(self.fifo, name)
 
-    def make(service_name, proto_name=None):
+    def make(
+        service_name,
+        proto_name=None,
+        compression_algorithm="none",
+        compression_level="high",
+    ):
         if proto_name is None:
             proto_name = service_name
         compile_proto(proto_name)
@@ -218,6 +234,8 @@ def start_grpc_client(
             spec_dir.strpath,
             proto_name,
             service_name,
+            compression_algorithm,
+            compression_level,
             client_fifo.path,
         )
 
@@ -272,48 +290,48 @@ def start_nameko_client(compile_proto, spec_dir, grpc_port):
         client.stop()
 
 
-@pytest.fixture
-def grpc_server(start_grpc_server):
-    return start_grpc_server("example")
+@pytest.fixture(params=["server|grpc", "server|nameko"])
+def server_type(request):
+    return request.param[7:]
 
 
 @pytest.fixture
-def grpc_client(start_grpc_client):
-    return start_grpc_client("example")
-
-
-@pytest.fixture
-def nameko_server(start_nameko_server):
-    return start_nameko_server("example")
-
-
-@pytest.fixture
-def nameko_client(start_nameko_client):
-    return start_nameko_client("example")
-
-
-@pytest.fixture(params=["grpc_server", "nameko_server"])
-def server(request):
-    if "grpc" in request.param:
+def start_server(request, server_type):
+    if server_type == "grpc":
         if request.config.option.server not in ("grpc", "all"):
             pytest.skip("grpc server not requested")
-        request.getfixturevalue("grpc_server")
-    elif "nameko" in request.param:
+        return request.getfixturevalue("start_grpc_server")
+    if server_type == "nameko":
         if request.config.option.server not in ("nameko", "all"):
             pytest.skip("nameko server not requested")
-        request.getfixturevalue("nameko_server")
+        return request.getfixturevalue("start_nameko_server")
 
 
-@pytest.fixture(params=["grpc_client", "nameko_client"])
-def client(request, server):
-    if "grpc" in request.param:
+@pytest.fixture(params=["client|grpc", "client|nameko"])
+def client_type(request):
+    return request.param[7:]
+
+
+@pytest.fixture
+def start_client(request, client_type):
+    if client_type == "grpc":
         if request.config.option.client not in ("grpc", "all"):
             pytest.skip("grpc client not requested")
-        return request.getfixturevalue("grpc_client")
-    elif "nameko" in request.param:
+        return request.getfixturevalue("start_grpc_client")
+    if client_type == "nameko":
         if request.config.option.client not in ("nameko", "all"):
             pytest.skip("nameko client not requested")
-        return request.getfixturevalue("nameko_client")
+        return request.getfixturevalue("start_nameko_client")
+
+
+@pytest.fixture
+def server(start_server):
+    return start_server("example")
+
+
+@pytest.fixture
+def client(start_client, server):
+    return start_client("example")
 
 
 @pytest.fixture

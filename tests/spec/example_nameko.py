@@ -17,11 +17,15 @@ grpc = Grpc.decorator(example_pb2_grpc.exampleStub)
 class example:
     name = "example"
 
+    # @grpc(metadata=("grpc-internal-encoding-request", "gzip"))
     @grpc
     @instrumented
     def unary_unary(self, request, context):
         if request.delay:
             time.sleep(request.delay / 1000)
+        if request.compression:
+            # XXX !
+            pass
         message = request.value * (request.multiplier or 1)
         return ExampleReply(message=message, stash=request.stash)
 

@@ -265,25 +265,15 @@ class TestDependencyProvider:
 
 class TestMultipleClients:
 
-    # TODO really no point checking this with grpc client?
-    @pytest.fixture(params=["grpc_client", "nameko_client"])
-    def client_factory(self, request, server):
-        if "grpc" in request.param:
-            if request.config.option.client not in ("grpc", "all"):
-                pytest.skip("grpc client not requested")
-            return request.getfixturevalue("start_grpc_client")
-        elif "nameko" in request.param:
-            if request.config.option.client not in ("nameko", "all"):
-                pytest.skip("nameko client not requested")
-            return request.getfixturevalue("start_nameko_client")
+    # TODO any point checking this with grpc client?
 
-    def test_unary_unary(self, client_factory, protobufs):
+    def test_unary_unary(self, start_client, protobufs):
 
         futures = []
         number_of_clients = 5
 
         for index in range(number_of_clients):
-            client = client_factory("example")
+            client = start_client("example")
             response_future = client.unary_unary.future(
                 protobufs.ExampleRequest(value=string.ascii_uppercase[index])
             )
@@ -293,13 +283,13 @@ class TestMultipleClients:
             response = future.result()
             assert response.message == string.ascii_uppercase[index]
 
-    def test_unary_stream(self, client_factory, protobufs):
+    def test_unary_stream(self, start_client, protobufs):
 
         futures = []
         number_of_clients = 5
 
         for index in range(number_of_clients):
-            client = client_factory("example")
+            client = start_client("example")
             responses_future = client.unary_stream.future(
                 protobufs.ExampleRequest(
                     value=string.ascii_uppercase[index], response_count=2
@@ -314,7 +304,7 @@ class TestMultipleClients:
                 (string.ascii_uppercase[index], 2),
             ]
 
-    def test_stream_unary(self, client_factory, protobufs):
+    def test_stream_unary(self, start_client, protobufs):
 
         number_of_clients = 5
 
@@ -332,7 +322,7 @@ class TestMultipleClients:
         futures = []
 
         for index in range(number_of_clients):
-            client = client_factory("example")
+            client = start_client("example")
             response_future = client.stream_unary.future(
                 generate_requests(streams[index])
             )
@@ -342,7 +332,7 @@ class TestMultipleClients:
             response = future.result()
             assert response.message == ",".join(streams[index])
 
-    def test_stream_stream(self, client_factory, protobufs):
+    def test_stream_stream(self, start_client, protobufs):
 
         number_of_clients = 5
 
@@ -360,7 +350,7 @@ class TestMultipleClients:
         futures = []
 
         for index in range(number_of_clients):
-            client = client_factory("example")
+            client = start_client("example")
             responses_future = client.stream_stream.future(
                 generate_requests(streams[index])
             )
@@ -483,3 +473,167 @@ class TestDeadlineExceededAtServer:
 
     # add extra test that does mocking and MAKES SURE nameko service is responding
     # correctly (over and above these equivalence tests)
+
+
+class TestCompression:
+    @pytest.fixture(params=["deflate", "gzip", "none"])
+    def compression_algorithm(self, request):
+        return request.param
+
+    @pytest.fixture(params=["high", "medium", "low", "none"])
+    def compression_level(self, request):
+        return request.param
+
+    @pytest.fixture
+    def server(self, start_server, compression_algorithm, compression_level):
+        return start_server(
+            "example",
+            compression_algorithm=compression_algorithm,
+            compression_level=compression_level,
+        )
+
+    @pytest.fixture
+    def client(self, start_client, compression_algorithm, compression_level, server):
+        return start_client(
+            "example",
+            compression_algorithm=compression_algorithm,
+            compression_level=compression_level,
+        )
+
+    def test_default_compression(self, client, protobufs):
+
+        response = client.unary_unary(protobufs.ExampleRequest(value="A"))
+        assert response.message == "A"
+
+        responses = client.unary_stream(
+            protobufs.ExampleRequest(value="A", response_count=2)
+        )
+        assert [(response.message, response.seqno) for response in responses] == [
+            ("A", 1),
+            ("A", 2),
+        ]
+
+        def generate_requests():
+            for value in ["A", "B"]:
+                yield protobufs.ExampleRequest(value=value)
+
+        response = client.stream_unary(generate_requests())
+        assert response.message == "A,B"
+
+        def generate_requests():
+            for value in ["A", "B"]:
+                yield protobufs.ExampleRequest(value=value)
+
+        responses = client.stream_stream(generate_requests())
+        assert [(response.message, response.seqno) for response in responses] == [
+            ("A", 1),
+            ("B", 2),
+        ]
+
+    @pytest.mark.parametrize("algorithm_for_call", ["gzip", "identity"])
+    def test_set_different_compression_for_call(
+        self, start_client, start_server, protobufs, algorithm_for_call
+    ):
+        start_server("example")
+        client = start_client("example", compression_algorithm="deflate")
+
+        response = client.unary_unary(
+            protobufs.ExampleRequest(value="A" * 1000),
+            metadata=(("grpc-internal-encoding-request", algorithm_for_call),),
+        )
+        assert response.message == "A" * 1000
+
+        responses = client.unary_stream(
+            protobufs.ExampleRequest(value="A" * 1000, response_count=2),
+            metadata=(("grpc-internal-encoding-request", algorithm_for_call),),
+        )
+        assert [(response.message, response.seqno) for response in responses] == [
+            ("A" * 1000, 1),
+            ("A" * 1000, 2),
+        ]
+
+        def generate_requests():
+            for value in ["A" * 1000, "B" * 1000]:
+                yield protobufs.ExampleRequest(value=value)
+
+        response = client.stream_unary(
+            generate_requests(),
+            metadata=(("grpc-internal-encoding-request", algorithm_for_call),),
+        )
+        assert response.message == "A" * 1000 + "," + "B" * 1000
+
+        def generate_requests():
+            for value in ["A" * 1000, "B" * 1000]:
+                yield protobufs.ExampleRequest(value=value)
+
+        responses = client.stream_stream(
+            generate_requests(),
+            metadata=(("grpc-internal-encoding-request", algorithm_for_call),),
+        )
+        assert [(response.message, response.seqno) for response in responses] == [
+            ("A" * 1000, 1),
+            ("B" * 1000, 2),
+        ]
+
+    def test_request_unsupported_algorithm(
+        self, start_client, start_server, protobufs, client_type
+    ):
+        if client_type == "grpc":
+            pytest.skip(
+                "GRPC client will strip bogus compression algorithms rather than "
+                "sending them to the server, so we can't run this test."
+            )
+
+        start_server("example")
+        client = start_client("example", compression_algorithm="deflate")
+
+        with pytest.raises(GrpcError) as error:
+            client.unary_unary(
+                protobufs.ExampleRequest(value="A" * 1000),
+                metadata=(("grpc-internal-encoding-request", "bogus"),),
+            )
+        assert error.value.status == StatusCode.UNIMPLEMENTED
+        assert error.value.details == "Deadline Exceeded"
+
+    def test_respond_with_different_algorithm(
+        self, start_client, start_server, protobufs
+    ):
+        start_server("example")
+        client = start_client("example", compression_algorithm="deflate")
+
+        response = client.unary_unary(protobufs.ExampleRequest(value="A"))
+        assert response.message == "A"
+
+        responses = client.unary_stream(
+            protobufs.ExampleRequest(value="A", response_count=2, compression="gzip")
+        )
+        assert [(response.message, response.seqno) for response in responses] == [
+            ("A", 1),
+            ("A", 2),
+        ]
+
+        def generate_requests():
+            for value in ["A", "B"]:
+                yield protobufs.ExampleRequest(value=value, compression="gzip")
+
+        response = client.stream_unary(generate_requests())
+        assert response.message == "A,B"
+
+        def generate_requests():
+            for value in ["A", "B"]:
+                yield protobufs.ExampleRequest(value=value, compression="gzip")
+
+        responses = client.stream_stream(generate_requests())
+        assert [(response.message, response.seqno) for response in responses] == [
+            ("A", 1),
+            ("B", 2),
+        ]
+
+    def test_disable_compression_for_message(
+        self, start_client, start_server, client_type, protobufs
+    ):
+        if client_type == "grpc":
+            pytest.skip(
+                "Not sure this is possible with non-beta grpc client. There is no way "
+                "to pass the GRPCCallOptions object disabling compression"
+            )
