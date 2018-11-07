@@ -27,11 +27,7 @@ class Inspector:
     @property
     def protobufs_module(self):
         if self._protobufs_module is None:
-            modules = inspect.getmembers(self.stub_module, inspect.ismodule)
-            for name, mod in modules:
-                if name.endswith("__pb2"):
-                    self._protobufs_module = mod
-                    break
+            self._protobufs_module = importlib.import_module(self.stub.__module__[:-5])
         return self._protobufs_module
 
     @property

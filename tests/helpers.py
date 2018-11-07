@@ -4,14 +4,23 @@ import pickle
 import time
 import uuid
 
+import grpc
+import wrapt
 from eventlet import tpool
+
+from nameko_grpc.exceptions import GrpcError
+
+
+class StreamAborted(Exception):
+    pass
 
 
 class Config:
-    def __init__(self, method_name, in_fifo, out_fifo):
+    def __init__(self, method_name, in_fifo, out_fifo, kwargs):
         self.method_name = method_name
         self.in_fifo = in_fifo
         self.out_fifo = out_fifo
+        self.kwargs = kwargs
 
 
 class NewStream:
@@ -28,6 +37,165 @@ def isiterable(req):
         return True
     except TypeError:
         return False
+
+
+class AbortableIterator:
+    class Aborted(Exception):
+        pass
+
+    def __init__(self, value):
+        self.value = value
+        self.aborted = False
+
+    def abort(self):
+        self.aborted = True
+
+    def iterate(self):
+        for item in self.value:
+            if self.aborted:
+                raise AbortableIterator.Aborted()
+            yield item
+
+    def result(self):
+        if not isiterable(self.value):
+            return self.value
+        return self.iterate()
+
+    @classmethod
+    def wrap(cls, value):
+        instance = cls(value)
+        return instance.abort, instance.result()
+
+
+class RaisingReceiver:
+    """ Inspect and re-raise any GrpcErrors in the stream
+    """
+
+    def __init__(self, value):
+        self.value = value
+
+    def iterate(self):
+        for item in self.value:
+            if isinstance(item, GrpcError):
+                raise item
+            yield item
+
+    def result(self):
+        if not isiterable(self.value):
+            if isinstance(self.value, GrpcError):
+                raise self.value
+            return self.value
+        return self.iterate()
+
+    @classmethod
+    def wrap(cls, value):
+        return cls(value).result()
+
+
+class SafeSender:
+    """ Catch and send any GrpcErrors in the stream
+    """
+
+    def __init__(self, value):
+        self.value = value
+
+    def iterate(self):
+        try:
+            for item in self.value:
+                yield item
+        except grpc.RpcError as exc:
+            state = exc._state
+            yield GrpcError(state.code, state.details, state.debug_error_string)
+
+    def result(self):
+        if not isiterable(self.value):
+            return self.value
+        return self.iterate()
+
+    @classmethod
+    def wrap(cls, value):
+        return cls(value).result()
+
+
+class RequestResponseStash:
+
+    REQUEST = "REQ"
+    RESPONSE = "RES"
+
+    def __init__(self, path):
+        self.path = path
+
+    def write(self, value, type_):
+        if not self.path:
+            return
+
+        with open(self.path, "ab") as fh:
+            fh.write(pickle.dumps((type_, value)) + b"|")
+
+    def write_request(self, req):
+        self.write(req, self.REQUEST)
+
+    def write_response(self, res):
+        self.write(res, self.RESPONSE)
+
+    def read(self):
+        if not self.path or not os.path.exists(self.path):
+            return []
+
+        with open(self.path, "rb") as fh:
+            data = fh.read()
+
+        for item in data.split(b"|"):
+            if item:
+                yield pickle.loads(item)
+
+    def requests(self):
+        for type_, item in self.read():
+            if type_ == self.REQUEST:
+                yield item
+
+    def responses(self):
+        for type_, item in self.read():
+            if type_ == self.RESPONSE:
+                yield item
+
+
+@wrapt.decorator
+def instrumented(wrapped, instance, args, kwargs):
+    """ Decorator for instrumenting GRPC implementation methods.
+
+    Stores requests and responses to file for later inspection.
+    """
+    (request, context) = args
+
+    stash = None
+
+    def stashing_iterator(iterable, type_):
+        for item in iterable:
+            nonlocal stash
+            if stash is None:
+                stash = RequestResponseStash(item.stash)
+            stash.write(item, type_)
+            yield item
+
+    if not isiterable(request):
+        if stash is None:
+            stash = RequestResponseStash(request.stash)
+        stash = RequestResponseStash(request.stash)
+        stash.write_request(request)
+    else:
+        request = stashing_iterator(request, RequestResponseStash.REQUEST)
+
+    response = wrapped(*args, **kwargs)
+
+    if not isiterable(response):
+        if stash is None:
+            stash = RequestResponseStash(response.stash)
+        stash.write_response(response)
+    else:
+        response = stashing_iterator(response, RequestResponseStash.RESPONSE)
+
+    return response
 
 
 class FifoPipe:
@@ -96,10 +264,13 @@ def receive(fifo):
 
 
 def send_stream(stream_fifo, result):
-    for msg in result:
-        stream_fifo.dump(msg)
-        time.sleep(0.01)
-    stream_fifo.dump(None)
+    try:
+        for msg in result:
+            stream_fifo.dump(msg)
+            time.sleep(0.01)
+        stream_fifo.dump(None)
+    except AbortableIterator.Aborted:
+        pass
 
 
 def send(fifo, result):

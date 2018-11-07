@@ -28,6 +28,7 @@ setup(
             "grpcio-tools",
             "googleapis-common-protos",
             "pre-commit",
+            "wrapt",
         ]
     },
     zip_safe=True,

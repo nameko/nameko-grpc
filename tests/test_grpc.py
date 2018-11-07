@@ -1,159 +1,19 @@
 # -*- coding: utf-8 -*-
-import os
 import random
+import re
 import string
-import subprocess
-import sys
 import time
-from importlib import import_module
 
 import pytest
+from grpc import StatusCode
 from mock import Mock
 from nameko.testing.services import dummy
 from nameko.testing.utils import get_extension
 
-from nameko_grpc.client import Client
 from nameko_grpc.constants import Cardinality
 from nameko_grpc.dependency_provider import GrpcProxy
+from nameko_grpc.exceptions import GrpcError
 from nameko_grpc.inspection import Inspector
-
-from helpers import Config, FifoPipe, receive, send
-
-
-last_modified = os.path.getmtime
-
-
-@pytest.fixture
-def compile_proto():
-    def codegen(service_name, spec_dir):
-        proto_path = os.path.join(spec_dir, "{}.proto".format(service_name))
-        proto_last_modified = last_modified(proto_path)
-
-        for generated_file in (
-            "{}_pb2.py".format(service_name),
-            "{}_pb2_grpc.py".format(service_name),
-        ):
-            generated_path = os.path.join(spec_dir, generated_file)
-            if (
-                not os.path.exists(generated_path)
-                or last_modified(generated_path) < proto_last_modified
-            ):
-                protoc_args = [
-                    "-I{}".format(spec_dir),
-                    "--python_out",
-                    spec_dir,
-                    "--grpc_python_out",
-                    spec_dir,
-                    proto_path,
-                ]
-                # protoc.main is confused by absolute paths, so use subprocess instead
-                python_args = ["python", "-m", "grpc_tools.protoc"] + protoc_args
-                subprocess.call(python_args)
-
-        if spec_dir not in sys.path:
-            sys.path.append(spec_dir)
-
-        protobufs = import_module("{}_pb2".format(service_name))
-        stubs = import_module("{}_pb2_grpc".format(service_name))
-
-        return protobufs, stubs
-
-    return codegen
-
-
-@pytest.fixture
-def protobufs(compile_proto):
-    spec_dir = os.path.join(os.path.dirname(__file__), "spec")
-    protobufs, _ = compile_proto("example", spec_dir)
-    return protobufs
-
-
-@pytest.fixture
-def stubs(compile_proto):
-    spec_dir = os.path.join(os.path.dirname(__file__), "spec")
-    _, stubs = compile_proto("example", spec_dir)
-    return stubs
-
-
-@pytest.fixture
-def grpc_server():
-    """ Standard GRPC server, running in another process
-    """
-    server_script = os.path.join(os.path.dirname(__file__), "grpc_server.py")
-    with subprocess.Popen([sys.executable, server_script]) as proc:
-        # wait until server has started
-        time.sleep(0.5)
-        yield
-        proc.terminate()
-
-
-@pytest.fixture
-def grpc_client(stubs, tmpdir):
-    """ Standard GRPC client, running in another process
-    """
-    # TODO allow multiple clients in the same test
-    with FifoPipe.new(tmpdir.strpath) as command_fifo:
-
-        client_script = os.path.join(
-            os.path.dirname(__file__), "grpc_indirect_client.py"
-        )
-        with subprocess.Popen([sys.executable, client_script, command_fifo.path]):
-
-            fifos = []
-
-            def new_fifo():
-                fifo = FifoPipe.new(tmpdir.strpath)
-                fifos.append(fifo)
-                fifo.open()
-                return fifo
-
-            class Result:
-                def __init__(self, fifo):
-                    self.fifo = fifo
-
-                def result(self):
-                    return receive(self.fifo)
-
-            class Method:
-                def __init__(self, name):
-                    self.name = name
-
-                def __call__(self, request):
-                    return self.future(request).result()
-
-                def future(self, request):
-                    in_fifo = new_fifo()
-                    out_fifo = new_fifo()
-                    send(command_fifo, Config(self.name, in_fifo.path, out_fifo.path))
-                    send(in_fifo, request)
-                    return Result(out_fifo)
-
-            class Client:
-                def __getattr__(self, name):
-                    return Method(name)
-
-            yield Client()
-            send(command_fifo, None)
-
-            for fifo in fifos:
-                fifo.close()
-
-
-@pytest.fixture
-def service(container_factory, protobufs, stubs):
-
-    from nameko_service import ExampleService
-
-    container = container_factory(ExampleService, {})
-    container.start()
-
-    return container
-
-
-@pytest.fixture
-def nameko_client(stubs, server):
-    with Client("//127.0.0.1", stubs.exampleStub) as client:
-        yield client
 
 
 class TestInspection:
@@ -193,37 +53,15 @@ class TestInspection:
         assert insp.cardinality_for_method("stream_stream") == Cardinality.STREAM_STREAM
 
 
-@pytest.fixture(params=["grpc_server", "nameko_server"])
-def server(request):
-    if "grpc" in request.param:
-        if request.config.option.server not in ("grpc", "all"):
-            pytest.skip("grpc server not requested")
-        request.getfixturevalue("grpc_server")
-    elif "nameko" in request.param:
-        if request.config.option.server not in ("nameko", "all"):
-            pytest.skip("nameko server not requested")
-        request.getfixturevalue("service")
-
-
-@pytest.fixture(params=["grpc_client", "nameko_client"])
-def client(request, server):
-    if "grpc" in request.param:
-        if request.config.option.client not in ("grpc", "all"):
-            pytest.skip("grpc client not requested")
-        return request.getfixturevalue("grpc_client")
-    elif "nameko" in request.param:
-        if request.config.option.client not in ("nameko", "all"):
-            pytest.skip("nameko client not requested")
-        return request.getfixturevalue("nameko_client")
-
-
 class TestStandard:
     def test_unary_unary(self, client, protobufs):
         response = client.unary_unary(protobufs.ExampleRequest(value="A"))
         assert response.message == "A"
 
     def test_unary_stream(self, client, protobufs):
-        responses = client.unary_stream(protobufs.ExampleRequest(value="A"))
+        responses = client.unary_stream(
+            protobufs.ExampleRequest(value="A", response_count=2)
+        )
         assert [(response.message, response.seqno) for response in responses] == [
             ("A", 1),
             ("A", 2),
@@ -272,7 +110,7 @@ class TestFuture:
 
     def test_unary_stream(self, client, protobufs):
         responses_future = client.unary_stream.future(
-            protobufs.ExampleRequest(value="A")
+            protobufs.ExampleRequest(value="A", response_count=2)
         )
         responses = responses_future.result()
         assert [(response.message, response.seqno) for response in responses] == [
@@ -304,7 +142,6 @@ class TestFuture:
 
 class TestConcurrency:
     # XXX how to assert both are in flight at the same time?
-
     def test_unary_unary(self, client, protobufs):
         response_a_future = client.unary_unary.future(
             protobufs.ExampleRequest(value="A")
@@ -319,10 +156,10 @@ class TestConcurrency:
 
     def test_unary_stream(self, client, protobufs):
         responses_a_future = client.unary_stream.future(
-            protobufs.ExampleRequest(value="A")
+            protobufs.ExampleRequest(value="A", response_count=2)
         )
         responses_b_future = client.unary_stream.future(
-            protobufs.ExampleRequest(value="B")
+            protobufs.ExampleRequest(value="B", response_count=2)
         )
         responses_a = responses_a_future.result()
         responses_b = responses_b_future.result()
@@ -375,11 +212,13 @@ class TestConcurrency:
 
 class TestDependencyProvider:
     @pytest.fixture
-    def client(self, container_factory, stubs, server):
+    def client(self, container_factory, stubs, server, grpc_port):
         class Service:
             name = "caller"
 
-            example_grpc = GrpcProxy("//127.0.0.1", stubs.exampleStub)
+            example_grpc = GrpcProxy(
+                "//127.0.0.1:{}".format(grpc_port), stubs.exampleStub
+            )
 
             @dummy
             def call(self):
@@ -396,7 +235,9 @@ class TestDependencyProvider:
         assert response.message == "A"
 
     def test_unary_stream(self, client, protobufs):
-        responses = client.unary_stream(protobufs.ExampleRequest(value="A"))
+        responses = client.unary_stream(
+            protobufs.ExampleRequest(value="A", response_count=2)
+        )
         assert [(response.message, response.seqno) for response in responses] == [
             ("A", 1),
             ("A", 2),
@@ -423,27 +264,26 @@ class TestDependencyProvider:
 
 
 class TestMultipleClients:
-    @pytest.fixture
-    def client_factory(self, stubs, server):
-        clients = []
 
-        def make():
-            client = Client("//127.0.0.1", stubs.exampleStub)
-            clients.append(client)
-            return client.start()
-
-        yield make
-
-        for client in clients:
-            client.stop()
+    # TODO really no point checking this with grpc client?
+    @pytest.fixture(params=["grpc_client", "nameko_client"])
+    def client_factory(self, request, server):
+        if "grpc" in request.param:
+            if request.config.option.client not in ("grpc", "all"):
+                pytest.skip("grpc client not requested")
+            return request.getfixturevalue("start_grpc_client")
+        elif "nameko" in request.param:
+            if request.config.option.client not in ("nameko", "all"):
+                pytest.skip("nameko client not requested")
+            return request.getfixturevalue("start_nameko_client")
 
     def test_unary_unary(self, client_factory, protobufs):
 
         futures = []
-        number_of_clients = 10
+        number_of_clients = 5
 
         for index in range(number_of_clients):
-            client = client_factory()
+            client = client_factory("example")
             response_future = client.unary_unary.future(
                 protobufs.ExampleRequest(value=string.ascii_uppercase[index])
             )
@@ -456,12 +296,14 @@ class TestMultipleClients:
     def test_unary_stream(self, client_factory, protobufs):
 
         futures = []
-        number_of_clients = 10
+        number_of_clients = 5
 
         for index in range(number_of_clients):
-            client = client_factory()
+            client = client_factory("example")
             responses_future = client.unary_stream.future(
-                protobufs.ExampleRequest(value=string.ascii_uppercase[index])
+                protobufs.ExampleRequest(
+                    value=string.ascii_uppercase[index], response_count=2
+                )
             )
             futures.append(responses_future)
 
@@ -474,7 +316,7 @@ class TestMultipleClients:
 
     def test_stream_unary(self, client_factory, protobufs):
 
-        number_of_clients = 10
+        number_of_clients = 5
 
         def shuffled(string):
             chars = list(string)
@@ -490,7 +332,7 @@ class TestMultipleClients:
         futures = []
 
         for index in range(number_of_clients):
-            client = client_factory()
+            client = client_factory("example")
             response_future = client.stream_unary.future(
                 generate_requests(streams[index])
             )
@@ -502,7 +344,7 @@ class TestMultipleClients:
 
     def test_stream_stream(self, client_factory, protobufs):
 
-        number_of_clients = 10
+        number_of_clients = 5
 
         def shuffled(string):
             chars = list(string)
@@ -518,7 +360,7 @@ class TestMultipleClients:
         futures = []
 
         for index in range(number_of_clients):
-            client = client_factory()
+            client = client_factory("example")
             responses_future = client.stream_stream.future(
                 generate_requests(streams[index])
             )
@@ -533,5 +375,111 @@ class TestMultipleClients:
             assert received == expected
 
 
-# class TestTimeouts:
-#     pass
+class TestMethodNotFound:
+    @pytest.fixture(autouse=True)
+    def unregister_grpc_method(self, stubs):
+        with open(stubs.__file__) as fh:
+            original_service = fh.read()
+
+        pattern = re.compile(r"'not_found': grpc.\w+\(.*?\),", re.DOTALL)
+        modified_service = re.sub(pattern, "", original_service)
+
+        with open(stubs.__file__, "w") as fh:
+            fh.write(modified_service)
+
+        yield
+
+        with open(stubs.__file__, "w") as fh:
+            fh.write(original_service)
+
+    def test_method_not_found(self, client, protobufs):
+        with pytest.raises(GrpcError) as error:
+            client.not_found(protobufs.ExampleRequest(value="hello"))
+        assert error.value.status == StatusCode.UNIMPLEMENTED
+        assert error.value.details == "Method not found!"
+
+
+class TestDeadlineExceededAtClient:
+    @pytest.fixture
+    def protobufs(self, compile_proto, spec_dir):
+        protobufs, _ = compile_proto("example")
+        return protobufs
+
+    def test_timeout_before_any_result(self, client, protobufs):
+        with pytest.raises(GrpcError) as error:
+            client.unary_unary(
+                protobufs.ExampleRequest(value="A", delay=1000),
+                timeout=0.05,  # XXX fails when too fast; need protection
+            )
+        assert error.value.status == StatusCode.DEADLINE_EXCEEDED
+        assert error.value.details == "Deadline Exceeded"
+
+    def test_timeout_while_streaming_request(self, client, protobufs):
+        def generate_requests(values):
+            for value in values:
+                time.sleep(0.01)
+                yield protobufs.ExampleRequest(value=value)
+
+        with pytest.raises(GrpcError) as error:
+            client.stream_unary(generate_requests(string.ascii_uppercase), timeout=0.05)
+        assert error.value.status == StatusCode.DEADLINE_EXCEEDED
+        assert error.value.details == "Deadline Exceeded"
+
+    def test_timeout_while_streaming_result(self, client, protobufs):
+
+        res = client.unary_stream(
+            protobufs.ExampleRequest(value="A", delay=10, response_count=10),
+            timeout=0.05,
+        )
+        with pytest.raises(GrpcError) as error:
+            list(res)
+
+        assert error.value.status == StatusCode.DEADLINE_EXCEEDED
+        assert error.value.details == "Deadline Exceeded"
+
+
+class TestDeadlineExceededAtServer:
+    @pytest.fixture
+    def protobufs(self, compile_proto, spec_dir):
+        protobufs, _ = compile_proto("example")
+        return protobufs
+
+    def test_timeout_while_streaming_request(self, client, protobufs, instrumented):
+        def generate_requests(values):
+            for value in values:
+                time.sleep(0.01)
+                yield protobufs.ExampleRequest(value=value, stash=instrumented.path)
+
+        with pytest.raises(GrpcError) as error:
+            client.stream_unary(generate_requests(string.ascii_uppercase), timeout=0.05)
+        assert error.value.status == StatusCode.DEADLINE_EXCEEDED
+        assert error.value.details == "Deadline Exceeded"
+
+        # server should not have recieved all the requests
+        assert len(list(instrumented.requests())) < len(string.ascii_uppercase)
+
+    def test_timeout_while_streaming_response(self, client, protobufs, instrumented):
+
+        response_count = 10
+
+        res = client.unary_stream(
+            protobufs.ExampleRequest(
+                value="A",
+                delay=10,
+                stash=instrumented.path,
+                response_count=response_count,
+            ),
+            timeout=0.05,
+        )
+        with pytest.raises(GrpcError) as error:
+            list(res)  # client will throw
+        assert error.value.status == StatusCode.DEADLINE_EXCEEDED
+        assert error.value.details == "Deadline Exceeded"
+
+        time.sleep(0.5)
+
+        # server should not continue to stream responses
+        assert len(list(instrumented.responses())) < response_count
+
+    # add extra test that does mocking and MAKES SURE nameko service is responding
+    # correctly (over and above these equivalence tests)

@@ -16,6 +16,7 @@ from h2.events import (
     TrailersReceived,
     WindowUpdated,
 )
+from h2.exceptions import StreamClosedError
 
 
 log = getLogger(__name__)
@@ -62,7 +63,12 @@ class ConnectionManager(object):
             data = self.sock.recv(65535)
             if not data:
                 break
-            events = self.conn.receive_data(data)
+
+            try:
+                events = self.conn.receive_data(data)
+            except StreamClosedError:
+                # TODO what if data was also recieved for a non-closed stream?
+                continue
 
             for event in events:
                 if isinstance(event, RequestReceived):
@@ -80,7 +86,7 @@ class ConnectionManager(object):
                 elif isinstance(event, SettingsAcknowledged):
                     self.settings_acknowledged(event)
                 elif isinstance(event, TrailersReceived):
-                    self.trailers_received(event.stream_id)
+                    self.trailers_received(event.headers, event.stream_id)
 
         self.stopped.set()
 
@@ -149,7 +155,7 @@ class ConnectionManager(object):
     def settings_acknowledged(self, event):
         log.debug("settings acknowledged")
 
-    def trailers_received(self, stream_id):
+    def trailers_received(self, headers, stream_id):
         log.debug("trailers received, stream %s", stream_id)
 
     def send_data(self, stream_id):
@@ -170,7 +176,10 @@ class ConnectionManager(object):
 
         for chunk in send_stream.read(window_size, max_frame_size):
             log.debug("sending data on stream %s: %s...", stream_id, chunk[:100])
-            self.conn.send_data(stream_id=stream_id, data=chunk)
+            try:
+                self.conn.send_data(stream_id=stream_id, data=chunk)
+            except StreamClosedError:
+                return
 
         if send_stream.exhausted:
             log.debug("closing exhausted stream, stream %s", stream_id)

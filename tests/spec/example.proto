@@ -7,12 +7,17 @@ service example {
   rpc unary_stream (ExampleRequest) returns (stream ExampleReply) {}
   rpc stream_unary (stream ExampleRequest) returns (ExampleReply) {}
   rpc stream_stream (stream ExampleRequest) returns (stream ExampleReply) {}
+  rpc not_found (ExampleRequest) returns (ExampleReply) {}
 }
+
 
 message ExampleRequest {
   string value = 1;
   int32 multiplier = 2;
   string blob = 3;  // arbitrary extra data
+  int32 delay = 4;
+  int32 response_count = 5;
+  string stash = 6;
 }
 
 
@@ -20,5 +25,6 @@ message ExampleRequest {
 message ExampleReply {
   string message = 1;
   int32 seqno = 2;
+  string stash = 3;
 }
 

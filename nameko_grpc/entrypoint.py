@@ -1,25 +1,25 @@
 # -*- coding: utf-8 -*-
+import time
 from collections import OrderedDict
 from functools import partial
 from logging import getLogger
-from urllib import parse
 
 import eventlet
+from grpc import StatusCode
+from h2.exceptions import StreamClosedError
 from nameko.exceptions import ContainerBeingKilled
 from nameko.extensions import Entrypoint, SharedExtension
 
 from nameko_grpc.connection import ConnectionManager
+from nameko_grpc.exceptions import GrpcError
 from nameko_grpc.inspection import Inspector
 from nameko_grpc.streams import ReceiveStream, SendStream
+from nameko_grpc.timeout import unbucket_timeout
 
 from .constants import Cardinality
 
 
 log = getLogger(__name__)
-
-
-class NotFound(Exception):
-    pass
 
 
 class ServerConnectionManager(ConnectionManager):
@@ -51,31 +51,39 @@ class ServerConnectionManager(ConnectionManager):
 
         try:
             self.handle_request(headers, request_stream, response_stream)
-            self.conn.send_headers(
-                stream_id,
-                (
-                    (":status", "200"),
-                    ("content-type", "application/grpc+proto"),
-                    # TODO compression support
-                    ("grpc-encoding", "identity"),  # gzip, deflate, snappy
-                ),
-                end_stream=False,
-            )
-        except NotFound:
             response_headers = (
-                (":status", "404"),
-                ("content-length", "0"),
-                ("grpc-status", "1"),
-                ("grpc-status-message", parse.quote("Method not found", safe="")),
+                (":status", "200"),
+                ("content-type", "application/grpc+proto"),
+                # TODO compression support
+                ("grpc-encoding", "identity"),  # gzip, deflate, snappy
             )
+            self.conn.send_headers(stream_id, response_headers, end_stream=False)
+        except GrpcError as error:
+            response_headers = [(":status", "200")]
+            response_headers.extend(error.as_headers())
             self.conn.send_headers(stream_id, response_headers, end_stream=True)
+
+    def send_data(self, stream_id):
+        try:
+            super().send_data(stream_id)
+        except GrpcError as error:
+            response_headers = error.as_headers()
+            try:
+                self.conn.send_headers(stream_id, response_headers, end_stream=True)
+            except StreamClosedError:
+                pass
 
     def end_stream(self, stream_id):
         """ Close the outbound response stream with trailers containing the status
         of the GRPC request.
+
+        Only called when the stream ends successfully, hence status is always good.
         """
-        # XXX what if status is non-zero?
-        self.conn.send_headers(stream_id, (("grpc-status", "0"),), end_stream=True)
+        response_headers = (("grpc-status", "0"),)
+        try:
+            self.conn.send_headers(stream_id, response_headers, end_stream=True)
+        except StreamClosedError:
+            pass
 
 
 class GrpcServer(SharedExtension):
@@ -96,14 +104,41 @@ class GrpcServer(SharedExtension):
     def unregister(self, entrypoint):
         self.entrypoints.pop(entrypoint.method_path, None)
 
+    def timeout(self, request_stream, response_stream, deadline):
+        start = time.time()
+        while True:
+            elapsed = time.time() - start
+            if elapsed > deadline:
+                request_stream.close()
+                # XXX does server actually need to do this according to the spec?
+                # perhaps we could just close the stream.
+                exc = GrpcError(
+                    status=StatusCode.DEADLINE_EXCEEDED,
+                    details="Deadline Exceeded",
+                    debug_error_string="<traceback>",
+                )
+                response_stream.close(exc)
+                break
+            time.sleep(0.001)
+
     def handle_request(self, headers, request_stream, response_stream):
         try:
-            # TODO handle timeout
             method_path = headers[":path"]
             entrypoint = self.entrypoints[method_path]
-            request_stream.message_type = entrypoint.input_type
         except KeyError:
-            raise NotFound(method_path)
+            raise GrpcError(
+                status=StatusCode.UNIMPLEMENTED,
+                details="Method not found!",
+                debug_error_string="<traceback>",
+            )
+
+        timeout = headers.get("grpc-timeout")
+        if timeout:
+            timeout = unbucket_timeout(timeout)
+            self.container.spawn_managed_thread(
+                partial(self.timeout, request_stream, response_stream, timeout)
+            )
+
         self.container.spawn_managed_thread(
             partial(entrypoint.handle_request, request_stream, response_stream)
         )
@@ -169,7 +204,7 @@ class Grpc(Entrypoint):
         # where does this come from?
         context = None
 
-        request = request_stream
+        request = request_stream.consume(self.input_type)
 
         if self.cardinality in (Cardinality.UNARY_STREAM, Cardinality.UNARY_UNARY):
             request = next(request)
@@ -190,8 +225,11 @@ class Grpc(Entrypoint):
                 handle_result=handle_result,
             )
         except ContainerBeingKilled:
-            # how to reject GRPC requests?
-            pass
+            raise GrpcError(
+                status=StatusCode.UNAVAILABLE,
+                detail="Server shutting down",
+                debug_error_string="<traceback>",
+            )
 
     def handle_result(self, response_stream, worker_ctx, result, exc_info):
 
