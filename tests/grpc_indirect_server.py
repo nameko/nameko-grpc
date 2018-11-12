@@ -42,6 +42,7 @@ if __name__ == "__main__":
     ]
 
     def serve():
+
         server = grpc.server(
             futures.ThreadPoolExecutor(max_workers=10), options=server_options
         )

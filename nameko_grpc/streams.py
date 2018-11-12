@@ -2,6 +2,8 @@
 import struct
 from queue import Empty, Queue
 
+from nameko_grpc.compression import compress, decompress
+
 
 HEADER_LENGTH = 5
 
@@ -75,16 +77,12 @@ class ReceiveStream(StreamBase):
             compressed_flag = struct.unpack("?", self.buffer.peek(slice(0, 1)))[0]
             message_length = struct.unpack(">I", self.buffer.peek(slice(1, 5)))[0]
 
-            # TODO handle compression
-            if compressed_flag:
-                raise NotImplementedError
-
             if len(self.buffer) < HEADER_LENGTH + message_length:
                 break
 
             self.buffer.discard(HEADER_LENGTH)
             message_data = bytes(self.buffer.read(message_length))
-            self.queue.put(message_data)
+            self.queue.put((compressed_flag, message_data))
 
     def consume(self, message_type):
         """ Consume the data in this stream by yielding `message_type` messages,
@@ -96,14 +94,23 @@ class ReceiveStream(StreamBase):
                 raise item
             elif item is STREAM_END:
                 break
+
+            compressed, message_data = item
+            if compressed:
+                message_data = decompress(message_data)
+
             message = message_type()
-            message.ParseFromString(item)
+            message.ParseFromString(message_data)
             yield message
 
 
 class SendStream(StreamBase):
     """ A stream that receives data as GRPC messages to be read as chunks of bytes.
     """
+
+    def __init__(self, stream_id, encoding):
+        super().__init__(stream_id)
+        self.encoding = encoding
 
     def populate(self, iterable):
         """ Populate this stream with an iterable of messages.
@@ -136,7 +143,9 @@ class SendStream(StreamBase):
                 raise message
 
             body = message.SerializeToString()
-            data = struct.pack("?", False) + struct.pack(">I", len(body)) + body
+            compressed, body = compress(body, self.encoding)
+
+            data = struct.pack("?", compressed) + struct.pack(">I", len(body)) + body
             self.buffer.write(data)
 
             while sent < max_bytes:

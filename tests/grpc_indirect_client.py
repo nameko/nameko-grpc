@@ -71,6 +71,12 @@ if __name__ == "__main__":
 
         method = getattr(stub, config.method_name)
 
+        compression = config.kwargs.pop("compression", None)
+        if compression:
+            config.kwargs["metadata"] = list(config.kwargs.get("metadata", [])) + [
+                ("grpc-internal-encoding-request", compression)
+            ]
+
         thread = threading.Thread(
             target=call,
             name=config.method_name,

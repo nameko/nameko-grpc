@@ -16,10 +16,6 @@ class example(example_pb2_grpc.exampleServicer):
     def unary_unary(self, request, context):
         if request.delay:
             time.sleep(request.delay / 1000)
-        if request.compression:
-            context.send_initial_metadata(
-                [("grpc-internal-encoding-request", request.compression)]
-            )
         message = request.value * (request.multiplier or 1)
         return ExampleReply(message=message, stash=request.stash)
 
@@ -29,10 +25,6 @@ class example(example_pb2_grpc.exampleServicer):
         for i in range(request.response_count):
             if request.delay:
                 time.sleep(request.delay / 1000)
-            if i == 0 and request.compression:
-                context.send_initial_metadata(
-                    [("grpc-internal-encoding-request", request.compression)]
-                )
             yield ExampleReply(message=message, seqno=i + 1, stash=request.stash)
 
     @instrumented
@@ -41,10 +33,6 @@ class example(example_pb2_grpc.exampleServicer):
         for index, req in enumerate(request):
             if req.delay:
                 time.sleep(req.delay / 1000)
-            if index == 0 and req.compression:
-                context.send_initial_metadata(
-                    [("grpc-internal-encoding-request", req.compression)]
-                )
             message = req.value * (req.multiplier or 1)
             messages.append(message)
 
@@ -55,9 +43,5 @@ class example(example_pb2_grpc.exampleServicer):
         for index, req in enumerate(request):
             if req.delay:
                 time.sleep(req.delay / 1000)
-            if index == 0 and req.compression:
-                context.send_initial_metadata(
-                    [("grpc-internal-encoding-request", req.compression)]
-                )
             message = req.value * (req.multiplier or 1)
             yield ExampleReply(message=message, seqno=index + 1, stash=req.stash)

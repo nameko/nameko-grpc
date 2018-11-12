@@ -254,14 +254,26 @@ def start_grpc_client(
 
 @pytest.fixture
 def start_nameko_server(compile_proto, spec_dir, container_factory, grpc_port):
-    def make(service_name, proto_name=None):
+    def make(
+        service_name,
+        proto_name=None,
+        compression_algorithm="none",
+        compression_level="high",
+    ):
         if proto_name is None:
             proto_name = service_name
         compile_proto(proto_name)
         service_module = import_module("{}_nameko".format(proto_name))
         service_cls = getattr(service_module, service_name)
 
-        container = container_factory(service_cls, {"GRPC_BIND_PORT": grpc_port})
+        container = container_factory(
+            service_cls,
+            {
+                "GRPC_BIND_PORT": grpc_port,
+                "GRPC_COMPRESSION_ALGORITHM": compression_algorithm,
+                "GRPC_COMPRESSION_LEVEL": compression_level,
+            },
+        )
         container.start()
 
         return container
@@ -274,13 +286,23 @@ def start_nameko_client(compile_proto, spec_dir, grpc_port):
 
     clients = []
 
-    def make(service_name, proto_name=None):
+    def make(
+        service_name,
+        proto_name=None,
+        compression_algorithm="none",
+        compression_level="high",
+    ):
         if proto_name is None:
             proto_name = service_name
         _, stubs = compile_proto(proto_name)
 
         stub_cls = getattr(stubs, "{}Stub".format(service_name))
-        client = Client("//127.0.0.1:{}".format(grpc_port), stub_cls)
+        client = Client(
+            "//127.0.0.1:{}".format(grpc_port),
+            stub_cls,
+            compression_algorithm,
+            compression_level,
+        )
         clients.append(client)
         return client.start()
 
