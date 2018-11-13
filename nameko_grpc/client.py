@@ -157,6 +157,11 @@ class Method:
         service_name = inspector.service_name
 
         compression = compression or self.client.default_compression
+        if compression not in SUPPORTED_ENCODINGS:
+            log.warning(
+                "Invalid compression algorithm: '{}'. Ignoring.".format(compression)
+            )
+            compression = self.client.default_compression
 
         request_headers = [
             (":method", "POST"),
@@ -168,7 +173,7 @@ class Method:
             ("user-agent", USER_AGENT),
             ("grpc-encoding", compression),
             ("grpc-message-type", "{}.{}".format(service_name, input_type.__name__)),
-            ("grpc-accept-encoding", SUPPORTED_ENCODINGS),
+            ("grpc-accept-encoding", ",".join(SUPPORTED_ENCODINGS)),
             # TODO application headers
             # application headers, base64 or binary
         ]

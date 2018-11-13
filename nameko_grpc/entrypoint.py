@@ -10,11 +10,7 @@ from h2.exceptions import StreamClosedError
 from nameko.exceptions import ContainerBeingKilled
 from nameko.extensions import Entrypoint, SharedExtension
 
-from nameko_grpc.compression import (
-    SUPPORTED_ENCODINGS,
-    UnsupportedEncoding,
-    select_algorithm,
-)
+from nameko_grpc.compression import SUPPORTED_ENCODINGS, select_algorithm
 from nameko_grpc.connection import ConnectionManager
 from nameko_grpc.exceptions import GrpcError
 from nameko_grpc.inspection import Inspector
@@ -49,31 +45,32 @@ class ServerConnectionManager(ConnectionManager):
 
         headers = OrderedDict(headers)
 
-        # XXX what if grpc-encoding not in server's accept-encoding? receive will fail
-
         compression = select_algorithm(headers["grpc-accept-encoding"])
 
         request_stream = ReceiveStream(stream_id)
         response_stream = SendStream(stream_id, encoding=compression)
-        self.receive_streams[stream_id] = request_stream
-        self.send_streams[stream_id] = response_stream
 
         try:
             self.handle_request(headers, request_stream, response_stream)
             response_headers = (
                 (":status", "200"),
                 ("content-type", "application/grpc+proto"),
-                ("grpc-accept-encoding", SUPPORTED_ENCODINGS),
+                ("grpc-accept-encoding", ",".join(SUPPORTED_ENCODINGS)),
                 # NOTE setting the grpc-encoding header here doesn't give the server
                 # the opportunity to change it; it should probably be set later
                 # if this is a feature we are going to support.
                 ("grpc-encoding", compression),
             )
             self.conn.send_headers(stream_id, response_headers, end_stream=False)
+
         except GrpcError as error:
             response_headers = [(":status", "200")]
             response_headers.extend(error.as_headers())
             self.conn.send_headers(stream_id, response_headers, end_stream=True)
+
+        else:
+            self.receive_streams[stream_id] = request_stream
+            self.send_streams[stream_id] = response_stream
 
     def send_data(self, stream_id):
         try:
@@ -145,6 +142,14 @@ class GrpcServer(SharedExtension):
             raise GrpcError(
                 status=StatusCode.UNIMPLEMENTED,
                 details="Method not found!",
+                debug_error_string="<traceback>",
+            )
+
+        encoding = headers.get("grpc-encoding", "identity")
+        if encoding not in SUPPORTED_ENCODINGS:
+            raise GrpcError(
+                status=StatusCode.UNIMPLEMENTED,
+                details="Algorithm not supported: {}".format(encoding),
                 debug_error_string="<traceback>",
             )
 
@@ -224,23 +229,6 @@ class Grpc(Entrypoint):
     def handle_request(self, request_stream, response_stream):
 
         request = request_stream.consume(self.input_type)
-
-        def decompress(request):
-            try:
-                for x in request:
-                    yield x
-            except UnsupportedEncoding:
-                error = GrpcError(
-                    status=StatusCode.UNIMPLEMENTED,
-                    details="Algorithm not supported: {}".format(
-                        response_stream.encoding
-                    ),
-                    debug_error_string="<traceback>",
-                )
-                request_stream.close()
-                response_stream.close(error)
-
-        request = decompress(request)
 
         if self.cardinality in (Cardinality.UNARY_STREAM, Cardinality.UNARY_UNARY):
             request = next(request)

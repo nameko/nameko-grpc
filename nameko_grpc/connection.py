@@ -122,11 +122,12 @@ class ConnectionManager(object):
         If there is any open `ReceiveStream`, write the data to it.
         """
         log.debug("data received on stream %s: %s...", stream_id, data[:100])
-
         receive_stream = self.receive_streams.get(stream_id)
         if receive_stream is None:
-            # data for unknown stream, exit?
-            self.conn.reset_stream(stream_id, error_code=PROTOCOL_ERROR)
+            try:
+                self.conn.reset_stream(stream_id, error_code=PROTOCOL_ERROR)
+            except StreamClosedError:
+                pass
             return
 
         receive_stream.write(data)
@@ -145,7 +146,7 @@ class ConnectionManager(object):
         Close any `ReceiveStream` that was opened for this stream.
         """
         log.debug("stream ended, stream %s", stream_id)
-        receive_stream = self.receive_streams.pop(stream_id)
+        receive_stream = self.receive_streams.pop(stream_id, None)
         if receive_stream:
             receive_stream.close()
 
@@ -171,15 +172,16 @@ class ConnectionManager(object):
             # has been completely sent
             return
 
-        window_size = self.conn.local_flow_control_window(stream_id=stream_id)
-        max_frame_size = self.conn.max_outbound_frame_size
+        try:
+            window_size = self.conn.local_flow_control_window(stream_id=stream_id)
+            max_frame_size = self.conn.max_outbound_frame_size
 
-        for chunk in send_stream.read(window_size, max_frame_size):
-            log.debug("sending data on stream %s: %s...", stream_id, chunk[:100])
-            try:
+            for chunk in send_stream.read(window_size, max_frame_size):
+                log.debug("sending data on stream %s: %s...", stream_id, chunk[:100])
                 self.conn.send_data(stream_id=stream_id, data=chunk)
-            except StreamClosedError:
-                return
+
+        except StreamClosedError:
+            return
 
         if send_stream.exhausted:
             log.debug("closing exhausted stream, stream %s", stream_id)

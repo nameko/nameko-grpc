@@ -264,10 +264,7 @@ class TestDependencyProvider:
 
 
 class TestMultipleClients:
-
-    # TODO any point checking this with grpc client?
-
-    def test_unary_unary(self, start_client, protobufs):
+    def test_unary_unary(self, start_client, server, protobufs):
 
         futures = []
         number_of_clients = 5
@@ -283,7 +280,7 @@ class TestMultipleClients:
             response = future.result()
             assert response.message == string.ascii_uppercase[index]
 
-    def test_unary_stream(self, start_client, protobufs):
+    def test_unary_stream(self, start_client, server, protobufs):
 
         futures = []
         number_of_clients = 5
@@ -304,7 +301,7 @@ class TestMultipleClients:
                 (string.ascii_uppercase[index], 2),
             ]
 
-    def test_stream_unary(self, start_client, protobufs):
+    def test_stream_unary(self, start_client, server, protobufs):
 
         number_of_clients = 5
 
@@ -332,7 +329,7 @@ class TestMultipleClients:
             response = future.result()
             assert response.message == ",".join(streams[index])
 
-    def test_stream_stream(self, start_client, protobufs):
+    def test_stream_stream(self, start_client, server, protobufs):
 
         number_of_clients = 5
 
@@ -582,10 +579,46 @@ class TestCompression:
     def test_request_unsupported_algorithm_at_client(
         self, start_client, start_server, protobufs, client_type, server_type
     ):
-        """ It's not possible to run this test with the GRPC client or server.
+        start_server("example")
+        client = start_client("example")
 
-        The client strips any unknown compression type before sending the request,
-        so the server never sees anything unsupported.
+        response = client.unary_unary(
+            protobufs.ExampleRequest(value="A"), compression="bogus"
+        )
+        assert response.message == "A"
+
+        responses = client.unary_stream(
+            protobufs.ExampleRequest(value="A", response_count=2), compression="bogus"
+        )
+        assert [(response.message, response.seqno) for response in responses] == [
+            ("A", 1),
+            ("A", 2),
+        ]
+
+        def generate_requests():
+            for value in ["A", "B"]:
+                yield protobufs.ExampleRequest(value=value)
+
+        response = client.stream_unary(generate_requests(), compression="bogus")
+        assert response.message == "A,B"
+
+        def generate_requests():
+            for value in ["A", "B"]:
+                yield protobufs.ExampleRequest(value=value)
+
+        responses = client.stream_stream(generate_requests(), compression="bogus")
+        assert [(response.message, response.seqno) for response in responses] == [
+            ("A", 1),
+            ("B", 2),
+        ]
+
+        # TODO assert that the message is sent _without_ compression
+
+    @patch("nameko_grpc.entrypoint.SUPPORTED_ENCODINGS", new=["deflate"])
+    def test_request_unsupported_algorithm_at_server(
+        self, start_client, start_server, protobufs, client_type, server_type
+    ):
+        """ It's not possible to run this test with the GRPC server.
 
         The server can be configured to disable certain compression algorithms with
         the grpc.compression_enabled_algorithms_bitset server option. Unfortunately,
@@ -593,51 +626,11 @@ class TestCompression:
         rather than the error described in the spec.
         """
 
-        if client_type == "grpc" or server_type == "grpc":
+        if server_type == "grpc":
             pytest.skip("See docstring for details")
 
-        start_server("example")
-        client = start_client("example")
-
-        with pytest.raises(GrpcError) as error:
-            client.unary_unary(
-                protobufs.ExampleRequest(value="A" * 1000), compression="bogus"
-            )
-        assert error.value.status == StatusCode.UNIMPLEMENTED
-        assert error.value.details == "Algorithm not supported: bogus"
-
-        # with pytest.raises(GrpcError) as error:
-        #     client.unary_stream(
-        #         protobufs.ExampleRequest(value="A" * 1000, response_count=2),
-        #         compression="bogus",
-        #     )
-        # assert error.value.status == StatusCode.UNIMPLEMENTED
-        # assert error.value.details == "Algorithm not supported: bogus"
-
-        def generate_requests():
-            for value in ["A" * 1000, "B" * 1000]:
-                yield protobufs.ExampleRequest(value=value)
-
-        with pytest.raises(GrpcError) as error:
-            client.stream_unary(generate_requests(), compression="bogus")
-        assert error.value.status == StatusCode.UNIMPLEMENTED
-        assert error.value.details == "Algorithm not supported: bogus"
-
-        # def generate_requests():
-        #     for value in ["A" * 1000, "B" * 1000]:
-        #         yield protobufs.ExampleRequest(value=value)
-
-        # with pytest.raises(GrpcError) as error:
-        #     client.stream_stream(generate_requests(), compression="bogus")
-        # assert error.value.status == StatusCode.UNIMPLEMENTED
-        # assert error.value.details == "Algorithm not supported: bogus"
-
-    @patch("nameko_grpc.compression.ENCODING_PREFERENCES", new=["deflate"])
-    def test_request_unsupported_algorithm_at_server(
-        self, start_client, start_server, protobufs, client_type, server_type
-    ):
-        if client_type == "grpc" or server_type == "grpc":
-            pytest.skip("See docstring for details")
+        if client_type == "grpc":
+            pytest.skip("Temporarily disabled: FIFO helpers too unstable")
 
         start_server("example")
         client = start_client("example")
@@ -649,10 +642,40 @@ class TestCompression:
         assert error.value.status == StatusCode.UNIMPLEMENTED
         assert error.value.details == "Algorithm not supported: gzip"
 
+        res = client.unary_stream(
+            protobufs.ExampleRequest(value="A" * 1000, response_count=2),
+            compression="gzip",
+        )
+        with pytest.raises(GrpcError) as error:
+            list(res)
+        assert error.value.status == StatusCode.UNIMPLEMENTED
+        assert error.value.details == "Algorithm not supported: gzip"
+
+        def generate_requests():
+            for value in ["A" * 1000, "B" * 1000]:
+                yield protobufs.ExampleRequest(value=value)
+
+        with pytest.raises(GrpcError) as error:
+            client.stream_unary(generate_requests(), compression="gzip")
+        assert error.value.status == StatusCode.UNIMPLEMENTED
+        assert error.value.details == "Algorithm not supported: gzip"
+
+        def generate_requests():
+            for value in ["A" * 1000, "B" * 1000]:
+                yield protobufs.ExampleRequest(value=value)
+
+        res = client.stream_stream(generate_requests(), compression="gzip")
+        with pytest.raises(GrpcError) as error:
+            next(res)
+        assert error.value.status == StatusCode.UNIMPLEMENTED
+        assert error.value.details == "Algorithm not supported: gzip"
+
     def test_compression_not_required_at_client(self):
+        # TODO
         pass
 
     def test_compression_not_required_at_server(self):
+        # TODO
         pass
 
     def test_respond_with_different_algorithm(self):
