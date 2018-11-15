@@ -11,6 +11,7 @@ from example_pb2 import ExampleReply
 
 # TODO move stash to context once applciation headers are implemented
 
+
 grpc = Grpc.decorator(example_pb2_grpc.exampleStub)
 
 
