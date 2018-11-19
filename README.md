@@ -113,6 +113,5 @@ with Client("//127.0.0.1", exampleStub) as client:
 
 * Implement context
 * Better concurrency tests
-* Support compression
 * Allow optional snake_case method names even with CamelCased proto definition
 
