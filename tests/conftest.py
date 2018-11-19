@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import os
+import socket
 import subprocess
 import sys
 import threading
@@ -163,8 +164,16 @@ def start_grpc_server(compile_proto, spawn_process, spec_dir, grpc_port):
             compression_algorithm,
             compression_level,
         )
-        # wait until server has started
-        time.sleep(0.5)
+
+        # wait for server to start
+        while True:
+            try:
+                sock = socket.socket()
+                sock.connect(("127.0.0.1", grpc_port))
+                sock.close()
+                break
+            except socket.error:
+                time.sleep(0.1)
 
     yield make
 
