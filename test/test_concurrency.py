@@ -4,73 +4,109 @@ import string
 
 
 class TestConcurrency:
-    # XXX how to assert both are in flight at the same time?
-    def test_unary_unary(self, client, protobufs):
-        response_a_future = client.unary_unary.future(
-            protobufs.ExampleRequest(value="A")
-        )
-        response_b_future = client.unary_unary.future(
-            protobufs.ExampleRequest(value="B")
-        )
-        response_a = response_a_future.result()
-        response_b = response_b_future.result()
-        assert response_a.message == "A"
-        assert response_b.message == "B"
+    # TODO investigate why this hangs with GRPC client
+    # TODO investigate why some of these tests hang with nameko client
+    # TODO investigate why some of these tests throw flowcontrol errors with nameko
+    #      server <<< need to test large streaming requests, responses
 
-    def test_unary_stream(self, client, protobufs):
-        responses_a_future = client.unary_stream.future(
-            protobufs.ExampleRequest(value="A", response_count=2)
-        )
-        responses_b_future = client.unary_stream.future(
-            protobufs.ExampleRequest(value="B", response_count=2)
-        )
-        responses_a = responses_a_future.result()
-        responses_b = responses_b_future.result()
-        # TODO add random delays and generator consumer that grabs whatever comes first
-        # then verify streams are interleaved
-        assert [(response.message, response.seqno) for response in responses_a] == [
-            ("A", 1),
-            ("A", 2),
-        ]
-        assert [(response.message, response.seqno) for response in responses_b] == [
-            ("B", 1),
-            ("B", 2),
-        ]
+    def test_unary_unary(self, client, protobufs, instrumented):
+        futures = []
+        for letter in string.ascii_uppercase:
+            futures.append(
+                client.unary_unary.future(
+                    protobufs.ExampleRequest(value=letter, stash=instrumented.path)
+                )
+            )
 
-    def test_stream_unary(self, client, protobufs):
+        for index, future in enumerate(futures):
+            assert future.result().message == string.ascii_uppercase[index]
+
+        # verify messages from concurrent requests are interleaved
+        # there is a 1/26! chance of concurrent requests being handled in order
+        captured_requests = list(instrumented.requests())
+        assert len(captured_requests) == 26
+        assert [req.value for req in captured_requests] != string.ascii_uppercase
+
+    def test_unary_stream(self, client, protobufs, instrumented):
+        futures = []
+        for letter in string.ascii_uppercase:
+            futures.append(
+                client.unary_stream.future(
+                    protobufs.ExampleRequest(
+                        value=letter, response_count=2, stash=instrumented.path
+                    )
+                )
+            )
+
+        for index, future in enumerate(futures):
+            result = future.result()
+            assert [(response.message, response.seqno) for response in result] == [
+                (string.ascii_uppercase[index], 1),
+                (string.ascii_uppercase[index], 2),
+            ]
+
+        # verify messages from concurrent requests are interleaved
+        # there is a 1/26! chance of concurrent requests being handled in order
+        captured_requests = list(instrumented.requests())
+        assert len(captured_requests) == 26
+        assert [req.value for req in captured_requests] != string.ascii_uppercase
+
+    def test_stream_unary(self, client, protobufs, instrumented):
         def generate_requests(values):
             for value in values:
-                yield protobufs.ExampleRequest(value=value)
+                yield protobufs.ExampleRequest(value=value, stash=instrumented.path)
 
-        # XXX any way to verify that the input streams were interleaved?
-        response_1_future = client.stream_unary.future(generate_requests("AB"))
-        response_2_future = client.stream_unary.future(generate_requests("XY"))
-        response_1 = response_1_future.result()
-        response_2 = response_2_future.result()
-        assert response_1.message == "A,B"
-        assert response_2.message == "X,Y"
+        futures = []
+        for index in range(26):
+            if index % 2 == 0:
+                values = string.ascii_uppercase
+            else:
+                values = string.ascii_lowercase
+            futures.append(client.stream_unary.future(generate_requests(values)))
 
-    def test_stream_stream(self, client, protobufs):
+        for index, future in enumerate(futures):
+            if index % 2 == 0:
+                assert future.result().message == ",".join(string.ascii_uppercase)
+            else:
+                assert future.result().message == ",".join(string.ascii_lowercase)
+
+        # verify messages from concurrent requests are interleaved
+        # there is a 1/626! chance of concurrent requests being handled in order,
+        # just check the first 26.
+        captured_requests = list(instrumented.requests())
+        assert len(captured_requests) == 26 * 26
+        assert [req.value for req in captured_requests[:26]] != string.ascii_uppercase
+
+    def test_stream_stream(self, client, protobufs, instrumented):
         def generate_requests(values):
             for value in values:
-                yield protobufs.ExampleRequest(value=value)
+                yield protobufs.ExampleRequest(value=value, stash=instrumented.path)
 
-        # TODO add random delays and generator consumer that grabs whatever comes first
-        # then verify streams are interleaved
-        # XXX any way to verify that the input streams were interleaved? perhaos track
-        # the order the generators are pulled?
-        responses_1_future = client.stream_stream.future(generate_requests("AB"))
-        responses_2_future = client.stream_stream.future(generate_requests("XY"))
-        responses_1 = responses_1_future.result()
-        responses_2 = responses_2_future.result()
-        assert [(response.message, response.seqno) for response in responses_1] == [
-            ("A", 1),
-            ("B", 2),
-        ]
-        assert [(response.message, response.seqno) for response in responses_2] == [
-            ("X", 1),
-            ("Y", 2),
-        ]
+        futures = []
+        for index in range(26):
+            if index % 2 == 0:
+                values = string.ascii_uppercase
+            else:
+                values = string.ascii_lowercase
+            futures.append(client.stream_stream.future(generate_requests(values)))
+
+        for index, future in enumerate(futures):
+            result = future.result()
+            if index % 2 == 0:
+                assert [
+                    (response.seqno - 1, response.message) for response in result
+                ] == list(enumerate(string.ascii_uppercase))
+            else:
+                assert [
+                    (response.seqno - 1, response.message) for response in result
+                ] == list(enumerate(string.ascii_lowercase))
+
+        # verify messages from concurrent requests are interleaved
+        # there is a 1/626! chance of concurrent requests being handled in order,
+        # just check the first 26.
+        captured_requests = list(instrumented.requests())
+        assert len(captured_requests) == 26 * 26
+        assert [req.value for req in captured_requests[:26]] != string.ascii_uppercase
 
 
 class TestMultipleClients:
