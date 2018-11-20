@@ -186,7 +186,7 @@ def instrumented(wrapped, instance, args, kwargs):
     else:
         request = stashing_iterator(request, RequestResponseStash.REQUEST)
 
-    response = wrapped(*args, **kwargs)
+    response = wrapped(request, context, **kwargs)
 
     if not isiterable(response):
         if stash is None:
