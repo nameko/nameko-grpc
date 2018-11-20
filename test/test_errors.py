@@ -90,7 +90,9 @@ class TestDeadlineExceededAtServer:
         assert error.value.details == "Deadline Exceeded"
 
         # server should not have recieved all the requests
-        assert len(list(instrumented.requests())) < len(string.ascii_uppercase)
+        captured_requests = list(instrumented.requests())
+        assert len(captured_requests) > 0
+        assert len(captured_requests) < len(string.ascii_uppercase)
 
     def test_timeout_while_streaming_response(self, client, protobufs, instrumented):
 
@@ -113,7 +115,8 @@ class TestDeadlineExceededAtServer:
         time.sleep(0.5)
 
         # server should not continue to stream responses
-        assert len(list(instrumented.responses())) < response_count
+        captured_responses = list(instrumented.responses())
+        assert len(captured_responses) < response_count
 
     # add extra test that does mocking and MAKES SURE nameko service is responding
     # correctly (over and above these equivalence tests)
