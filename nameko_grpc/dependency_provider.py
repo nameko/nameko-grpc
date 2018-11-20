@@ -19,9 +19,18 @@ class GrpcProxy(DependencyProvider):
     manager = None
     sock = None
 
-    def __init__(self, target, stub, **kwargs):
+    def __init__(
+        self,
+        target,
+        stub,
+        compression_algorithm="none",
+        compression_level="high",  # NOTE not used
+        **kwargs
+    ):
         self.target = target
         self.stub = stub
+        self.compression_algorithm = compression_algorithm
+        self.compression_level = compression_level
         super().__init__(**kwargs)
 
     def start(self):
@@ -40,6 +49,12 @@ class GrpcProxy(DependencyProvider):
 
     # XXX should use the DP client as a parameter to the client fixture to avoid
     # accidentally not covering it.
+
+    @property
+    def default_compression(self):
+        if self.compression_algorithm != "none":
+            return self.compression_algorithm
+        return "identity"
 
     def timeout(self, send_stream, response_stream, deadline):
         start = time.time()

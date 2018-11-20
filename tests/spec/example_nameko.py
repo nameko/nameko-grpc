@@ -11,6 +11,7 @@ from example_pb2 import ExampleReply
 
 # TODO move stash to context once applciation headers are implemented
 
+
 grpc = Grpc.decorator(example_pb2_grpc.exampleStub)
 
 
@@ -38,7 +39,7 @@ class example:
     @instrumented
     def stream_unary(self, request, context):
         messages = []
-        for req in request:
+        for index, req in enumerate(request):
             if req.delay:
                 time.sleep(req.delay / 1000)
             message = req.value * (req.multiplier or 1)

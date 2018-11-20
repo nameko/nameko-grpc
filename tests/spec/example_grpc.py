@@ -8,6 +8,7 @@ from example_pb2 import ExampleReply
 
 
 # TODO move stash to context once applciation headers are implemented
+# TODO move compression to context once applciation headers are implemented
 
 
 class example(example_pb2_grpc.exampleServicer):
@@ -29,7 +30,7 @@ class example(example_pb2_grpc.exampleServicer):
     @instrumented
     def stream_unary(self, request, context):
         messages = []
-        for req in request:
+        for index, req in enumerate(request):
             if req.delay:
                 time.sleep(req.delay / 1000)
             message = req.value * (req.multiplier or 1)

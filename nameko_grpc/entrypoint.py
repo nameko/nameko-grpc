@@ -10,6 +10,7 @@ from h2.exceptions import StreamClosedError
 from nameko.exceptions import ContainerBeingKilled
 from nameko.extensions import Entrypoint, SharedExtension
 
+from nameko_grpc.compression import SUPPORTED_ENCODINGS, select_algorithm
 from nameko_grpc.connection import ConnectionManager
 from nameko_grpc.exceptions import GrpcError
 from nameko_grpc.inspection import Inspector
@@ -44,24 +45,32 @@ class ServerConnectionManager(ConnectionManager):
 
         headers = OrderedDict(headers)
 
+        compression = select_algorithm(headers["grpc-accept-encoding"])
+
         request_stream = ReceiveStream(stream_id)
-        response_stream = SendStream(stream_id)
-        self.receive_streams[stream_id] = request_stream
-        self.send_streams[stream_id] = response_stream
+        response_stream = SendStream(stream_id, encoding=compression)
 
         try:
             self.handle_request(headers, request_stream, response_stream)
             response_headers = (
                 (":status", "200"),
                 ("content-type", "application/grpc+proto"),
-                # TODO compression support
-                ("grpc-encoding", "identity"),  # gzip, deflate, snappy
+                ("grpc-accept-encoding", ",".join(SUPPORTED_ENCODINGS)),
+                # NOTE setting the grpc-encoding header here doesn't give the server
+                # the opportunity to change it; it should probably be set later
+                # if this is a feature we are going to support.
+                ("grpc-encoding", compression),
             )
             self.conn.send_headers(stream_id, response_headers, end_stream=False)
+
         except GrpcError as error:
             response_headers = [(":status", "200")]
             response_headers.extend(error.as_headers())
             self.conn.send_headers(stream_id, response_headers, end_stream=True)
+
+        else:
+            self.receive_streams[stream_id] = request_stream
+            self.send_streams[stream_id] = response_stream
 
     def send_data(self, stream_id):
         try:
@@ -79,6 +88,10 @@ class ServerConnectionManager(ConnectionManager):
 
         Only called when the stream ends successfully, hence status is always good.
         """
+
+        # XXX this could be better if it was merged back into send_data;
+        # status (and encoding headers?) could come from the send-stream?
+
         response_headers = (("grpc-status", "0"),)
         try:
             self.conn.send_headers(stream_id, response_headers, end_stream=True)
@@ -132,6 +145,14 @@ class GrpcServer(SharedExtension):
                 debug_error_string="<traceback>",
             )
 
+        encoding = headers.get("grpc-encoding", "identity")
+        if encoding not in SUPPORTED_ENCODINGS:
+            raise GrpcError(
+                status=StatusCode.UNIMPLEMENTED,
+                details="Algorithm not supported: {}".format(encoding),
+                debug_error_string="<traceback>",
+            )
+
         timeout = headers.get("grpc-timeout")
         if timeout:
             timeout = unbucket_timeout(timeout)
@@ -165,13 +186,19 @@ class GrpcServer(SharedExtension):
         self.stop()
 
 
+class GrpcContext:
+    def __init__(self, cardinality, response_stream):
+        self.cardinality = cardinality
+        self.response_stream = response_stream
+
+
 class Grpc(Entrypoint):
 
     grpc_server = GrpcServer()
 
     def __init__(self, stub, **kwargs):
-        self.stub = stub
         super().__init__(**kwargs)
+        self.stub = stub
 
     @property
     def method_path(self):
@@ -201,13 +228,13 @@ class Grpc(Entrypoint):
 
     def handle_request(self, request_stream, response_stream):
 
-        # where does this come from?
-        context = None
-
         request = request_stream.consume(self.input_type)
 
         if self.cardinality in (Cardinality.UNARY_STREAM, Cardinality.UNARY_UNARY):
             request = next(request)
+
+        # XXX not sure that this is for yet...
+        context = GrpcContext(self.cardinality, response_stream)
 
         args = (request, context)
         kwargs = {}
@@ -227,7 +254,7 @@ class Grpc(Entrypoint):
         except ContainerBeingKilled:
             raise GrpcError(
                 status=StatusCode.UNAVAILABLE,
-                detail="Server shutting down",
+                details="Server shutting down",
                 debug_error_string="<traceback>",
             )
 

@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 from grpc import StatusCode
 from h2.errors import PROTOCOL_ERROR  # changed under h2 from 2.6.4?
 
+from nameko_grpc.compression import SUPPORTED_ENCODINGS, UnsupportedEncoding
 from nameko_grpc.connection import ConnectionManager
 from nameko_grpc.constants import Cardinality
 from nameko_grpc.exceptions import GrpcError
@@ -58,7 +59,9 @@ class ClientConnectionManager(ConnectionManager):
 
         self.pending_requests.append((stream_id, request_headers))
 
-        request_stream = SendStream(stream_id)
+        headers = OrderedDict(request_headers)
+
+        request_stream = SendStream(stream_id, encoding=headers["grpc-encoding"])
         response_stream = ReceiveStream(stream_id)
         self.receive_streams[stream_id] = response_stream
         self.send_streams[stream_id] = request_stream
@@ -108,6 +111,22 @@ class ClientConnectionManager(ConnectionManager):
             self.conn.send_headers(stream_id, request_headers)
             self.send_data(stream_id)
 
+    def send_data(self, stream_id):
+        try:
+            super().send_data(stream_id)
+        except UnsupportedEncoding:
+
+            response_stream = self.receive_streams[stream_id]
+            request_stream = self.send_streams[stream_id]
+
+            error = GrpcError(
+                status=StatusCode.UNIMPLEMENTED,
+                details="Algorithm not supported: {}".format(request_stream.encoding),
+                debug_error_string="<traceback>",
+            )
+            response_stream.close(error)
+            request_stream.close()
+
 
 class Future:
     def __init__(self, response, cardinality):
@@ -126,16 +145,23 @@ class Method:
         self.client = client
         self.name = name
 
-    def __call__(self, request, timeout=None):
-        return self.future(request, timeout=timeout).result()
+    def __call__(self, request, **kwargs):
+        return self.future(request, **kwargs).result()
 
-    def future(self, request, timeout=None):
+    def future(self, request, timeout=None, compression=None):
         inspector = Inspector(self.client.stub)
 
         cardinality = inspector.cardinality_for_method(self.name)
         input_type = inspector.input_type_for_method(self.name)
         output_type = inspector.output_type_for_method(self.name)
         service_name = inspector.service_name
+
+        compression = compression or self.client.default_compression
+        if compression not in SUPPORTED_ENCODINGS:
+            log.warning(
+                "Invalid compression algorithm: '{}'. Ignoring.".format(compression)
+            )
+            compression = self.client.default_compression
 
         request_headers = [
             (":method", "POST"),
@@ -145,12 +171,10 @@ class Method:
             ("te", "trailers"),
             ("content-type", "application/grpc+proto"),
             ("user-agent", USER_AGENT),
-            # TODO compression support
-            ("grpc-encoding", "identity"),  # gzip, deflate, snappy
+            ("grpc-encoding", compression),
             ("grpc-message-type", "{}.{}".format(service_name, input_type.__name__)),
-            # TODO compression support
-            ("grpc-accept-encoding", "identity"),  # gzip, deflate, snappy
-            # TODO applicatiom headers
+            ("grpc-accept-encoding", ",".join(SUPPORTED_ENCODINGS)),
+            # TODO application headers
             # application headers, base64 or binary
         ]
 
@@ -180,15 +204,25 @@ class Client:
     manager = None
     sock = None
 
-    def __init__(self, target, stub):
+    def __init__(
+        self, target, stub, compression_algorithm="none", compression_level="high"
+    ):
         self.target = target
         self.stub = stub
+        self.compression_algorithm = compression_algorithm
+        self.compression_level = compression_level  # NOTE not used
 
     def __enter__(self):
         return self.start()
 
     def __exit__(self, *args):
         self.stop()
+
+    @property
+    def default_compression(self):
+        if self.compression_algorithm != "none":
+            return self.compression_algorithm
+        return "identity"
 
     def start(self):
         target = urlparse(self.target)
