@@ -9,6 +9,7 @@ import uuid
 from importlib import import_module
 
 import pytest
+from eventlet.green import zmq
 from nameko.testing.utils import find_free_port
 
 from nameko_grpc.client import Client
@@ -21,6 +22,8 @@ from helpers import (
     RequestResponseStash,
     receive,
     send,
+    zreceive,
+    zsend,
 )
 
 
@@ -179,7 +182,90 @@ def start_grpc_server(compile_proto, spawn_process, spec_dir, grpc_port):
 
 
 @pytest.fixture
-def start_grpc_client(
+def start_grpc_client(compile_proto, spawn_process, spec_dir, grpc_port):
+
+    client_script = os.path.join(os.path.dirname(__file__), "grpc_zmq_client.py")
+
+    clients = []
+
+    context = zmq.Context()
+
+    class Result:
+        def __init__(self, socket):
+            self.socket = socket
+
+        def result(self):
+            res = zreceive(context, self.socket)
+            return RaisingReceiver.wrap(res)
+
+    class Method:
+        def __init__(self, socket, name):
+            self.socket = socket
+            self.name = name
+
+        def __call__(self, request, **kwargs):
+            return self.future(request, **kwargs).result()
+
+        def future(self, request, **kwargs):
+            req_port = find_free_port()
+            # TODO probably safer to create this inside the zsend thread, not here.
+            req_socket = context.socket(zmq.PUSH)
+            req_socket.bind("tcp://*:{}".format(req_port))
+
+            res_port = find_free_port()
+            res_socket = context.socket(zmq.PULL)
+            res_socket.bind("tcp://*:{}".format(res_port))
+
+            zsend(context, self.socket, Config(self.name, req_port, res_port, kwargs))
+            zreceive(context, self.socket)
+            threading.Thread(target=zsend, args=(context, req_socket, request)).start()
+            return Result(res_socket)
+
+    class Client:
+        def __init__(self, port):
+            self.socket = context.socket(zmq.REQ)
+            self.socket.connect("tcp://localhost:{}".format(port))
+
+        def __getattr__(self, name):
+            return Method(self.socket, name)
+
+        def shutdown(self):
+            zsend(context, self.socket, None)
+
+    def make(
+        service_name,
+        proto_name=None,
+        compression_algorithm="none",
+        compression_level="high",
+    ):
+        if proto_name is None:
+            proto_name = service_name
+        compile_proto(proto_name)
+
+        zmq_port = find_free_port()
+
+        spawn_process(
+            client_script,
+            str(grpc_port),
+            spec_dir.strpath,
+            proto_name,
+            service_name,
+            compression_algorithm,
+            compression_level,
+            str(zmq_port),
+        )
+
+        return Client(zmq_port)
+
+    yield make
+
+    # shut down indirect clients
+    for client in clients:
+        client.shutdown()
+
+
+@pytest.fixture
+def orig_start_grpc_client(
     compile_proto, tmpdir, make_fifo, spawn_process, spec_dir, grpc_port
 ):
 

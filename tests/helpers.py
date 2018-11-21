@@ -6,7 +6,9 @@ import uuid
 
 import grpc
 import wrapt
+import zmq
 from eventlet import tpool
+from nameko.testing.utils import find_free_port
 
 from nameko_grpc.exceptions import GrpcError
 
@@ -22,10 +24,17 @@ class Config:
         self.out_fifo = out_fifo
         self.kwargs = kwargs
 
+        # zmq
+        self.req_port = self.in_fifo
+        self.res_port = self.out_fifo
+
 
 class NewStream:
     def __init__(self, path):
         self.path = path
+
+        # zmq
+        self.port = self.path
 
     def __str__(self):
         return "<NewStream {}>".format(self.path)
@@ -255,11 +264,28 @@ def receive_stream(stream_fifo):
         yield req
 
 
+def zreceive_stream(sock):
+    while True:
+        req = pickle.loads(sock.recv())
+        if req is None:
+            break
+        yield req
+
+
 def receive(fifo):
     loaded = fifo.load()
     if isinstance(loaded, NewStream):
         stream_fifo = FifoPipe.wrap(loaded.path)
         return receive_stream(stream_fifo)
+    return loaded
+
+
+def zreceive(context, socket):
+    loaded = pickle.loads(socket.recv())
+    if isinstance(loaded, NewStream):
+        sock = context.socket(zmq.PULL)
+        sock.connect("tcp://127.0.0.1:{}".format(loaded.port))
+        return zreceive_stream(sock)
     return loaded
 
 
@@ -273,6 +299,12 @@ def send_stream(stream_fifo, result):
         pass
 
 
+def zsend_stream(sock, result):
+    for msg in result:
+        sock.send(pickle.dumps(msg))
+    sock.send(pickle.dumps(None))
+
+
 def send(fifo, result):
     if isiterable(result):
         with FifoPipe.new(os.path.dirname(fifo.path)) as stream_fifo:
@@ -280,3 +312,14 @@ def send(fifo, result):
             send_stream(stream_fifo, result)
     else:
         fifo.dump(result)
+
+
+def zsend(context, socket, result):
+    if isiterable(result):
+        new_port = find_free_port()
+        sock = context.socket(zmq.PUSH)
+        sock.bind("tcp://*:{}".format(new_port))
+        socket.send(pickle.dumps(NewStream(new_port)))
+        zsend_stream(sock, result)
+    else:
+        socket.send(pickle.dumps(result))

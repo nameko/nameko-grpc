@@ -629,9 +629,6 @@ class TestCompression:
         if server_type == "grpc":
             pytest.skip("See docstring for details")
 
-        if client_type == "grpc":
-            pytest.skip("Temporarily disabled: FIFO helpers too unstable")
-
         start_server("example")
         client = start_client("example")
 
