@@ -42,18 +42,37 @@ class TestStandard:
 
 
 class TestLarge:
-    def test_large_request(self, client, protobufs):
+    def test_large_unary_request(self, client, protobufs):
         response = client.unary_unary(
-            protobufs.ExampleRequest(value="A", blob="B" * 20000)
+            protobufs.ExampleRequest(value="A", blob="X" * 20000)
         )
         assert response.message == "A"
 
-    def test_large_response(self, client, protobufs):
+    def test_large_unary_response(self, client, protobufs):
         multiplier = 20000
         response = client.unary_unary(
             protobufs.ExampleRequest(value="A", multiplier=multiplier)
         )
         assert response.message == "A" * multiplier
+
+    def test_large_streaming_request(self, client, protobufs):
+        def generate_requests():
+            for value in ["A", "B"]:
+                yield protobufs.ExampleRequest(value=value, blob="X" * 20000)
+
+        response = client.stream_unary(generate_requests())
+        assert response.message == "A,B"
+
+    def test_large_streaming_response(self, client, protobufs):
+
+        multiplier = 20000
+        responses = client.unary_stream(
+            protobufs.ExampleRequest(value="A", multiplier=multiplier, response_count=2)
+        )
+        assert [(response.message, response.seqno) for response in responses] == [
+            ("A" * multiplier, 1),
+            ("A" * multiplier, 2),
+        ]
 
 
 class TestFuture:
