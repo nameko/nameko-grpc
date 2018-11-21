@@ -2,14 +2,18 @@
 import random
 import string
 
+import pytest
+
 
 class TestConcurrency:
-    # TODO investigate why this hangs with GRPC client
-    # TODO investigate why some of these tests hang with nameko client
-    # TODO investigate why some of these tests throw flowcontrol errors with nameko
-    #      server <<< need to test large streaming requests, responses
+    # TODO investigate why all of these hang with GRPC client
+    # TODO investigate why some of these hang with Nameko server
 
-    def test_unary_unary(self, client, protobufs, instrumented):
+    def test_unary_unary(self, client, protobufs, instrumented, client_type):
+
+        if client_type == "grpc":
+            pytest.skip("Hangs")
+
         futures = []
         for letter in string.ascii_uppercase:
             futures.append(
@@ -27,7 +31,11 @@ class TestConcurrency:
         assert len(captured_requests) == 26
         assert [req.value for req in captured_requests] != string.ascii_uppercase
 
-    def test_unary_stream(self, client, protobufs, instrumented):
+    def test_unary_stream(self, client, protobufs, instrumented, client_type):
+
+        if client_type == "grpc":
+            pytest.skip("Hangs")
+
         futures = []
         for letter in string.ascii_uppercase:
             futures.append(
@@ -51,7 +59,15 @@ class TestConcurrency:
         assert len(captured_requests) == 26
         assert [req.value for req in captured_requests] != string.ascii_uppercase
 
-    def test_stream_unary(self, client, protobufs, instrumented):
+    def test_stream_unary(
+        self, client, protobufs, instrumented, client_type, server_type
+    ):
+
+        if client_type == "grpc":
+            pytest.skip("Hangs")
+        if server_type == "nameko":
+            pytest.skip("Hangs")
+
         def generate_requests(values):
             for value in values:
                 yield protobufs.ExampleRequest(value=value, stash=instrumented.path)
@@ -77,7 +93,13 @@ class TestConcurrency:
         assert len(captured_requests) == 26 * 26
         assert [req.value for req in captured_requests[:26]] != string.ascii_uppercase
 
-    def test_stream_stream(self, client, protobufs, instrumented):
+    def test_stream_stream(self, client, protobufs, instrumented, client_type):
+
+        if client_type == "grpc":
+            pytest.skip("Hangs")
+        if client_type == "nameko":
+            pytest.skip("Hangs")
+
         def generate_requests(values):
             for value in values:
                 yield protobufs.ExampleRequest(value=value, stash=instrumented.path)
@@ -94,12 +116,12 @@ class TestConcurrency:
             result = future.result()
             if index % 2 == 0:
                 assert [
-                    (response.seqno - 1, response.message) for response in result
-                ] == list(enumerate(string.ascii_uppercase))
+                    (response.seqno, response.message) for response in result
+                ] == list(enumerate(string.ascii_uppercase, 1))
             else:
                 assert [
-                    (response.seqno - 1, response.message) for response in result
-                ] == list(enumerate(string.ascii_lowercase))
+                    (response.seqno, response.message) for response in result
+                ] == list(enumerate(string.ascii_lowercase, 1))
 
         # verify messages from concurrent requests are interleaved
         # there is a 1/626! chance of concurrent requests being handled in order,
@@ -202,7 +224,5 @@ class TestMultipleClients:
         for index, future in enumerate(futures):
             responses = future.result()
 
-            expected = [(char, idx + 1) for idx, char in enumerate(streams[index])]
-            received = [(response.message, response.seqno) for response in responses]
-
-            assert received == expected
+            received = [(response.seqno, response.message) for response in responses]
+            assert received == list(enumerate(streams[index], 1))
