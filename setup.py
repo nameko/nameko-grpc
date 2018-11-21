@@ -29,6 +29,7 @@ setup(
             "googleapis-common-protos",
             "pre-commit",
             "wrapt",
+            "zmq",
         ]
     },
     zip_safe=True,
