@@ -149,7 +149,8 @@ class SendStream(StreamBase):
             self.buffer.write(data)
 
             while sent < max_bytes:
-                chunk = self.buffer.read(chunk_size)
+                max_read = min(chunk_size, max_bytes - sent)
+                chunk = self.buffer.read(max_read)
                 if not chunk:
                     break  # no more data to send
                 sent += len(chunk)
