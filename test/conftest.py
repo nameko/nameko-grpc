@@ -14,17 +14,7 @@ from nameko.testing.utils import find_free_port
 
 from nameko_grpc.client import Client
 
-from helpers import (
-    AbortableIterator,
-    Config,
-    FifoPipe,
-    RaisingReceiver,
-    RequestResponseStash,
-    receive,
-    send,
-    zreceive,
-    zsend,
-)
+from helpers import Command, Config, Connection, RequestResponseStash
 
 
 def pytest_addoption(parser):
@@ -106,23 +96,6 @@ def compile_proto(spec_dir):
 
 
 @pytest.fixture
-def make_fifo(tmpdir):
-
-    fifos = []
-
-    def make():
-        fifo = FifoPipe.new(tmpdir.strpath)
-        fifos.append(fifo)
-        fifo.open()
-        return fifo
-
-    yield make
-
-    for fifo in fifos:
-        fifo.close()
-
-
-@pytest.fixture
 def spawn_process():
 
     procs = []
@@ -195,12 +168,11 @@ def start_grpc_client(compile_proto, spawn_process, spec_dir, grpc_port):
             self.socket = socket
 
         def result(self):
-            res = zreceive(context, self.socket)
-            return RaisingReceiver.wrap(res)
+            return Connection(context, self.socket).receive()
 
     class Method:
-        def __init__(self, socket, name):
-            self.socket = socket
+        def __init__(self, conn, name):
+            self.conn = conn
             self.name = name
 
         def __call__(self, request, **kwargs):
@@ -208,7 +180,6 @@ def start_grpc_client(compile_proto, spawn_process, spec_dir, grpc_port):
 
         def future(self, request, **kwargs):
             req_port = find_free_port()
-            # TODO probably safer to create this inside the zsend thread, not here.
             req_socket = context.socket(zmq.PUSH)
             req_socket.bind("tcp://*:{}".format(req_port))
 
@@ -216,21 +187,37 @@ def start_grpc_client(compile_proto, spawn_process, spec_dir, grpc_port):
             res_socket = context.socket(zmq.PULL)
             res_socket.bind("tcp://*:{}".format(res_port))
 
-            zsend(context, self.socket, Config(self.name, req_port, res_port, kwargs))
-            zreceive(context, self.socket)
-            threading.Thread(target=zsend, args=(context, req_socket, request)).start()
+            config = Config(self.name, req_port, res_port, kwargs)
+            command = Command(config)
+
+            self.conn.send(command)
+            self.conn.receive()
+
+            threading.Thread(
+                target=Connection(context, req_socket).send, args=(request,)
+            ).start()
             return Result(res_socket)
 
     class Client:
-        def __init__(self, port):
-            self.socket = context.socket(zmq.REQ)
-            self.socket.connect("tcp://localhost:{}".format(port))
+        def __init__(self, conn):
+            self.conn = conn
 
         def __getattr__(self, name):
-            return Method(self.socket, name)
+            return Method(self.conn, name)
 
         def shutdown(self):
-            zsend(context, self.socket, None)
+            self.conn.send(None)
+
+    # better API
+    # send a Call object, with attrs:
+    # - method name
+    # - request
+    # - response (blank when sent)
+    # return the call object, inspect it to get response
+    # request/response MAY be a <stream> object that requires opening a new socket
+    # <stream> object could probably hide the actual complexity inside itself, once
+    # given a local zmq context to work with
+    # [waiting for a response before replying will break concurrency]
 
     def make(
         service_name,
@@ -243,6 +230,9 @@ def start_grpc_client(compile_proto, spawn_process, spec_dir, grpc_port):
         compile_proto(proto_name)
 
         zmq_port = find_free_port()
+        zmq_socket = context.socket(zmq.REQ)
+        zmq_socket.bind("tcp://*:{}".format(zmq_port))
+        zmq_conn = Connection(context, zmq_socket)
 
         spawn_process(
             client_script,
@@ -255,96 +245,15 @@ def start_grpc_client(compile_proto, spawn_process, spec_dir, grpc_port):
             str(zmq_port),
         )
 
-        return Client(zmq_port)
+        client = Client(zmq_conn)
+        clients.append(client)
+        return client
 
     yield make
 
     # shut down indirect clients
     for client in clients:
         client.shutdown()
-
-
-@pytest.fixture
-def orig_start_grpc_client(
-    compile_proto, tmpdir, make_fifo, spawn_process, spec_dir, grpc_port
-):
-
-    client_script = os.path.join(os.path.dirname(__file__), "grpc_indirect_client.py")
-
-    client_fifos = []
-    aborts = []
-
-    def make_abortable(value):
-        abort, iterable = AbortableIterator.wrap(value)
-        aborts.append(abort)
-        return iterable
-
-    class Result:
-        def __init__(self, fifo):
-            self.fifo = fifo
-
-        def result(self):
-            res = receive(self.fifo)
-            return RaisingReceiver.wrap(res)
-
-    class Method:
-        def __init__(self, fifo, name):
-            self.fifo = fifo
-            self.name = name
-
-        def __call__(self, request, **kwargs):
-            return self.future(request, **kwargs).result()
-
-        def future(self, request, **kwargs):
-            in_fifo = make_fifo()
-            out_fifo = make_fifo()
-            send(self.fifo, Config(self.name, in_fifo.path, out_fifo.path, kwargs))
-            request = make_abortable(request)
-            threading.Thread(target=send, args=(in_fifo, request)).start()
-            return Result(out_fifo)
-
-    class Client:
-        def __init__(self, fifo):
-            self.fifo = fifo
-
-        def __getattr__(self, name):
-            return Method(self.fifo, name)
-
-    def make(
-        service_name,
-        proto_name=None,
-        compression_algorithm="none",
-        compression_level="high",
-    ):
-        if proto_name is None:
-            proto_name = service_name
-        compile_proto(proto_name)
-
-        client_fifo = make_fifo()
-        client_fifos.append(client_fifo)
-
-        spawn_process(
-            client_script,
-            str(grpc_port),
-            spec_dir.strpath,
-            proto_name,
-            service_name,
-            compression_algorithm,
-            compression_level,
-            client_fifo.path,
-        )
-
-        return Client(client_fifo)
-
-    yield make
-
-    # abort any streams still sending
-    for abort in aborts:
-        abort()
-
-    # shut down indirect clients
-    for fifo in client_fifos:
-        send(fifo, None)
 
 
 @pytest.fixture

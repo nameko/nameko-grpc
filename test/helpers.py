@@ -1,20 +1,14 @@
 # -*- coding: utf-8 -*-
 import os
 import pickle
-import time
-import uuid
+import threading
 
 import grpc
 import wrapt
 import zmq
-from eventlet import tpool
 from nameko.testing.utils import find_free_port
 
 from nameko_grpc.exceptions import GrpcError
-
-
-class StreamAborted(Exception):
-    pass
 
 
 class Config:
@@ -40,40 +34,86 @@ class NewStream:
         return "<NewStream {}>".format(self.path)
 
 
+class Command:
+    def __init__(self, config):
+        self.config = config
+
+    def invoke(self, conn, stub):
+        method = getattr(stub, self.config.method_name)
+
+        req_socket = conn.context.socket(zmq.PULL)
+        req_socket.connect("tcp://127.0.0.1:{}".format(self.config.req_port))
+
+        res_socket = conn.context.socket(zmq.PUSH)
+        res_socket.connect("tcp://127.0.0.1:{}".format(self.config.res_port))
+
+        request = Connection(conn.context, req_socket).receive()
+
+        try:
+            response = method(request, **self.config.kwargs)
+        except grpc.RpcError as exc:
+            state = exc._state
+            response = GrpcError(state.code, state.details, state.debug_error_string)
+
+        Connection(conn.context, res_socket).send(response)
+
+    def execute(self, conn, stub):
+
+        compression = self.config.kwargs.pop("compression", None)
+        if compression:
+            self.config.kwargs["metadata"] = list(
+                self.config.kwargs.get("metadata", [])
+            ) + [("grpc-internal-encoding-request", compression)]
+
+        thread = threading.Thread(
+            target=self.invoke, name=self.config.method_name, args=(conn, stub)
+        )
+        thread.start()
+
+
+class Connection:
+    def __init__(self, context, sock):
+        self.context = context
+        self.sock = sock
+
+    def receive_stream(self):
+        while True:
+            req = pickle.loads(self.sock.recv())
+            if req is None:
+                break
+            yield req
+
+    def receive(self):
+        loaded = pickle.loads(self.sock.recv())
+        if isinstance(loaded, NewStream):
+            sock = self.context.socket(zmq.PULL)
+            sock.connect("tcp://127.0.0.1:{}".format(loaded.port))
+            loaded = Connection(self.context, sock).receive_stream()
+        return RaisingReceiver.wrap(loaded)
+
+    def send_stream(self, result):
+        for msg in result:
+            self.sock.send(pickle.dumps(msg))
+        self.sock.send(pickle.dumps(None))
+
+    def send(self, result):
+        result = SafeSender.wrap(result)
+        if isiterable(result):
+            new_port = find_free_port()
+            sock = self.context.socket(zmq.PUSH)
+            sock.bind("tcp://*:{}".format(new_port))
+            self.sock.send(pickle.dumps(NewStream(new_port)))
+            Connection(self.context, sock).send_stream(result)
+        else:
+            self.sock.send(pickle.dumps(result))
+
+
 def isiterable(req):
     try:
         iter(req)
         return True
     except TypeError:
         return False
-
-
-class AbortableIterator:
-    class Aborted(Exception):
-        pass
-
-    def __init__(self, value):
-        self.value = value
-        self.aborted = False
-
-    def abort(self):
-        self.aborted = True
-
-    def iterate(self):
-        for item in self.value:
-            if self.aborted:
-                raise AbortableIterator.Aborted()
-            yield item
-
-    def result(self):
-        if not isiterable(self.value):
-            return self.value
-        return self.iterate()
-
-    @classmethod
-    def wrap(cls, value):
-        instance = cls(value)
-        return instance.abort, instance.result()
 
 
 class RaisingReceiver:
@@ -205,121 +245,3 @@ def instrumented(wrapped, instance, args, kwargs):
         response = stashing_iterator(response, RequestResponseStash.RESPONSE)
 
     return response
-
-
-class FifoPipe:
-    def __init__(self, path):
-        self.path = path
-
-    def dump(self, value):
-        with open(self.path, "wb") as out_:
-            data = pickle.dumps(value)
-            out_.write(data)
-
-    def load(self):
-        with open(self.path, "rb") as in_:
-            data = in_.read()
-            return pickle.loads(data)
-
-    def open(self):
-        os.mkfifo(self.path)
-
-    def close(self):
-        os.unlink(self.path)
-
-    @classmethod
-    def new(cls, directory, name=None):
-        if name is None:
-            name = str(uuid.uuid4())
-        path = os.path.join(directory, name)
-        return cls.wrap(path)
-
-    @classmethod
-    def wrap(cls, path):
-        instance = cls(path)
-        if under_eventlet():
-            instance = tpool.Proxy(instance)
-        return instance
-
-    def __enter__(self):
-        self.open()
-        return self
-
-    def __exit__(self, *args):
-        self.close()
-
-
-def under_eventlet():
-    import socket
-    from eventlet.greenio.base import GreenSocket
-
-    return issubclass(socket.socket, GreenSocket)
-
-
-def receive_stream(stream_fifo):
-    while True:
-        req = stream_fifo.load()
-        if req is None:
-            break
-        yield req
-
-
-def zreceive_stream(sock):
-    while True:
-        req = pickle.loads(sock.recv())
-        if req is None:
-            break
-        yield req
-
-
-def receive(fifo):
-    loaded = fifo.load()
-    if isinstance(loaded, NewStream):
-        stream_fifo = FifoPipe.wrap(loaded.path)
-        return receive_stream(stream_fifo)
-    return loaded
-
-
-def zreceive(context, socket):
-    loaded = pickle.loads(socket.recv())
-    if isinstance(loaded, NewStream):
-        sock = context.socket(zmq.PULL)
-        sock.connect("tcp://127.0.0.1:{}".format(loaded.port))
-        return zreceive_stream(sock)
-    return loaded
-
-
-def send_stream(stream_fifo, result):
-    try:
-        for msg in result:
-            stream_fifo.dump(msg)
-            time.sleep(0.01)
-        stream_fifo.dump(None)
-    except AbortableIterator.Aborted:
-        pass
-
-
-def zsend_stream(sock, result):
-    for msg in result:
-        sock.send(pickle.dumps(msg))
-    sock.send(pickle.dumps(None))
-
-
-def send(fifo, result):
-    if isiterable(result):
-        with FifoPipe.new(os.path.dirname(fifo.path)) as stream_fifo:
-            fifo.dump(NewStream(stream_fifo.path))
-            send_stream(stream_fifo, result)
-    else:
-        fifo.dump(result)
-
-
-def zsend(context, socket, result):
-    if isiterable(result):
-        new_port = find_free_port()
-        sock = context.socket(zmq.PUSH)
-        sock.bind("tcp://*:{}".format(new_port))
-        socket.send(pickle.dumps(NewStream(new_port)))
-        zsend_stream(sock, result)
-    else:
-        socket.send(pickle.dumps(result))

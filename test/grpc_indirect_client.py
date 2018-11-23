@@ -1,26 +1,12 @@
 # -*- coding: utf-8 -*-
 import sys
-import threading
 from importlib import import_module
 
 import grpc
+import zmq
 from grpc._cython.cygrpc import CompressionAlgorithm, CompressionLevel
 
-from nameko_grpc.exceptions import GrpcError
-
-from helpers import FifoPipe, SafeSender, receive, send
-
-
-def call(fifo_in, fifo_out, method, kwargs):
-    request = receive(fifo_in)
-    try:
-        response = method(request, **kwargs)
-    except grpc.RpcError as exc:
-        state = exc._state
-        response = GrpcError(state.code, state.details, state.debug_error_string)
-
-    response = SafeSender.wrap(response)
-    send(fifo_out, response)
+from helpers import Connection
 
 
 if __name__ == "__main__":
@@ -39,8 +25,7 @@ if __name__ == "__main__":
     grpc_module = import_module("{}_pb2_grpc".format(proto_name))
     stub_cls = getattr(grpc_module, "{}Stub".format(service_name))
 
-    command_fifo_path = sys.argv[7]
-    command_fifo = FifoPipe.wrap(command_fifo_path)
+    zmq_port = sys.argv[7]
 
     channel_options = [
         (
@@ -58,28 +43,19 @@ if __name__ == "__main__":
     )
     stub = stub_cls(channel)
 
+    context = zmq.Context()
+    socket = context.socket(zmq.REP)
+    socket.connect("tcp://127.0.0.1:{}".format(zmq_port))
+
+    conn = Connection(context, socket)
+
     while True:
-        config = receive(command_fifo)
-        if config is None:
+        #  Wait for next request from client
+        command = conn.receive()
+        if command is None:
             break
 
-        in_fifo_path = config.in_fifo
-        in_fifo = FifoPipe.wrap(in_fifo_path)
-
-        out_fifo_path = config.out_fifo
-        out_fifo = FifoPipe.wrap(out_fifo_path)
-
-        method = getattr(stub, config.method_name)
-
-        compression = config.kwargs.pop("compression", None)
-        if compression:
-            config.kwargs["metadata"] = list(config.kwargs.get("metadata", [])) + [
-                ("grpc-internal-encoding-request", compression)
-            ]
-
-        thread = threading.Thread(
-            target=call,
-            name=config.method_name,
-            args=(in_fifo, out_fifo, method, config.kwargs),
-        )
-        thread.start()
+        command.execute(conn, stub)  # doesn't seem like a brilliant api...
+        # instead perhaps do conn.execute(command)
+        # or here, even just conn.run()  << receives, executes
+        conn.send(True)
