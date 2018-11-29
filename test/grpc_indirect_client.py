@@ -1,12 +1,35 @@
 # -*- coding: utf-8 -*-
 import sys
+import threading
 from importlib import import_module
 
 import grpc
 import zmq
 from grpc._cython.cygrpc import CompressionAlgorithm, CompressionLevel
 
-from helpers import Connection
+from nameko_grpc.exceptions import GrpcError
+
+from helpers import Command, RemoteClientTransport
+
+
+def execute(command, stub):
+    method = getattr(stub, command.method_name)
+
+    request = command.get_request()
+
+    compression = command.kwargs.pop("compression", None)
+    if compression:
+        command.kwargs["metadata"] = list(command.kwargs.get("metadata", [])) + [
+            ("grpc-internal-encoding-request", compression)
+        ]
+
+    try:
+        response = method(request, **command.kwargs)
+    except grpc.RpcError as exc:
+        state = exc._state
+        response = GrpcError(state.code, state.details, state.debug_error_string)
+
+    command.send_response(response)
 
 
 if __name__ == "__main__":
@@ -43,19 +66,9 @@ if __name__ == "__main__":
     )
     stub = stub_cls(channel)
 
-    context = zmq.Context()
-    socket = context.socket(zmq.REP)
-    socket.connect("tcp://127.0.0.1:{}".format(zmq_port))
+    transport = RemoteClientTransport.connect(
+        zmq.Context(), zmq.REP, "tcp://127.0.0.1:{}".format(zmq_port)
+    )
 
-    conn = Connection(context, socket)
-
-    while True:
-        #  Wait for next request from client
-        command = conn.receive()
-        if command is None:
-            break
-
-        command.execute(conn, stub)  # doesn't seem like a brilliant api...
-        # instead perhaps do conn.execute(command)
-        # or here, even just conn.run()  << receives, executes
-        conn.send(True)
+    for command in Command.retrieve_commands(transport):
+        threading.Thread(target=execute, args=(command, stub)).start()

@@ -14,7 +14,7 @@ from nameko.testing.utils import find_free_port
 
 from nameko_grpc.client import Client
 
-from helpers import Command, Config, Connection, RequestResponseStash
+from helpers import Command, RemoteClientTransport, RequestResponseStash
 
 
 def pytest_addoption(parser):
@@ -157,67 +157,42 @@ def start_grpc_server(compile_proto, spawn_process, spec_dir, grpc_port):
 @pytest.fixture
 def start_grpc_client(compile_proto, spawn_process, spec_dir, grpc_port):
 
-    client_script = os.path.join(os.path.dirname(__file__), "grpc_zmq_client.py")
+    client_script = os.path.join(os.path.dirname(__file__), "grpc_indirect_client.py")
 
     clients = []
 
     context = zmq.Context()
 
     class Result:
-        def __init__(self, socket):
-            self.socket = socket
+        def __init__(self, receive):
+            self.receive = receive
 
         def result(self):
-            return Connection(context, self.socket).receive()
+            return self.receive()
 
     class Method:
-        def __init__(self, conn, name):
-            self.conn = conn
+        def __init__(self, transport, name):
+            self.transport = transport
             self.name = name
 
         def __call__(self, request, **kwargs):
             return self.future(request, **kwargs).result()
 
         def future(self, request, **kwargs):
-            req_port = find_free_port()
-            req_socket = context.socket(zmq.PUSH)
-            req_socket.bind("tcp://*:{}".format(req_port))
-
-            res_port = find_free_port()
-            res_socket = context.socket(zmq.PULL)
-            res_socket.bind("tcp://*:{}".format(res_port))
-
-            config = Config(self.name, req_port, res_port, kwargs)
-            command = Command(config)
-
-            self.conn.send(command)
-            self.conn.receive()
-
-            threading.Thread(
-                target=Connection(context, req_socket).send, args=(request,)
-            ).start()
-            return Result(res_socket)
+            command = Command(self.name, kwargs, self.transport)
+            command.issue()
+            threading.Thread(target=command.send_request, args=(request,)).start()
+            return Result(command.get_response)
 
     class Client:
-        def __init__(self, conn):
-            self.conn = conn
+        def __init__(self, transport):
+            self.transport = transport
 
         def __getattr__(self, name):
-            return Method(self.conn, name)
+            return Method(self.transport, name)
 
         def shutdown(self):
-            self.conn.send(None)
-
-    # better API
-    # send a Call object, with attrs:
-    # - method name
-    # - request
-    # - response (blank when sent)
-    # return the call object, inspect it to get response
-    # request/response MAY be a <stream> object that requires opening a new socket
-    # <stream> object could probably hide the actual complexity inside itself, once
-    # given a local zmq context to work with
-    # [waiting for a response before replying will break concurrency]
+            self.transport.send(None)
 
     def make(
         service_name,
@@ -230,9 +205,9 @@ def start_grpc_client(compile_proto, spawn_process, spec_dir, grpc_port):
         compile_proto(proto_name)
 
         zmq_port = find_free_port()
-        zmq_socket = context.socket(zmq.REQ)
-        zmq_socket.bind("tcp://*:{}".format(zmq_port))
-        zmq_conn = Connection(context, zmq_socket)
+        transport = RemoteClientTransport.bind(
+            context, zmq.REQ, "tcp://*:{}".format(zmq_port)
+        )
 
         spawn_process(
             client_script,
@@ -245,7 +220,7 @@ def start_grpc_client(compile_proto, spawn_process, spec_dir, grpc_port):
             str(zmq_port),
         )
 
-        client = Client(zmq_conn)
+        client = Client(transport)
         clients.append(client)
         return client
 
