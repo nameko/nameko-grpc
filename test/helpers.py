@@ -39,6 +39,9 @@ class Command:
     responses back to the caller.
     """
 
+    class END:
+        pass
+
     class Modes(enum.Enum):
         ISSUE = "issue"
         RESPOND = "respond"
@@ -81,7 +84,7 @@ class Command:
         """
         while True:
             command = transport.receive()
-            if command is None:
+            if command == Command.END:
                 break
             assert isinstance(command, Command)
             command.transport = transport
@@ -174,112 +177,83 @@ class RemoteClientTransport:
     def context(self):
         return self.sock.context
 
-    def receive_stream(self):
-        while True:
-            req = pickle.loads(self.sock.recv())
-            if req is None:
-                break
-            yield req
-
     def receive(self):
         loaded = pickle.loads(self.sock.recv())
-        if isinstance(loaded, NewStream):
-            stream_transport = RemoteClientTransport.connect(
-                self.context, zmq.PULL, "tcp://127.0.0.1:{}".format(loaded.port)
-            )
-            loaded = stream_transport.receive_stream()
-
-        return RaisingReceiver.wrap(loaded)
-
-    def send_stream(self, result):
-        for msg in result:
-            self.sock.send(pickle.dumps(msg))
-        self.sock.send(pickle.dumps(None))
+        if isinstance(loaded, GrpcError):
+            raise loaded
+        if isinstance(loaded, Stream):
+            loaded.context = self.context
+            loaded = loaded.receive()
+        return loaded
 
     def send(self, result):
-        result = SafeSender.wrap(result)
         if isiterable(result):
-            new_port = find_free_port()
-            self.sock.send(pickle.dumps(NewStream(new_port)))
-            stream_transport = RemoteClientTransport.bind(
-                self.context, zmq.PUSH, "tcp://*:{}".format(new_port)
-            )
-            stream_transport.send_stream(result)
+            stream = Stream(self.context)
+            self.sock.send(pickle.dumps(stream))
+            stream.send(result)  # XXX defer to a thread?
         else:
             self.sock.send(pickle.dumps(result))
 
 
-class NewStream:
-    def __init__(self, path):
-        self.path = path
+class Stream:
+    class END:
+        pass
 
-        # zmq
-        self.port = self.path
+    class Modes(enum.Enum):
+        SEND = "send"
+        RECEIVE = "receive"
 
-    def receive(self, sock):
+    def __init__(self, context):
+        self.context = context
+        self.port = find_free_port()
+
+        self.mode = Stream.Modes.SEND
+
+    def __getstate__(self):
+        # remove the local `context` before pickling
+        state = self.__dict__.copy()
+        state["context"] = None
+        return state
+
+    def __setstate__(self, newstate):
+        # set the mode to RECEIVE when unpicking
+        newstate["mode"] = Stream.Modes.RECEIVE
+        self.__dict__.update(newstate)
+
+    def receive(self):
+        if self.mode is not Stream.Modes.RECEIVE:
+            raise ValueError("Stream must be in RECEIVE mode to receive")
+
+        stream_transport = RemoteClientTransport.connect(
+            self.context, zmq.PULL, "tcp://127.0.0.1:{}".format(self.port)
+        )
+
         while True:
-            req = pickle.loads(sock.recv())
-            if req is None:
+            req = stream_transport.receive()
+            if req == Stream.END:
                 break
             yield req
 
-    def send(self, sock, result):
-        for msg in result:
-            sock.send(pickle.dumps(msg))
-        sock.send(pickle.dumps(None))
+    def send(self, result):
+        if self.mode is not Stream.Modes.SEND:
+            raise ValueError("Stream must be in SEND mode to receive")
 
-    def __str__(self):
-        return "<NewStream {}>".format(self.path)
+        stream_transport = RemoteClientTransport.bind(
+            self.context, zmq.PUSH, "tcp://*:{}".format(self.port)
+        )
 
-
-class RaisingReceiver:
-    """ Inspect and re-raise any GrpcErrors in the stream
-    """
-
-    def __init__(self, value):
-        self.value = value
-
-    def iterate(self):
-        for item in self.value:
-            if isinstance(item, GrpcError):
-                raise item
-            yield item
-
-    def result(self):
-        if not isiterable(self.value):
-            if isinstance(self.value, GrpcError):
-                raise self.value
-            return self.value
-        return self.iterate()
-
-    @classmethod
-    def wrap(cls, value):
-        return cls(value).result()
-
-
-class SafeSender:
-    """ Catch and send any GrpcErrors in the stream
-    """
-
-    def __init__(self, value):
-        self.value = value
-
-    def iterate(self):
         try:
-            for item in self.value:
-                yield item
+            for msg in result:
+                stream_transport.send(msg)
         except grpc.RpcError as exc:
             state = exc._state
-            yield GrpcError(state.code, state.details, state.debug_error_string)
+            msg = GrpcError(state.code, state.details, state.debug_error_string)
+            stream_transport.send(msg)
 
-    def result(self):
-        if not isiterable(self.value):
-            return self.value
-        return self.iterate()
+        stream_transport.send(Stream.END)
 
-    @classmethod
-    def wrap(cls, value):
-        return cls(value).result()
+    def __str__(self):
+        return "<Stream {}>".format(self.port)
 
 
 class RequestResponseStash:

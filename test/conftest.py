@@ -192,7 +192,7 @@ def start_grpc_client(compile_proto, spawn_process, spec_dir, grpc_port):
             return Method(self.transport, name)
 
         def shutdown(self):
-            self.transport.send(None)
+            self.transport.send(Command.END)
 
     def make(
         service_name,
