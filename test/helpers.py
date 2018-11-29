@@ -9,15 +9,47 @@ import wrapt
 import zmq
 from nameko.testing.utils import find_free_port
 
+from nameko_grpc.constants import Cardinality
 from nameko_grpc.exceptions import GrpcError
 
 
-def isiterable(req):
-    try:
-        iter(req)
-        return True
-    except TypeError:
-        return False
+class RemoteClientTransport:
+    """ Serialializes/deserializes objects through ZMQ sockets using `pickle`.
+    """
+
+    def __init__(self, sock):
+        self.sock = sock
+
+    @classmethod
+    def bind(cls, context, socket_type, target):
+        """ Create a new transport over a ZMQ socket of type `socket_type`, bound
+        to the `target` address.
+        """
+        socket = context.socket(socket_type)
+        socket.bind(target)
+        return RemoteClientTransport(socket)
+
+    @classmethod
+    def connect(cls, context, socket_type, target):
+        """ Create a new transport over a ZMQ socket of type `socket_type`, connected
+        to the `target` address.
+        """
+        socket = context.socket(socket_type)
+        socket.connect(target)
+        return RemoteClientTransport(socket)
+
+    @property
+    def context(self):
+        return self.sock.context
+
+    def receive(self):
+        loaded = pickle.loads(self.sock.recv())
+        if isinstance(loaded, GrpcError):
+            raise loaded
+        return loaded
+
+    def send(self, result):
+        self.sock.send(pickle.dumps(result))
 
 
 class Command:
@@ -105,7 +137,14 @@ class Command:
         request_transport = RemoteClientTransport.bind(
             self.transport.context, zmq.PUSH, "tcp://*:{}".format(self.request_port)
         )
-        request_transport.send(request)
+
+        # if the request cardinality is STREAM, send a Stream object and use that
+        # to send the data
+        if self.cardinality in (Cardinality.STREAM_UNARY, Cardinality.STREAM_STREAM):
+            stream = Stream(request_transport)
+            threading.Thread(target=stream.send, args=(request,)).start()
+        else:
+            request_transport.send(request)
 
     def get_request(self):
         """ Get the request for this command from the caller.
@@ -121,6 +160,14 @@ class Command:
             zmq.PULL,
             "tcp://127.0.0.1:{}".format(self.request_port),
         )
+
+        # if the request cardinality is STREAM, receive a Stream object and use that
+        # to fetch the data
+        if self.cardinality in (Cardinality.STREAM_UNARY, Cardinality.STREAM_STREAM):
+            stream = request_transport.receive()
+            stream.transport = request_transport
+            return stream.receive()
+
         return request_transport.receive()
 
     def send_response(self, response):
@@ -136,7 +183,13 @@ class Command:
             "tcp://127.0.0.1:{}".format(self.response_port),
         )
 
-        response_transport.send(response)
+        # if the response cardinality is STREAM, send a Stream object and use that
+        # to send the data
+        if self.cardinality in (Cardinality.UNARY_STREAM, Cardinality.STREAM_STREAM):
+            stream = Stream(response_transport)
+            threading.Thread(target=stream.send, args=(response,)).start()
+        else:
+            response_transport.send(response)
 
     def get_response(self):
         """ Get the response for this command from the remote client
@@ -148,53 +201,19 @@ class Command:
         response_transport = RemoteClientTransport.bind(
             self.transport.context, zmq.PULL, "tcp://*:{}".format(self.response_port)
         )
+
+        # if the response cardinality is STREAM, receive a Stream object and use that
+        # to receive the data
+        if self.cardinality in (Cardinality.UNARY_STREAM, Cardinality.STREAM_STREAM):
+            stream = response_transport.receive()
+            stream.transport = response_transport
+            return stream.receive()
+
         return response_transport.receive()
 
-
-class RemoteClientTransport:
-    """ Serialializes/deserializes objects through ZMQ sockets using `pickle`.
-    """
-
-    def __init__(self, sock):
-        self.sock = sock
-
-    @classmethod
-    def bind(cls, context, socket_type, target):
-        """ Create a new transport over a ZMQ socket of type `socket_type`, bound
-        to the `target` address.
-        """
-        socket = context.socket(socket_type)
-        socket.bind(target)
-        return RemoteClientTransport(socket)
-
-    @classmethod
-    def connect(cls, context, socket_type, target):
-        """ Create a new transport over a ZMQ socket of type `socket_type`, connected
-        to the `target` address.
-        """
-        socket = context.socket(socket_type)
-        socket.connect(target)
-        return RemoteClientTransport(socket)
-
-    @property
-    def context(self):
-        return self.sock.context
-
-    def receive(self):
-        loaded = pickle.loads(self.sock.recv())
-        if isinstance(loaded, GrpcError):
-            raise loaded
-        if isinstance(loaded, Stream):
-            loaded.transport = self
-            loaded = loaded.receive()
-        return loaded
-
-    def send(self, result):
-        if isiterable(result):
-            stream = Stream(self)
-            threading.Thread(target=stream.send, args=(result,)).start()
-        else:
-            self.sock.send(pickle.dumps(result))
+    # TODO since the command knows the cardinality, do we need to use Strema objects?
+    # we could instead iterate over the data and send/receive until END, rather than
+    # sending/receiving a Stream object and using a new transport to ship the data.
 
 
 class Stream:
@@ -257,7 +276,7 @@ class Stream:
         if self.mode is not Stream.Modes.SEND:
             raise ValueError("Stream must be in SEND mode to send")
 
-        # send this stream over its own transport
+        # send this stream instance over its own transport
         self.transport.send(self)
 
         # create a new transport to send the actual data
@@ -328,9 +347,19 @@ def instrumented(wrapped, instance, args, kwargs):
 
     Stores requests and responses to file for later inspection.
     """
+
+    # TODO stop inferring cardinality with isiterable; pass it in instead?
+
     (request, context) = args
 
     stash = None
+
+    def isiterable(obj):
+        try:
+            iter(obj)
+            return True
+        except TypeError:
+            return False
 
     def stashing_iterator(iterable, type_):
         for item in iterable:
