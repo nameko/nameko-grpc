@@ -13,6 +13,7 @@ from eventlet.green import zmq
 from nameko.testing.utils import find_free_port
 
 from nameko_grpc.client import Client
+from nameko_grpc.inspection import Inspector
 
 from helpers import Command, RemoteClientTransport, RequestResponseStash
 
@@ -171,25 +172,30 @@ def start_grpc_client(compile_proto, spawn_process, spec_dir, grpc_port):
             return self.receive()
 
     class Method:
-        def __init__(self, transport, name):
-            self.transport = transport
+        def __init__(self, client, name):
+            self.client = client
             self.name = name
 
         def __call__(self, request, **kwargs):
             return self.future(request, **kwargs).result()
 
         def future(self, request, **kwargs):
-            command = Command(self.name, kwargs, self.transport)
+            inspector = Inspector(self.client.stub)
+
+            cardinality = inspector.cardinality_for_method(self.name)
+
+            command = Command(self.name, cardinality, kwargs, self.client.transport)
             command.issue()
             threading.Thread(target=command.send_request, args=(request,)).start()
             return Result(command.get_response)
 
     class Client:
-        def __init__(self, transport):
+        def __init__(self, stub, transport):
+            self.stub = stub
             self.transport = transport
 
         def __getattr__(self, name):
-            return Method(self.transport, name)
+            return Method(self, name)
 
         def shutdown(self):
             self.transport.send(Command.END)
@@ -202,7 +208,8 @@ def start_grpc_client(compile_proto, spawn_process, spec_dir, grpc_port):
     ):
         if proto_name is None:
             proto_name = service_name
-        compile_proto(proto_name)
+        _, stubs = compile_proto(proto_name)
+        stub_cls = getattr(stubs, "{}Stub".format(service_name))
 
         zmq_port = find_free_port()
         transport = RemoteClientTransport.bind(
@@ -220,7 +227,7 @@ def start_grpc_client(compile_proto, spawn_process, spec_dir, grpc_port):
             str(zmq_port),
         )
 
-        client = Client(transport)
+        client = Client(stub_cls, transport)
         clients.append(client)
         return client
 

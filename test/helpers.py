@@ -2,6 +2,7 @@
 import enum
 import os
 import pickle
+import threading
 
 import grpc
 import wrapt
@@ -46,8 +47,9 @@ class Command:
         ISSUE = "issue"
         RESPOND = "respond"
 
-    def __init__(self, method_name, kwargs, transport):
+    def __init__(self, method_name, cardinality, kwargs, transport):
         self.method_name = method_name
+        self.cardinality = cardinality
         self.kwargs = kwargs
         self.transport = transport
 
@@ -133,6 +135,7 @@ class Command:
             zmq.PUSH,
             "tcp://127.0.0.1:{}".format(self.response_port),
         )
+
         response_transport.send(response)
 
     def get_response(self):
@@ -182,20 +185,35 @@ class RemoteClientTransport:
         if isinstance(loaded, GrpcError):
             raise loaded
         if isinstance(loaded, Stream):
-            loaded.context = self.context
+            loaded.transport = self
             loaded = loaded.receive()
         return loaded
 
     def send(self, result):
         if isiterable(result):
-            stream = Stream(self.context)
-            self.sock.send(pickle.dumps(stream))
-            stream.send(result)  # XXX defer to a thread?
+            stream = Stream(self)
+            threading.Thread(target=stream.send, args=(result,)).start()
         else:
             self.sock.send(pickle.dumps(result))
 
 
 class Stream:
+    """ Encapsulates a stream of objects to be sent or received by a remote client.
+
+    Similar to `Command`, the `Stream` object is itself serialised and sent over the
+    transport. Unlike Commands, Streams are used symmetrically and can be instaniated
+    on either side -- request stream can be sent to the remote client, and response
+    steams can be sent by the remote client.
+
+    Streams have two modes: SEND and RECEIVE. A Stream is constructed in SEND mode,
+    and converted to RESPOND mode only when it is deserialised by pickle at the other
+    end of a transport.
+
+    A Stream in SEND mode is used to send data. A Stream in RECEIVE mode is used to
+    receive data sent by that same Stream object, when it was on the other side of
+    the transport.
+    """
+
     class END:
         pass
 
@@ -203,16 +221,16 @@ class Stream:
         SEND = "send"
         RECEIVE = "receive"
 
-    def __init__(self, context):
-        self.context = context
+    def __init__(self, transport):
+        self.transport = transport
         self.port = find_free_port()
 
         self.mode = Stream.Modes.SEND
 
     def __getstate__(self):
-        # remove the local `context` before pickling
+        # remove the local `transport` before pickling
         state = self.__dict__.copy()
-        state["context"] = None
+        state["transport"] = None
         return state
 
     def __setstate__(self, newstate):
@@ -224,31 +242,36 @@ class Stream:
         if self.mode is not Stream.Modes.RECEIVE:
             raise ValueError("Stream must be in RECEIVE mode to receive")
 
+        # create a new transport to receive the data for this stream
         stream_transport = RemoteClientTransport.connect(
-            self.context, zmq.PULL, "tcp://127.0.0.1:{}".format(self.port)
+            self.transport.context, zmq.PULL, "tcp://127.0.0.1:{}".format(self.port)
         )
 
         while True:
-            req = stream_transport.receive()
-            if req == Stream.END:
+            item = stream_transport.receive()
+            if item == Stream.END:
                 break
-            yield req
+            yield item
 
-    def send(self, result):
+    def send(self, data):
         if self.mode is not Stream.Modes.SEND:
-            raise ValueError("Stream must be in SEND mode to receive")
+            raise ValueError("Stream must be in SEND mode to send")
 
+        # send this stream over its own transport
+        self.transport.send(self)
+
+        # create a new transport to send the actual data
         stream_transport = RemoteClientTransport.bind(
-            self.context, zmq.PUSH, "tcp://*:{}".format(self.port)
+            self.transport.context, zmq.PUSH, "tcp://*:{}".format(self.port)
         )
 
         try:
-            for msg in result:
-                stream_transport.send(msg)
+            for item in data:
+                stream_transport.send(item)
         except grpc.RpcError as exc:
             state = exc._state
-            msg = GrpcError(state.code, state.details, state.debug_error_string)
-            stream_transport.send(msg)
+            error = GrpcError(state.code, state.details, state.debug_error_string)
+            stream_transport.send(error)
 
         stream_transport.send(Stream.END)
 
