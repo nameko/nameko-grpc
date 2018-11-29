@@ -17,6 +17,9 @@ class RemoteClientTransport:
     """ Serialializes/deserializes objects through ZMQ sockets using `pickle`.
     """
 
+    class ENDSTREAM:
+        pass
+
     def __init__(self, sock):
         self.sock = sock
 
@@ -48,8 +51,25 @@ class RemoteClientTransport:
             raise loaded
         return loaded
 
+    def receive_stream(self):
+        while True:
+            item = self.receive()
+            if item == self.ENDSTREAM:
+                break
+            yield item
+
     def send(self, result):
         self.sock.send(pickle.dumps(result))
+
+    def send_stream(self, result):
+        try:
+            for item in result:
+                self.send(item)
+        except grpc.RpcError as exc:
+            state = exc._state
+            error = GrpcError(state.code, state.details, state.debug_error_string)
+            self.send(error)
+        self.send(self.ENDSTREAM)
 
 
 class Command:
@@ -138,11 +158,10 @@ class Command:
             self.transport.context, zmq.PUSH, "tcp://*:{}".format(self.request_port)
         )
 
-        # if the request cardinality is STREAM, send a Stream object and use that
-        # to send the data
         if self.cardinality in (Cardinality.STREAM_UNARY, Cardinality.STREAM_STREAM):
-            stream = Stream(request_transport)
-            threading.Thread(target=stream.send, args=(request,)).start()
+            threading.Thread(
+                target=request_transport.send_stream, args=(request,)
+            ).start()
         else:
             request_transport.send(request)
 
@@ -161,13 +180,8 @@ class Command:
             "tcp://127.0.0.1:{}".format(self.request_port),
         )
 
-        # if the request cardinality is STREAM, receive a Stream object and use that
-        # to fetch the data
         if self.cardinality in (Cardinality.STREAM_UNARY, Cardinality.STREAM_STREAM):
-            stream = request_transport.receive()
-            stream.transport = request_transport
-            return stream.receive()
-
+            return request_transport.receive_stream()
         return request_transport.receive()
 
     def send_response(self, response):
@@ -183,11 +197,10 @@ class Command:
             "tcp://127.0.0.1:{}".format(self.response_port),
         )
 
-        # if the response cardinality is STREAM, send a Stream object and use that
-        # to send the data
         if self.cardinality in (Cardinality.UNARY_STREAM, Cardinality.STREAM_STREAM):
-            stream = Stream(response_transport)
-            threading.Thread(target=stream.send, args=(response,)).start()
+            threading.Thread(
+                target=response_transport.send_stream, args=(response,)
+            ).start()
         else:
             response_transport.send(response)
 
@@ -202,100 +215,9 @@ class Command:
             self.transport.context, zmq.PULL, "tcp://*:{}".format(self.response_port)
         )
 
-        # if the response cardinality is STREAM, receive a Stream object and use that
-        # to receive the data
         if self.cardinality in (Cardinality.UNARY_STREAM, Cardinality.STREAM_STREAM):
-            stream = response_transport.receive()
-            stream.transport = response_transport
-            return stream.receive()
-
+            return response_transport.receive_stream()
         return response_transport.receive()
-
-    # TODO since the command knows the cardinality, do we need to use Strema objects?
-    # we could instead iterate over the data and send/receive until END, rather than
-    # sending/receiving a Stream object and using a new transport to ship the data.
-
-
-class Stream:
-    """ Encapsulates a stream of objects to be sent or received by a remote client.
-
-    Similar to `Command`, the `Stream` object is itself serialised and sent over the
-    transport. Unlike Commands, Streams are used symmetrically and can be instaniated
-    on either side -- request stream can be sent to the remote client, and response
-    steams can be sent by the remote client.
-
-    Streams have two modes: SEND and RECEIVE. A Stream is constructed in SEND mode,
-    and converted to RESPOND mode only when it is deserialised by pickle at the other
-    end of a transport.
-
-    A Stream in SEND mode is used to send data. A Stream in RECEIVE mode is used to
-    receive data sent by that same Stream object, when it was on the other side of
-    the transport.
-    """
-
-    class END:
-        pass
-
-    class Modes(enum.Enum):
-        SEND = "send"
-        RECEIVE = "receive"
-
-    def __init__(self, transport):
-        self.transport = transport
-        self.port = find_free_port()
-
-        self.mode = Stream.Modes.SEND
-
-    def __getstate__(self):
-        # remove the local `transport` before pickling
-        state = self.__dict__.copy()
-        state["transport"] = None
-        return state
-
-    def __setstate__(self, newstate):
-        # set the mode to RECEIVE when unpicking
-        newstate["mode"] = Stream.Modes.RECEIVE
-        self.__dict__.update(newstate)
-
-    def receive(self):
-        if self.mode is not Stream.Modes.RECEIVE:
-            raise ValueError("Stream must be in RECEIVE mode to receive")
-
-        # create a new transport to receive the data for this stream
-        stream_transport = RemoteClientTransport.connect(
-            self.transport.context, zmq.PULL, "tcp://127.0.0.1:{}".format(self.port)
-        )
-
-        while True:
-            item = stream_transport.receive()
-            if item == Stream.END:
-                break
-            yield item
-
-    def send(self, data):
-        if self.mode is not Stream.Modes.SEND:
-            raise ValueError("Stream must be in SEND mode to send")
-
-        # send this stream instance over its own transport
-        self.transport.send(self)
-
-        # create a new transport to send the actual data
-        stream_transport = RemoteClientTransport.bind(
-            self.transport.context, zmq.PUSH, "tcp://*:{}".format(self.port)
-        )
-
-        try:
-            for item in data:
-                stream_transport.send(item)
-        except grpc.RpcError as exc:
-            state = exc._state
-            error = GrpcError(state.code, state.details, state.debug_error_string)
-            stream_transport.send(error)
-
-        stream_transport.send(Stream.END)
-
-    def __str__(self):
-        return "<Stream {}>".format(self.port)
 
 
 class RequestResponseStash:
