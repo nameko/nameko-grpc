@@ -91,7 +91,6 @@ class TestDeadlineExceededAtServer:
 
         # server should not have recieved all the requests
         captured_requests = list(instrumented.requests())
-        assert len(captured_requests) > 0
         assert len(captured_requests) < len(string.ascii_uppercase)
 
     def test_timeout_while_streaming_response(self, client, protobufs, instrumented):

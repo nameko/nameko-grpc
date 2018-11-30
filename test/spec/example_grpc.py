@@ -30,13 +30,15 @@ class example(example_pb2_grpc.exampleServicer):
     @instrumented
     def stream_unary(self, request, context):
         messages = []
+        stash = None
         for index, req in enumerate(request):
+            stash = req.stash
             if req.delay:
                 time.sleep(req.delay / 1000)
             message = req.value * (req.multiplier or 1)
             messages.append(message)
 
-        return ExampleReply(message=",".join(messages), stash=req.stash)
+        return ExampleReply(message=",".join(messages), stash=stash)
 
     @instrumented
     def stream_stream(self, request, context):

@@ -1,120 +1,220 @@
 # -*- coding: utf-8 -*-
 import os
 import pickle
-import time
-import uuid
+import threading
 
 import grpc
 import wrapt
-from eventlet import tpool
+import zmq
+from nameko.testing.utils import find_free_port
 
+from nameko_grpc.constants import Cardinality
 from nameko_grpc.exceptions import GrpcError
 
 
-class StreamAborted(Exception):
-    pass
-
-
-class Config:
-    def __init__(self, method_name, in_fifo, out_fifo, kwargs):
-        self.method_name = method_name
-        self.in_fifo = in_fifo
-        self.out_fifo = out_fifo
-        self.kwargs = kwargs
-
-
-class NewStream:
-    def __init__(self, path):
-        self.path = path
-
-    def __str__(self):
-        return "<NewStream {}>".format(self.path)
-
-
-def isiterable(req):
-    try:
-        iter(req)
-        return True
-    except TypeError:
-        return False
-
-
-class AbortableIterator:
-    class Aborted(Exception):
-        pass
-
-    def __init__(self, value):
-        self.value = value
-        self.aborted = False
-
-    def abort(self):
-        self.aborted = True
-
-    def iterate(self):
-        for item in self.value:
-            if self.aborted:
-                raise AbortableIterator.Aborted()
-            yield item
-
-    def result(self):
-        if not isiterable(self.value):
-            return self.value
-        return self.iterate()
-
-    @classmethod
-    def wrap(cls, value):
-        instance = cls(value)
-        return instance.abort, instance.result()
-
-
-class RaisingReceiver:
-    """ Inspect and re-raise any GrpcErrors in the stream
+class RemoteClientTransport:
+    """ Serialializes/deserializes objects through ZMQ sockets using `pickle`.
     """
 
-    def __init__(self, value):
-        self.value = value
+    ENDSTREAM = "endstream"
 
-    def iterate(self):
-        for item in self.value:
-            if isinstance(item, GrpcError):
-                raise item
-            yield item
-
-    def result(self):
-        if not isiterable(self.value):
-            if isinstance(self.value, GrpcError):
-                raise self.value
-            return self.value
-        return self.iterate()
+    def __init__(self, sock):
+        self.sock = sock
 
     @classmethod
-    def wrap(cls, value):
-        return cls(value).result()
+    def bind(cls, context, socket_type, target):
+        """ Create a new transport over a ZMQ socket of type `socket_type`, bound
+        to the `target` address.
+        """
+        socket = context.socket(socket_type)
+        socket.bind(target)
+        return RemoteClientTransport(socket)
 
+    @classmethod
+    def connect(cls, context, socket_type, target):
+        """ Create a new transport over a ZMQ socket of type `socket_type`, connected
+        to the `target` address.
+        """
+        socket = context.socket(socket_type)
+        socket.connect(target)
+        return RemoteClientTransport(socket)
 
-class SafeSender:
-    """ Catch and send any GrpcErrors in the stream
-    """
+    @property
+    def context(self):
+        return self.sock.context
 
-    def __init__(self, value):
-        self.value = value
+    def receive(self):
+        loaded = pickle.loads(self.sock.recv())
+        if isinstance(loaded, GrpcError):
+            raise loaded
+        return loaded
 
-    def iterate(self):
+    def receive_stream(self):
+        while True:
+            item = self.receive()
+            if item == self.ENDSTREAM:
+                break
+            yield item
+
+    def send(self, result):
+        self.sock.send(pickle.dumps(result))
+
+    def send_stream(self, result):
         try:
-            for item in self.value:
-                yield item
+            for item in result:
+                self.send(item)
         except grpc.RpcError as exc:
             state = exc._state
-            yield GrpcError(state.code, state.details, state.debug_error_string)
+            error = GrpcError(state.code, state.details, state.debug_error_string)
+            self.send(error)
+        self.send(self.ENDSTREAM)
 
-    def result(self):
-        if not isiterable(self.value):
-            return self.value
-        return self.iterate()
 
-    @classmethod
-    def wrap(cls, value):
-        return cls(value).result()
+class Command:
+    """ Encapsulates a command to run on a remote GRPC client.
+
+    A command can be issued to a remote client, or responded to by that remote client.
+
+    Issuing a command involves serializing it with pickle and sending it to the
+    remote client via ZeroMQ (serialization is by a `RemoteClientTransport`)
+
+    At the remote client, the received `Command` can be used to receive the request to
+    issue to the GRPC server, and to return the response from the server to the caller.
+
+    Commands have two modes: ISSUE and RESPOND. A Command is constructed in ISSUE mode,
+    and converted to RESPOND mode only when it is deserialised by pickle at the remote
+    client.
+
+    When in ISSUE mode, the Command can send requests to and receive responses from the
+    remote client. When in RESPOND mode, the Command can receive requests from and send
+    responses back to the caller.
+    """
+
+    END = "endcommands"
+
+    class Modes:
+        ISSUE = "issue"
+        RESPOND = "respond"
+
+    def __init__(self, method_name, cardinality, kwargs, transport):
+        self.method_name = method_name
+        self.cardinality = cardinality
+        self.kwargs = kwargs
+        self.transport = transport
+
+        self.request_port = find_free_port()
+        self.response_port = find_free_port()
+
+        self.mode = Command.Modes.ISSUE
+
+    def __getstate__(self):
+        # remove the local `transport` before pickling
+        state = self.__dict__.copy()
+        state["transport"] = None
+        return state
+
+    def __setstate__(self, newstate):
+        # set the mode to RESPOND when unpicking
+        newstate["mode"] = Command.Modes.RESPOND
+        self.__dict__.update(newstate)
+
+    def issue(self):
+        """ Issue this command to a remote client.
+
+        Sends itelf over the given `transport`.
+        """
+        if self.mode is not Command.Modes.ISSUE:
+            raise ValueError("Command must be in ISSUE mode to be issued")
+
+        self.transport.send(self)
+        assert self.transport.receive() is True
+
+    @staticmethod
+    def retrieve_commands(transport):
+        """ Retrieve a series of commands over the given `transport`
+        """
+        while True:
+            command = transport.receive()
+            if command == Command.END:
+                break
+            assert isinstance(command, Command)
+            command.transport = transport
+            yield command
+            transport.send(True)
+
+    def send_request(self, request):
+        """ Send the request for this command to the remote client.
+
+        Only available in ISSUE mode.
+        """
+        if self.mode is not Command.Modes.ISSUE:
+            raise ValueError("Command must be in ISSUE mode to send request")
+
+        # create a new transport and PUSH the request
+        request_transport = RemoteClientTransport.bind(
+            self.transport.context, zmq.PUSH, "tcp://*:{}".format(self.request_port)
+        )
+
+        if self.cardinality in (Cardinality.STREAM_UNARY, Cardinality.STREAM_STREAM):
+            threading.Thread(
+                target=request_transport.send_stream, args=(request,)
+            ).start()
+        else:
+            request_transport.send(request)
+
+    def get_request(self):
+        """ Get the request for this command from the caller.
+
+        Only available in RESPOND mode.
+        """
+        if self.mode is not Command.Modes.RESPOND:
+            raise ValueError("Command must be in RESPOND mode to get request")
+
+        # create a new transport and PULL the request
+        request_transport = RemoteClientTransport.connect(
+            self.transport.context,
+            zmq.PULL,
+            "tcp://127.0.0.1:{}".format(self.request_port),
+        )
+
+        if self.cardinality in (Cardinality.STREAM_UNARY, Cardinality.STREAM_STREAM):
+            return request_transport.receive_stream()
+        return request_transport.receive()
+
+    def send_response(self, response):
+        """ Send the response for this command
+        """
+        if self.mode is not Command.Modes.RESPOND:
+            raise ValueError("Command must be in RESPOND mode to send a response")
+
+        # create a new transport and PUSH the response
+        response_transport = RemoteClientTransport.connect(
+            self.transport.context,
+            zmq.PUSH,
+            "tcp://127.0.0.1:{}".format(self.response_port),
+        )
+
+        if self.cardinality in (Cardinality.UNARY_STREAM, Cardinality.STREAM_STREAM):
+            threading.Thread(
+                target=response_transport.send_stream, args=(response,)
+            ).start()
+        else:
+            response_transport.send(response)
+
+    def get_response(self):
+        """ Get the response for this command from the remote client
+        """
+        if self.mode is not Command.Modes.ISSUE:
+            raise ValueError("Command must be in ISSUE mode to get a response")
+
+        # create a new transport and PULL the response
+        response_transport = RemoteClientTransport.bind(
+            self.transport.context, zmq.PULL, "tcp://*:{}".format(self.response_port)
+        )
+
+        if self.cardinality in (Cardinality.UNARY_STREAM, Cardinality.STREAM_STREAM):
+            return response_transport.receive_stream()
+        return response_transport.receive()
 
 
 class RequestResponseStash:
@@ -166,9 +266,19 @@ def instrumented(wrapped, instance, args, kwargs):
 
     Stores requests and responses to file for later inspection.
     """
+
+    # TODO stop inferring cardinality with isiterable; pass it in instead?
+
     (request, context) = args
 
     stash = None
+
+    def isiterable(obj):
+        try:
+            iter(obj)
+            return True
+        except TypeError:
+            return False
 
     def stashing_iterator(iterable, type_):
         for item in iterable:
@@ -196,87 +306,3 @@ def instrumented(wrapped, instance, args, kwargs):
         response = stashing_iterator(response, RequestResponseStash.RESPONSE)
 
     return response
-
-
-class FifoPipe:
-    def __init__(self, path):
-        self.path = path
-
-    def dump(self, value):
-        with open(self.path, "wb") as out_:
-            data = pickle.dumps(value)
-            out_.write(data)
-
-    def load(self):
-        with open(self.path, "rb") as in_:
-            data = in_.read()
-            return pickle.loads(data)
-
-    def open(self):
-        os.mkfifo(self.path)
-
-    def close(self):
-        os.unlink(self.path)
-
-    @classmethod
-    def new(cls, directory, name=None):
-        if name is None:
-            name = str(uuid.uuid4())
-        path = os.path.join(directory, name)
-        return cls.wrap(path)
-
-    @classmethod
-    def wrap(cls, path):
-        instance = cls(path)
-        if under_eventlet():
-            instance = tpool.Proxy(instance)
-        return instance
-
-    def __enter__(self):
-        self.open()
-        return self
-
-    def __exit__(self, *args):
-        self.close()
-
-
-def under_eventlet():
-    import socket
-    from eventlet.greenio.base import GreenSocket
-
-    return issubclass(socket.socket, GreenSocket)
-
-
-def receive_stream(stream_fifo):
-    while True:
-        req = stream_fifo.load()
-        if req is None:
-            break
-        yield req
-
-
-def receive(fifo):
-    loaded = fifo.load()
-    if isinstance(loaded, NewStream):
-        stream_fifo = FifoPipe.wrap(loaded.path)
-        return receive_stream(stream_fifo)
-    return loaded
-
-
-def send_stream(stream_fifo, result):
-    try:
-        for msg in result:
-            stream_fifo.dump(msg)
-            time.sleep(0.01)
-        stream_fifo.dump(None)
-    except AbortableIterator.Aborted:
-        pass
-
-
-def send(fifo, result):
-    if isiterable(result):
-        with FifoPipe.new(os.path.dirname(fifo.path)) as stream_fifo:
-            fifo.dump(NewStream(stream_fifo.path))
-            send_stream(stream_fifo, result)
-    else:
-        fifo.dump(result)

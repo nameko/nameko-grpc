@@ -4,23 +4,32 @@ import threading
 from importlib import import_module
 
 import grpc
+import zmq
 from grpc._cython.cygrpc import CompressionAlgorithm, CompressionLevel
 
 from nameko_grpc.exceptions import GrpcError
 
-from helpers import FifoPipe, SafeSender, receive, send
+from helpers import Command, RemoteClientTransport
 
 
-def call(fifo_in, fifo_out, method, kwargs):
-    request = receive(fifo_in)
+def execute(command, stub):
+    method = getattr(stub, command.method_name)
+
+    request = command.get_request()
+
+    compression = command.kwargs.pop("compression", None)
+    if compression:
+        command.kwargs["metadata"] = list(command.kwargs.get("metadata", [])) + [
+            ("grpc-internal-encoding-request", compression)
+        ]
+
     try:
-        response = method(request, **kwargs)
+        response = method(request, **command.kwargs)
     except grpc.RpcError as exc:
         state = exc._state
         response = GrpcError(state.code, state.details, state.debug_error_string)
 
-    response = SafeSender.wrap(response)
-    send(fifo_out, response)
+    command.send_response(response)
 
 
 if __name__ == "__main__":
@@ -39,8 +48,7 @@ if __name__ == "__main__":
     grpc_module = import_module("{}_pb2_grpc".format(proto_name))
     stub_cls = getattr(grpc_module, "{}Stub".format(service_name))
 
-    command_fifo_path = sys.argv[7]
-    command_fifo = FifoPipe.wrap(command_fifo_path)
+    zmq_port = sys.argv[7]
 
     channel_options = [
         (
@@ -58,28 +66,9 @@ if __name__ == "__main__":
     )
     stub = stub_cls(channel)
 
-    while True:
-        config = receive(command_fifo)
-        if config is None:
-            break
+    transport = RemoteClientTransport.connect(
+        zmq.Context(), zmq.REP, "tcp://127.0.0.1:{}".format(zmq_port)
+    )
 
-        in_fifo_path = config.in_fifo
-        in_fifo = FifoPipe.wrap(in_fifo_path)
-
-        out_fifo_path = config.out_fifo
-        out_fifo = FifoPipe.wrap(out_fifo_path)
-
-        method = getattr(stub, config.method_name)
-
-        compression = config.kwargs.pop("compression", None)
-        if compression:
-            config.kwargs["metadata"] = list(config.kwargs.get("metadata", [])) + [
-                ("grpc-internal-encoding-request", compression)
-            ]
-
-        thread = threading.Thread(
-            target=call,
-            name=config.method_name,
-            args=(in_fifo, out_fifo, method, config.kwargs),
-        )
-        thread.start()
+    for command in Command.retrieve_commands(transport):
+        threading.Thread(target=execute, args=(command, stub)).start()
