@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-import enum
 import os
 import pickle
 import threading
@@ -17,8 +16,7 @@ class RemoteClientTransport:
     """ Serialializes/deserializes objects through ZMQ sockets using `pickle`.
     """
 
-    class ENDSTREAM:
-        pass
+    ENDSTREAM = "endstream"
 
     def __init__(self, sock):
         self.sock = sock
@@ -92,10 +90,9 @@ class Command:
     responses back to the caller.
     """
 
-    class END:
-        pass
+    END = "endcommands"
 
-    class Modes(enum.Enum):
+    class Modes:
         ISSUE = "issue"
         RESPOND = "respond"
 
