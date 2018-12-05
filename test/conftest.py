@@ -57,7 +57,7 @@ def spec_dir(tmpdir_factory):
     sys.path.remove(temp.strpath)
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def compile_proto(spec_dir):
 
     spec_path = spec_dir.strpath
@@ -96,6 +96,29 @@ def compile_proto(spec_dir):
     return codegen
 
 
+@pytest.fixture(scope="session")
+def load_protobufs(compile_proto):
+    def load(name):
+        protobufs, _ = compile_proto(name)
+        return protobufs
+
+    return load
+
+
+@pytest.fixture(scope="session")
+def load_stubs(compile_proto):
+    def load(name):
+        _, stubs = compile_proto(name)
+        return stubs
+
+    return load
+
+
+@pytest.fixture(autouse=True, scope="session")
+def example_proto(compile_proto):
+    compile_proto("example")
+
+
 @pytest.fixture
 def spawn_process():
 
@@ -130,7 +153,6 @@ def start_grpc_server(compile_proto, spawn_process, spec_dir, grpc_port):
     ):
         if proto_name is None:
             proto_name = service_name
-        compile_proto(proto_name)
 
         spawn_process(
             server_script,
@@ -156,7 +178,7 @@ def start_grpc_server(compile_proto, spawn_process, spec_dir, grpc_port):
 
 
 @pytest.fixture
-def start_grpc_client(compile_proto, spawn_process, spec_dir, grpc_port):
+def start_grpc_client(load_stubs, spawn_process, spec_dir, grpc_port):
 
     client_script = os.path.join(os.path.dirname(__file__), "grpc_indirect_client.py")
 
@@ -208,7 +230,8 @@ def start_grpc_client(compile_proto, spawn_process, spec_dir, grpc_port):
     ):
         if proto_name is None:
             proto_name = service_name
-        _, stubs = compile_proto(proto_name)
+
+        stubs = load_stubs(proto_name)
         stub_cls = getattr(stubs, "{}Stub".format(service_name))
 
         zmq_port = find_free_port()
@@ -239,7 +262,7 @@ def start_grpc_client(compile_proto, spawn_process, spec_dir, grpc_port):
 
 
 @pytest.fixture
-def start_nameko_server(compile_proto, spec_dir, container_factory, grpc_port):
+def start_nameko_server(spec_dir, container_factory, grpc_port):
     def make(
         service_name,
         proto_name=None,
@@ -248,7 +271,7 @@ def start_nameko_server(compile_proto, spec_dir, container_factory, grpc_port):
     ):
         if proto_name is None:
             proto_name = service_name
-        compile_proto(proto_name)
+
         service_module = import_module("{}_nameko".format(proto_name))
         service_cls = getattr(service_module, service_name)
 
@@ -268,7 +291,7 @@ def start_nameko_server(compile_proto, spec_dir, container_factory, grpc_port):
 
 
 @pytest.fixture
-def start_nameko_client(compile_proto, spec_dir, grpc_port):
+def start_nameko_client(load_stubs, spec_dir, grpc_port):
 
     clients = []
 
@@ -280,8 +303,8 @@ def start_nameko_client(compile_proto, spec_dir, grpc_port):
     ):
         if proto_name is None:
             proto_name = service_name
-        _, stubs = compile_proto(proto_name)
 
+        stubs = load_stubs(proto_name)
         stub_cls = getattr(stubs, "{}Stub".format(service_name))
         client = Client(
             "//127.0.0.1:{}".format(grpc_port),
@@ -333,6 +356,13 @@ def start_client(request, client_type):
 
 
 @pytest.fixture
+def instrumented(tmpdir_factory):
+    stashes = tmpdir_factory.mktemp("instrument_stashes")
+    stash_file = stashes.join(str(uuid.uuid4()))
+    return RequestResponseStash(stash_file.strpath)
+
+
+@pytest.fixture
 def server(start_server):
     return start_server("example")
 
@@ -343,19 +373,10 @@ def client(start_client, server):
 
 
 @pytest.fixture
-def stubs(compile_proto):
-    _, stubs = compile_proto("example")
-    return stubs
+def stubs(load_stubs):
+    return load_stubs("example")
 
 
 @pytest.fixture
-def protobufs(compile_proto):
-    protobufs, _ = compile_proto("example")
-    return protobufs
-
-
-@pytest.fixture
-def instrumented(tmpdir_factory):
-    stashes = tmpdir_factory.mktemp("instrument_stashes")
-    stash_file = stashes.join(str(uuid.uuid4()))
-    return RequestResponseStash(stash_file.strpath)
+def protobufs(load_protobufs):
+    return load_protobufs("example")

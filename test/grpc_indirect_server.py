@@ -15,6 +15,7 @@ if __name__ == "__main__":
 
     port = sys.argv[1]
 
+    # TODO do this via env and PYTHONPATH when starting this subprocess
     source_dir = sys.argv[2]
     sys.path.append(source_dir)
 
