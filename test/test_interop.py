@@ -72,7 +72,7 @@ def test_interop(
     args = [
         "docker",
         "run",
-        "interop_client",
+        "nameko/nameko-grpc-interop",
         "-server_port",
         str(grpc_port),
         "-test_case",
