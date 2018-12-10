@@ -58,7 +58,7 @@ def server(request, server_type):
         ("cancel_after_begin", False, False),
         ("cancel_after_first_response", False, True),  # nameko fails, not sure why
         ("custom_metadata", False, True),  # nameko not implemented yet
-        ("status_code_and_message", False, False),
+        ("status_code_and_message", False, True),  # nameko not implemented yet
     ],
 )
 def test_interop(
