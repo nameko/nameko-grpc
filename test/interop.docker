@@ -1,0 +1,22 @@
+FROM ubuntu:18.04 as base
+
+RUN apt-get update && apt-get install -y iproute2 iputils-ping libgflags-dev && rm -rf /var/lib/apt/lists/*
+
+COPY interop.docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+
+FROM base as install
+
+RUN apt-get update && apt-get install -y git build-essential autoconf libtool pkg-config libgtest-dev clang libc++-dev python-pip
+
+RUN git clone https://github.com/grpc/grpc.git --depth 1
+RUN cd grpc; git submodule update --init
+
+RUN python /grpc/tools/run_tests/run_tests.py -l c++ --build_only
+
+# ---
+
+FROM base as run
+
+COPY --from=install /grpc/bins/opt/interop_client /interop_client
