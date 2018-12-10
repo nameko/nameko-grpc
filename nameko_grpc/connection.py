@@ -73,10 +73,10 @@ class ConnectionManager(object):
             for event in events:
                 if isinstance(event, RequestReceived):
                     self.request_received(event.headers, event.stream_id)
-                if isinstance(event, ResponseReceived):
+                elif isinstance(event, ResponseReceived):
                     self.response_received(event.headers, event.stream_id)
                 elif isinstance(event, DataReceived):
-                    self.data_received(event.data, event.stream_id)
+                    self.data_received(event, event.stream_id)
                 elif isinstance(event, StreamEnded):
                     self.stream_ended(event.stream_id)
                 elif isinstance(event, WindowUpdated):
@@ -116,12 +116,12 @@ class ConnectionManager(object):
         """
         log.debug("response received, stream %s", stream_id)
 
-    def data_received(self, data, stream_id):
+    def data_received(self, event, stream_id):
         """ Called when data is received on a stream.
 
         If there is any open `ReceiveStream`, write the data to it.
         """
-        log.debug("data received on stream %s: %s...", stream_id, data[:100])
+        log.debug("data received on stream %s: %s...", stream_id, event.data[:100])
         receive_stream = self.receive_streams.get(stream_id)
         if receive_stream is None:
             try:
@@ -130,7 +130,8 @@ class ConnectionManager(object):
                 pass
             return
 
-        receive_stream.write(data)
+        receive_stream.write(event.data)
+        self.conn.acknowledge_received_data(event.flow_controlled_length, stream_id)
 
     def window_updated(self, stream_id):
         """ Called when the flow control window for a stream is changed.
@@ -178,6 +179,12 @@ class ConnectionManager(object):
 
             for chunk in send_stream.read(window_size, max_frame_size):
                 log.debug("sending data on stream %s: %s...", stream_id, chunk[:100])
+
+                # XXX WIP
+                # send headers at the last possible moment (needed?)
+                # if not send_stream.sent_headers:
+                #     send_stream.send_headers(self.conn)
+
                 self.conn.send_data(stream_id=stream_id, data=chunk)
 
         except StreamClosedError:

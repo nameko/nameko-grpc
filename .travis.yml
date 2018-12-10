@@ -1,5 +1,7 @@
 sudo: false
 language: python
+services:
+  - docker
 
 install:
   - pip install tox

@@ -35,7 +35,8 @@ class Inspector:
         if self._service_descriptor is None:
             self._service_descriptor = inspect.getmembers(
                 self.protobufs_module,
-                lambda member: isinstance(member, descriptor.ServiceDescriptor),
+                lambda member: isinstance(member, descriptor.ServiceDescriptor)
+                and member.name == self.stub.__name__[:-4],
             )[0][1]
         return self._service_descriptor
 
