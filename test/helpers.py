@@ -104,6 +104,7 @@ class Command:
 
         self.request_port = find_free_port()
         self.response_port = find_free_port()
+        self.metadata_port = find_free_port()
 
         self.mode = Command.Modes.ISSUE
 
@@ -215,6 +216,32 @@ class Command:
         if self.cardinality in (Cardinality.UNARY_STREAM, Cardinality.STREAM_STREAM):
             return response_transport.receive_stream()
         return response_transport.receive()
+
+    def send_metadata(self, metadata):
+        """ Send the response metadata for this command
+        """
+        if self.mode is not Command.Modes.RESPOND:
+            raise ValueError("Command must be in RESPOND mode to send metadata")
+
+        # create a new transport and PUSH the metadata
+        metadata_transport = RemoteClientTransport.connect(
+            self.transport.context,
+            zmq.PUSH,
+            "tcp://127.0.0.1:{}".format(self.metadata_port),
+        )
+        metadata_transport.send(metadata)
+
+    def get_metadata(self):
+        """ Get the response metadata for this command from the remote client
+        """
+        if self.mode is not Command.Modes.ISSUE:
+            raise ValueError("Command must be in ISSUE mode to get a metadata")
+
+        # create a new transport and PULL the metadata
+        metadata_transport = RemoteClientTransport.bind(
+            self.transport.context, zmq.PULL, "tcp://*:{}".format(self.metadata_port)
+        )
+        return metadata_transport.receive()
 
 
 class RequestResponseStash:

@@ -7,6 +7,7 @@ import grpc
 import zmq
 from grpc._cython.cygrpc import CompressionAlgorithm, CompressionLevel
 
+from nameko_grpc.constants import Cardinality
 from nameko_grpc.exceptions import GrpcError
 
 from helpers import Command, RemoteClientTransport
@@ -23,13 +24,31 @@ def execute(command, stub):
             ("grpc-internal-encoding-request", compression)
         ]
 
+    response_metadata = {}
+
     try:
-        response = method(request, **command.kwargs)
+        if command.cardinality in (Cardinality.STREAM_UNARY, Cardinality.UNARY_UNARY):
+            response_future = method.future(request, **command.kwargs)
+            response_metadata["code"] = response_future.code()
+            response_metadata["details"] = response_future.details()
+            response_metadata["initial_metadata"] = list(
+                map(tuple, response_future.initial_metadata())
+            )
+            response_metadata["trailing_metadata"] = list(
+                map(tuple, response_future.trailing_metadata())
+            )
+            response = response_future.result()
+        else:
+            # .future() interface for RPCs with STREAM responses not supported
+            response = method(request, **command.kwargs)
     except grpc.RpcError as exc:
         state = exc._state
+        response_metadata["code"] = state.code
+        response_metadata["details"] = state.details
         response = GrpcError(state.code, state.details, state.debug_error_string)
 
     command.send_response(response)
+    command.send_metadata(response_metadata)
 
 
 if __name__ == "__main__":

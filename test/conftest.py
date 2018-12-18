@@ -187,11 +187,31 @@ def start_grpc_client(load_stubs, spawn_process, spec_dir, grpc_port):
     context = zmq.Context()
 
     class Result:
-        def __init__(self, receive):
-            self.receive = receive
+        _metadata = None
+
+        def __init__(self, command):
+            self.command = command
+
+        @property
+        def metadata(self):
+            if self._metadata is None:
+                self._metadata = self.command.get_metadata()
+            return self._metadata
+
+        def code(self):
+            return self.metadata.get("code")
+
+        def details(self):
+            return self.metadata.get("details")
+
+        def initial_metadata(self):
+            return self.metadata.get("initial_metadata")
+
+        def trailing_metadata(self):
+            return self.metadata.get("trailing_metadata")
 
         def result(self):
-            return self.receive()
+            return self.command.get_response()
 
     class Method:
         def __init__(self, client, name):
@@ -209,7 +229,7 @@ def start_grpc_client(load_stubs, spawn_process, spec_dir, grpc_port):
             command = Command(self.name, cardinality, kwargs, self.client.transport)
             command.issue()
             threading.Thread(target=command.send_request, args=(request,)).start()
-            return Result(command.get_response)
+            return Result(command)
 
     class Client:
         def __init__(self, stub, transport):

@@ -30,6 +30,24 @@ def extract_metadata(context):
     return json.dumps(metadata)
 
 
+def maybe_echo_metadata(context):
+    """ Copy metadata from request to response.
+    """
+    initial_metadata = []
+    trailing_metadata = []
+
+    for key, value in context.invocation_metadata():
+        if key.startswith("echo-header"):
+            initial_metadata.append((key[12:], value))
+        elif key.startswith("echo-trailer"):
+            trailing_metadata.append((key[13:], value))
+
+    if initial_metadata:
+        context.send_initial_metadata(initial_metadata)
+    if trailing_metadata:
+        context.set_trailing_metadata(trailing_metadata)
+
+
 def maybe_sleep(request):
     if request.delay:
         time.sleep(request.delay / 1000)
@@ -39,6 +57,7 @@ class example(example_pb2_grpc.exampleServicer):
     @instrumented
     def unary_unary(self, request, context):
         metadata = extract_metadata(context)
+        maybe_echo_metadata(context)
         maybe_sleep(request)
         message = request.value * (request.multiplier or 1)
         return ExampleReply(message=message, stash=request.stash, metadata=metadata)
@@ -46,6 +65,7 @@ class example(example_pb2_grpc.exampleServicer):
     @instrumented
     def unary_stream(self, request, context):
         metadata = extract_metadata(context)
+        maybe_echo_metadata(context)
         message = request.value * (request.multiplier or 1)
         for i in range(request.response_count):
             maybe_sleep(request)
@@ -56,11 +76,12 @@ class example(example_pb2_grpc.exampleServicer):
     @instrumented
     def stream_unary(self, request, context):
         metadata = extract_metadata(context)
+        maybe_echo_metadata(context)
         messages = []
         stash = None
         for index, req in enumerate(request):
             stash = req.stash
-            maybe_sleep(request)
+            maybe_sleep(req)
             message = req.value * (req.multiplier or 1)
             messages.append(message)
 
@@ -69,8 +90,9 @@ class example(example_pb2_grpc.exampleServicer):
     @instrumented
     def stream_stream(self, request, context):
         metadata = extract_metadata(context)
+        maybe_echo_metadata(context)
         for index, req in enumerate(request):
-            maybe_sleep(request)
+            maybe_sleep(req)
             message = req.value * (req.multiplier or 1)
             yield ExampleReply(
                 message=message, seqno=index + 1, stash=req.stash, metadata=metadata
