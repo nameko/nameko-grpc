@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import base64
 import itertools
 import socket
 import threading
@@ -148,7 +149,7 @@ class Method:
     def __call__(self, request, **kwargs):
         return self.future(request, **kwargs).result()
 
-    def future(self, request, timeout=None, compression=None):
+    def future(self, request, timeout=None, compression=None, metadata=None):
         inspector = Inspector(self.client.stub)
 
         cardinality = inspector.cardinality_for_method(self.name)
@@ -174,9 +175,12 @@ class Method:
             ("grpc-encoding", compression),
             ("grpc-message-type", "{}.{}".format(service_name, input_type.__name__)),
             ("grpc-accept-encoding", ",".join(SUPPORTED_ENCODINGS)),
-            # TODO application headers
-            # application headers, base64 or binary
         ]
+
+        for key, value in metadata:
+            if key.endswith("-bin"):
+                value = base64.b64encode(value)
+            request_headers.append((key, value))
 
         if timeout is not None:
             request_headers.append(("grpc-timeout", bucket_timeout(timeout)))
