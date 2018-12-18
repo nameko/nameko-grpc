@@ -27,5 +27,6 @@ message ExampleReply {
   string message = 1;
   int32 seqno = 2;
   string stash = 3;
+  string metadata = 4;
 }
 
