@@ -25,7 +25,7 @@ log = getLogger(__name__)
 SELECT_TIMEOUT = 0.01
 
 
-class ConnectionManager(object):
+class ConnectionManager:
     """
     Base class for managing a single GRPC HTTP/2 connection.
 

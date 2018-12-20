@@ -23,8 +23,6 @@ def extract_metadata(context):
     Binary headers are included as base64 encoded strings.
     Duplicate header values are joined as comma separated, preserving order.
     """
-    return  # XXX
-
     metadata = {}
     for key, value in context.invocation_metadata():
         if key.endswith("-bin"):

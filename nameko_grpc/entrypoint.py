@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 import time
-from collections import OrderedDict
 from functools import partial
 from logging import getLogger
 
@@ -12,12 +11,12 @@ from nameko.extensions import Entrypoint, SharedExtension
 
 from nameko_grpc.compression import SUPPORTED_ENCODINGS, select_algorithm
 from nameko_grpc.connection import ConnectionManager
+from nameko_grpc.constants import Cardinality
+from nameko_grpc.context import GrpcContext, Headers
 from nameko_grpc.exceptions import GrpcError
 from nameko_grpc.inspection import Inspector
 from nameko_grpc.streams import ReceiveStream, SendStream
 from nameko_grpc.timeout import unbucket_timeout
-
-from .constants import Cardinality
 
 
 log = getLogger(__name__)
@@ -43,9 +42,9 @@ class ServerConnectionManager(ConnectionManager):
         """
         super().request_received(headers, stream_id)
 
-        headers = OrderedDict(headers)
+        headers = Headers(headers)
 
-        compression = select_algorithm(headers["grpc-accept-encoding"])
+        compression = select_algorithm(headers.get("grpc-accept-encoding"))
 
         request_stream = ReceiveStream(stream_id)
         response_stream = SendStream(stream_id, encoding=compression)
@@ -136,7 +135,7 @@ class GrpcServer(SharedExtension):
 
     def handle_request(self, headers, request_stream, response_stream):
         try:
-            method_path = headers[":path"]
+            method_path = headers.get(":path")
             entrypoint = self.entrypoints[method_path]
         except KeyError:
             raise GrpcError(
@@ -161,7 +160,12 @@ class GrpcServer(SharedExtension):
             )
 
         self.container.spawn_managed_thread(
-            partial(entrypoint.handle_request, request_stream, response_stream)
+            partial(
+                entrypoint.handle_request,
+                headers.application_headers(),
+                request_stream,
+                response_stream,
+            )
         )
 
     def run(self):
@@ -184,12 +188,6 @@ class GrpcServer(SharedExtension):
     def kill(self):
         # TODO extension should have a default kill?
         self.stop()
-
-
-class GrpcContext:
-    def __init__(self, cardinality, response_stream):
-        self.cardinality = cardinality
-        self.response_stream = response_stream
 
 
 class Grpc(Entrypoint):
@@ -226,15 +224,14 @@ class Grpc(Entrypoint):
     def stop(self):
         self.grpc_server.unregister(self)
 
-    def handle_request(self, request_stream, response_stream):
+    def handle_request(self, headers, request_stream, response_stream):
 
         request = request_stream.consume(self.input_type)
 
         if self.cardinality in (Cardinality.UNARY_STREAM, Cardinality.UNARY_UNARY):
             request = next(request)
 
-        # XXX not sure that this is for yet...
-        context = GrpcContext(self.cardinality, response_stream)
+        context = GrpcContext(self.cardinality, response_stream, headers)
 
         args = (request, context)
         kwargs = {}
@@ -263,7 +260,10 @@ class Grpc(Entrypoint):
         if self.cardinality in (Cardinality.STREAM_UNARY, Cardinality.UNARY_UNARY):
             result = (result,)
 
-        response_stream.populate(result)
+        if exc_info is None:
+            response_stream.populate(result)
+        else:
+            response_stream.close(exc_info[1])
 
         return result, exc_info
 
