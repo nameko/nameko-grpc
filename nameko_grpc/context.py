@@ -21,6 +21,13 @@ def maybe_base64_decode(header):
     return name, value
 
 
+def maybe_base64_encode(header):
+    name, value = header
+    if name.endswith("-bin"):
+        value = base64.b64encode(value)
+    return name, value
+
+
 def filter_headers_for_application(headers):
     def include(header):
         name, _ = header
@@ -47,6 +54,7 @@ def sort_headers_for_wire(headers):
 
 
 class AlreadySent(Exception):
+    # XXX really seems like this should live on the stream/
     pass
 
 
@@ -99,8 +107,7 @@ class HeaderManager:
 
         Preseveves and appends to any existing header with the same name.
         """
-        for name, value in headers:
-            self.data.append((name, value))
+        self.data.extend(headers)
 
     @property
     def for_wire(self):
@@ -109,13 +116,13 @@ class HeaderManager:
         if self.sent:
             raise AlreadySent()
         self.sent = True
-        return sort_headers_for_wire(self.data)
+        return list(map(maybe_base64_encode, sort_headers_for_wire(self.data)))
 
     @property
     def for_application(self):
         """ A filtered and processed list of headers for use by the application.
         """
-        return map(maybe_base64_decode, filter_headers_for_application(self.data))
+        return list(map(maybe_base64_decode, filter_headers_for_application(self.data)))
 
 
 class GrpcContext:

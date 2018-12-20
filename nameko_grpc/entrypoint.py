@@ -50,8 +50,10 @@ class ServerConnectionManager(ConnectionManager):
         request_stream = ReceiveStream(stream_id, headers=request_headers)
         response_stream = SendStream(stream_id, encoding=compression)
 
+        self.receive_streams[stream_id] = request_stream
+        self.send_streams[stream_id] = response_stream
+
         try:
-            self.handle_request(request_stream, response_stream)
             response_stream.headers.set(
                 (":status", "200"),
                 ("content-type", "application/grpc+proto"),
@@ -59,25 +61,17 @@ class ServerConnectionManager(ConnectionManager):
                 # TODO support server changing compression later
                 ("grpc-encoding", compression),
             )
+            self.handle_request(request_stream, response_stream)
 
         except GrpcError as error:
-            response_headers = [(":status", "200")]
-            response_headers.extend(error.as_headers())
-            # XXX can we do this using the stream objects? i.e. with more consistency
-            self.conn.send_headers(stream_id, response_headers, end_stream=True)
-
-        else:
-            self.receive_streams[stream_id] = request_stream
-            self.send_streams[stream_id] = response_stream
+            response_stream.trailers.set((":status", "200"), *error.as_headers())
+            self.end_stream(stream_id)
 
     def send_data(self, stream_id):
-        send_stream = self.send_streams.get(stream_id)
-        if not send_stream:
-            return
-
         try:
             super().send_data(stream_id)
         except GrpcError as error:
+            send_stream = self.send_streams.get(stream_id)
             send_stream.trailers.set(*error.as_headers())
             self.end_stream(stream_id)
 

@@ -135,12 +135,19 @@ class ClientConnectionManager(ConnectionManager):
 
 
 class Future:
-    def __init__(self, response, cardinality):
-        self.response = response
+    def __init__(self, response_stream, output_type, cardinality):
+        self.response_stream = response_stream
+        self.output_type = output_type
         self.cardinality = cardinality
 
+    def initial_metadata(self):
+        return self.response_stream.headers.for_application
+
+    def trailing_metadata(self):
+        return self.response_stream.trailers.for_application
+
     def result(self):
-        response = self.response
+        response = self.response_stream.consume(self.output_type)
         if self.cardinality in (Cardinality.STREAM_UNARY, Cardinality.UNARY_UNARY):
             response = next(response)
         return response
@@ -196,7 +203,7 @@ class Method:
 
         response_stream = self.client.invoke(request_headers, request, timeout)
 
-        return Future(response_stream.consume(output_type), cardinality)
+        return Future(response_stream, output_type, cardinality)
 
 
 class Proxy:

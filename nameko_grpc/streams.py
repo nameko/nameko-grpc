@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 import struct
-from enum import Enum
 from queue import Empty, Queue
 
 from nameko_grpc.compression import compress, decompress
@@ -36,12 +35,6 @@ class ByteBuffer:
 
     def __len__(self):
         return len(self.bytes)
-
-
-class StreamState(Enum):
-    HEADERS = "HEADERS"
-    DATA = "DATA"
-    TRAILERS = "TRAILERS"
 
 
 class StreamBase:
