@@ -22,8 +22,8 @@ class GrpcError(Exception):
 
     @staticmethod
     def from_headers(headers, debug_error_string=""):
-        status = int(headers["grpc-status"])
-        message = headers["grpc-message"]
+        status = int(headers.get("grpc-status"))
+        message = headers.get("grpc-message")
 
         return GrpcError(
             status=CYGRPC_STATUS_CODE_TO_STATUS_CODE[status],

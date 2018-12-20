@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 import struct
+from enum import Enum
 from queue import Empty, Queue
 
 from nameko_grpc.compression import compress, decompress
+from nameko_grpc.context import HeaderManager
 
 
 HEADER_LENGTH = 5
@@ -36,9 +38,18 @@ class ByteBuffer:
         return len(self.bytes)
 
 
+class StreamState(Enum):
+    HEADERS = "HEADERS"
+    DATA = "DATA"
+    TRAILERS = "TRAILERS"
+
+
 class StreamBase:
-    def __init__(self, stream_id):
+    def __init__(self, stream_id, headers=None, trailers=None):
         self.stream_id = stream_id
+
+        self.headers = headers or HeaderManager()
+        self.trailers = trailers or HeaderManager()
 
         self.queue = Queue()
         self.buffer = ByteBuffer()
@@ -59,7 +70,8 @@ class StreamBase:
 
 
 class ReceiveStream(StreamBase):
-    """ A stream that receives data as bytes to be iterated over as GRPC messages.
+    """ An HTTP2 stream that receives data as bytes to be iterated over as GRPC
+    messages.
     """
 
     def write(self, data):
@@ -105,12 +117,13 @@ class ReceiveStream(StreamBase):
 
 
 class SendStream(StreamBase):
-    """ A stream that receives data as GRPC messages to be read as chunks of bytes.
+    """ An HTTP2 stream that receives data as GRPC messages to be read as chunks of
+    bytes.
     """
 
-    def __init__(self, stream_id, encoding):
-        super().__init__(stream_id)
+    def __init__(self, *args, encoding=None, **kwargs):
         self.encoding = encoding
+        super().__init__(*args, **kwargs)
 
     def populate(self, iterable):
         """ Populate this stream with an iterable of messages.
@@ -120,6 +133,10 @@ class SendStream(StreamBase):
                 return
             self.queue.put(item)
         self.close()
+
+    @property
+    def send_headers(self):
+        return self.headers.data and not self.headers.sent and not self.queue.empty()
 
     def read(self, max_bytes, chunk_size):
         """ Read up to `max_bytes` from the stream, yielding up to `chunk_size`

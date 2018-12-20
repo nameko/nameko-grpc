@@ -37,7 +37,6 @@ def extract_metadata(context):
 def maybe_echo_metadata(context):
     """ Copy metadata from request to response.
     """
-    return  # XXX
 
     initial_metadata = []
     trailing_metadata = []

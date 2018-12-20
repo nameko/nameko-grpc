@@ -14,6 +14,7 @@ from h2.errors import PROTOCOL_ERROR  # changed under h2 from 2.6.4?
 from nameko_grpc.compression import SUPPORTED_ENCODINGS, UnsupportedEncoding
 from nameko_grpc.connection import ConnectionManager
 from nameko_grpc.constants import Cardinality
+from nameko_grpc.context import HeaderManager
 from nameko_grpc.exceptions import GrpcError
 from nameko_grpc.inspection import Inspector
 from nameko_grpc.streams import ReceiveStream, SendStream
@@ -69,31 +70,35 @@ class ClientConnectionManager(ConnectionManager):
 
         return request_stream, response_stream
 
-    def response_received(self, headers, stream_id):
+    def response_received(self, event):
         """ Called when a response is received on a stream.
 
         If the headers contain an error, we should raise it here.
         """
-        super().response_received(headers, stream_id)
-        self.handle_status(headers, stream_id)
+        super().response_received(event)
+        self.handle_status(event.stream_id)
 
-    def trailers_received(self, headers, stream_id):
+    def trailers_received(self, event):
         """ Called when trailers are received on a stream.
 
         If the trailers contain an error, we should raise it here.
         """
-        super().trailers_received(headers, stream_id)
-        self.handle_status(headers, stream_id)
+        super().trailers_received(event)
+        self.handle_status(event.stream_id)
 
-    def handle_status(self, headers, stream_id):
-        """ Handle the status of a GRPC stream.
+    def handle_status(self, stream_id):
+        """ Called when either a response or trailers are received on a stream.
+
+        If the stream resulted in an error, we should raise it here.
         """
         response_stream = self.receive_streams.get(stream_id)
         if response_stream is None:
             self.conn.reset_stream(stream_id, error_code=PROTOCOL_ERROR)
             return
 
-        headers = OrderedDict(headers)
+        headers = HeaderManager(
+            response_stream.headers.data + response_stream.trailers.data
+        )
         status = int(headers.get("grpc-status", 0))
         if status > 0:
             exc = GrpcError.from_headers(headers)

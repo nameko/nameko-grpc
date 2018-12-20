@@ -72,21 +72,21 @@ class ConnectionManager:
 
             for event in events:
                 if isinstance(event, RequestReceived):
-                    self.request_received(event.headers, event.stream_id)
+                    self.request_received(event)
                 elif isinstance(event, ResponseReceived):
-                    self.response_received(event.headers, event.stream_id)
+                    self.response_received(event)
                 elif isinstance(event, DataReceived):
-                    self.data_received(event, event.stream_id)
+                    self.data_received(event)
                 elif isinstance(event, StreamEnded):
-                    self.stream_ended(event.stream_id)
+                    self.stream_ended(event)
                 elif isinstance(event, WindowUpdated):
-                    self.window_updated(event.stream_id)
+                    self.window_updated(event)
                 elif isinstance(event, RemoteSettingsChanged):
                     self.settings_changed(event)
                 elif isinstance(event, SettingsAcknowledged):
                     self.settings_acknowledged(event)
                 elif isinstance(event, TrailersReceived):
-                    self.trailers_received(event.headers, event.stream_id)
+                    self.trailers_received(event)
 
         self.stopped.set()
 
@@ -102,25 +102,32 @@ class ConnectionManager:
         for stream_id in list(self.send_streams.keys()):
             self.send_data(stream_id)
 
-    def request_received(self, headers, stream_id):
+    def request_received(self, event):
         """ Called when a request is received on a stream.
 
         Subclasses should extend this method to handle the request accordingly.
         """
-        log.debug("request received, stream %s", stream_id)
+        log.debug("request received, stream %s", event.stream_id)
 
-    def response_received(self, headers, stream_id):
+    def response_received(self, event):
         """ Called when a response is received on a stream.
 
         Subclasses should extend this method to handle the response accordingly.
         """
-        log.debug("response received, stream %s", stream_id)
+        log.debug("response received, stream %s", event.stream_id)
+        receive_stream = self.receive_streams.get(event.stream_id)
+        if not receive_stream:
+            return
 
-    def data_received(self, event, stream_id):
+        receive_stream.headers.set(*event.headers)
+
+    def data_received(self, event):
         """ Called when data is received on a stream.
 
         If there is any open `ReceiveStream`, write the data to it.
         """
+        stream_id = event.stream_id
+
         log.debug("data received on stream %s: %s...", stream_id, event.data[:100])
         receive_stream = self.receive_streams.get(stream_id)
         if receive_stream is None:
@@ -133,21 +140,21 @@ class ConnectionManager:
         receive_stream.write(event.data)
         self.conn.acknowledge_received_data(event.flow_controlled_length, stream_id)
 
-    def window_updated(self, stream_id):
+    def window_updated(self, event):
         """ Called when the flow control window for a stream is changed.
 
         Any data waiting to be sent on the stream may fit in the window now.
         """
-        log.debug("window updated, stream %s", stream_id)
-        self.send_data(stream_id)
+        log.debug("window updated, stream %s", event.stream_id)
+        self.send_data(event.stream_id)
 
-    def stream_ended(self, stream_id):
+    def stream_ended(self, event):
         """ Called when an incoming stream ends.
 
         Close any `ReceiveStream` that was opened for this stream.
         """
-        log.debug("stream ended, stream %s", stream_id)
-        receive_stream = self.receive_streams.pop(stream_id, None)
+        log.debug("stream ended, stream %s", event.stream_id)
+        receive_stream = self.receive_streams.pop(event.stream_id, None)
         if receive_stream:
             receive_stream.close()
 
@@ -157,8 +164,13 @@ class ConnectionManager:
     def settings_acknowledged(self, event):
         log.debug("settings acknowledged")
 
-    def trailers_received(self, headers, stream_id):
-        log.debug("trailers received, stream %s", stream_id)
+    def trailers_received(self, event):
+        log.debug("trailers received, stream %s", event.stream_id)
+        receive_stream = self.receive_streams.get(event.stream_id)
+        if not receive_stream:
+            return
+
+        receive_stream.trailers.set(*event.headers)
 
     def send_data(self, stream_id):
         """ Attempt to send any pending data on a stream.
@@ -177,13 +189,13 @@ class ConnectionManager:
             window_size = self.conn.local_flow_control_window(stream_id=stream_id)
             max_frame_size = self.conn.max_outbound_frame_size
 
+            if send_stream.send_headers:
+                self.conn.send_headers(
+                    stream_id, send_stream.headers.for_wire, end_stream=False
+                )
+
             for chunk in send_stream.read(window_size, max_frame_size):
                 log.debug("sending data on stream %s: %s...", stream_id, chunk[:100])
-
-                # XXX WIP
-                # send headers at the last possible moment (needed?)
-                # if not send_stream.sent_headers:
-                #     send_stream.send_headers(self.conn)
 
                 self.conn.send_data(stream_id=stream_id, data=chunk)
 
@@ -192,10 +204,20 @@ class ConnectionManager:
 
         if send_stream.exhausted:
             log.debug("closing exhausted stream, stream %s", stream_id)
+            send_stream.trailers.set(("grpc-status", "0"))
             self.end_stream(stream_id)
-            self.send_streams.pop(stream_id)
 
     def end_stream(self, stream_id):
-        """ End an outbound stream.
+        """ Close an outbound stream, sending any trailers.
         """
-        self.conn.end_stream(stream_id=stream_id)
+        send_stream = self.send_streams.pop(stream_id)
+
+        try:
+            if send_stream.trailers:
+                self.conn.send_headers(
+                    stream_id, send_stream.trailers.for_wire, end_stream=True
+                )
+            else:
+                self.conn.end_stream(stream_id)
+        except StreamClosedError:
+            pass
