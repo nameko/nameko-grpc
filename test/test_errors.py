@@ -82,10 +82,14 @@ class TestDeadlineExceededAtServer:
         def generate_requests(values):
             for value in values:
                 time.sleep(0.01)
-                yield protobufs.ExampleRequest(value=value, stash=instrumented.path)
+                yield protobufs.ExampleRequest(value=value)
 
         with pytest.raises(GrpcError) as error:
-            client.stream_unary(generate_requests(string.ascii_uppercase), timeout=0.05)
+            client.stream_unary(
+                generate_requests(string.ascii_uppercase),
+                timeout=0.05,
+                metadata=[("stash", instrumented.path)],
+            )
         assert error.value.status == StatusCode.DEADLINE_EXCEEDED
         assert error.value.details == "Deadline Exceeded"
 
@@ -99,12 +103,10 @@ class TestDeadlineExceededAtServer:
 
         res = client.unary_stream(
             protobufs.ExampleRequest(
-                value="A",
-                delay=10,
-                stash=instrumented.path,
-                response_count=response_count,
+                value="A", delay=10, response_count=response_count
             ),
             timeout=0.05,
+            metadata=[("stash", instrumented.path)],
         )
         with pytest.raises(GrpcError) as error:
             list(res)  # client will throw

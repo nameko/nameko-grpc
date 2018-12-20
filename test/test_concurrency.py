@@ -2,23 +2,16 @@
 import random
 import string
 
-import pytest
-
 
 class TestConcurrency:
-    # TODO investigate why all of these hang with GRPC client
-    # TODO investigate why some of these hang with Nameko server
-
     def test_unary_unary(self, client, protobufs, instrumented, client_type):
-
-        if client_type == "grpc":
-            pytest.skip("Hangs")
 
         futures = []
         for letter in string.ascii_uppercase:
             futures.append(
                 client.unary_unary.future(
-                    protobufs.ExampleRequest(value=letter, stash=instrumented.path)
+                    protobufs.ExampleRequest(value=letter),
+                    metadata=[("stash", instrumented.path)],
                 )
             )
 
@@ -33,16 +26,12 @@ class TestConcurrency:
 
     def test_unary_stream(self, client, protobufs, instrumented, client_type):
 
-        if client_type == "grpc":
-            pytest.skip("Hangs")
-
         futures = []
         for letter in string.ascii_uppercase:
             futures.append(
                 client.unary_stream.future(
-                    protobufs.ExampleRequest(
-                        value=letter, response_count=2, stash=instrumented.path
-                    )
+                    protobufs.ExampleRequest(value=letter, response_count=2),
+                    metadata=[("stash", instrumented.path)],
                 )
             )
 
@@ -62,15 +51,9 @@ class TestConcurrency:
     def test_stream_unary(
         self, client, protobufs, instrumented, client_type, server_type
     ):
-
-        if client_type == "grpc":
-            pytest.skip("Hangs")
-        if server_type == "nameko":
-            pytest.skip("Hangs")
-
         def generate_requests(values):
             for value in values:
-                yield protobufs.ExampleRequest(value=value, stash=instrumented.path)
+                yield protobufs.ExampleRequest(value=value)
 
         futures = []
         for index in range(26):
@@ -78,7 +61,11 @@ class TestConcurrency:
                 values = string.ascii_uppercase
             else:
                 values = string.ascii_lowercase
-            futures.append(client.stream_unary.future(generate_requests(values)))
+            futures.append(
+                client.stream_unary.future(
+                    generate_requests(values), metadata=[("stash", instrumented.path)]
+                )
+            )
 
         for index, future in enumerate(futures):
             if index % 2 == 0:
@@ -94,15 +81,9 @@ class TestConcurrency:
         assert [req.value for req in captured_requests[:26]] != string.ascii_uppercase
 
     def test_stream_stream(self, client, protobufs, instrumented, client_type):
-
-        if client_type == "grpc":
-            pytest.skip("Hangs")
-        if client_type == "nameko":
-            pytest.skip("Hangs")
-
         def generate_requests(values):
             for value in values:
-                yield protobufs.ExampleRequest(value=value, stash=instrumented.path)
+                yield protobufs.ExampleRequest(value=value)
 
         futures = []
         for index in range(26):
@@ -110,7 +91,11 @@ class TestConcurrency:
                 values = string.ascii_uppercase
             else:
                 values = string.ascii_lowercase
-            futures.append(client.stream_stream.future(generate_requests(values)))
+            futures.append(
+                client.stream_stream.future(
+                    generate_requests(values), metadata=[("stash", instrumented.path)]
+                )
+            )
 
         for index, future in enumerate(futures):
             result = future.result()

@@ -1,7 +1,10 @@
 # -*- coding: utf-8 -*-
+import base64
+import json
 import os
 import pickle
 import threading
+import time
 
 import grpc
 import wrapt
@@ -10,6 +13,47 @@ from nameko.testing.utils import find_free_port
 
 from nameko_grpc.constants import Cardinality
 from nameko_grpc.exceptions import GrpcError
+
+
+def extract_metadata(context):
+    """ Extracts invocation metadata from `context` and returns it as JSON.
+
+    Binary headers are included as base64 encoded strings.
+    Duplicate header values are joined as comma separated, preserving order.
+    """
+    metadata = {}
+    for key, value in context.invocation_metadata():
+        if key.endswith("-bin"):
+            value = base64.b64encode(value).decode("utf-8")
+        if key in metadata:
+            metadata[key] = "{},{}".format(metadata[key], value)
+        else:
+            metadata[key] = value
+    return json.dumps(metadata)
+
+
+def maybe_echo_metadata(context):
+    """ Copy metadata from request to response.
+    """
+
+    initial_metadata = []
+    trailing_metadata = []
+
+    for key, value in context.invocation_metadata():
+        if key.startswith("echo-header"):
+            initial_metadata.append((key[12:], value))
+        elif key.startswith("echo-trailer"):
+            trailing_metadata.append((key[13:], value))
+
+    if initial_metadata:
+        context.send_initial_metadata(initial_metadata)
+    if trailing_metadata:
+        context.set_trailing_metadata(trailing_metadata)
+
+
+def maybe_sleep(request):
+    if request.delay:
+        time.sleep(request.delay / 1000)
 
 
 class RemoteClientTransport:
@@ -298,7 +342,7 @@ def instrumented(wrapped, instance, args, kwargs):
 
     (request, context) = args
 
-    stash = None
+    stash = RequestResponseStash(dict(context.invocation_metadata()).get("stash"))
 
     def isiterable(obj):
         try:
@@ -309,16 +353,10 @@ def instrumented(wrapped, instance, args, kwargs):
 
     def stashing_iterator(iterable, type_):
         for item in iterable:
-            nonlocal stash
-            if stash is None:
-                stash = RequestResponseStash(item.stash)
             stash.write(item, type_)
             yield item
 
     if not isiterable(request):
-        if stash is None:
-            stash = RequestResponseStash(request.stash)
-        stash = RequestResponseStash(request.stash)
         stash.write_request(request)
     else:
         request = stashing_iterator(request, RequestResponseStash.REQUEST)
@@ -326,8 +364,6 @@ def instrumented(wrapped, instance, args, kwargs):
     response = wrapped(request, context, **kwargs)
 
     if not isiterable(response):
-        if stash is None:
-            stash = RequestResponseStash(response.stash)
         stash.write_response(response)
     else:
         response = stashing_iterator(response, RequestResponseStash.RESPONSE)
