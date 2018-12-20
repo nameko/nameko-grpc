@@ -2,6 +2,8 @@
 import base64
 import json
 
+import pytest
+
 
 class TestRequestMetadata:
     def test_custom_string_metadata(self, client, protobufs):
@@ -51,6 +53,13 @@ class TestRequestMetadata:
 
 
 class TestResponseMetadata:
+    @pytest.fixture(autouse=True)
+    def skip(self, server_type, client_type):
+        if server_type == "nameko":
+            pytest.skip("nameko server not supported")
+        if client_type == "nameko":
+            pytest.skip("nameko client not supported")
+
     def test_custom_string_metadata(self, client, protobufs):
         header = "header"
         trailer = "trailer"

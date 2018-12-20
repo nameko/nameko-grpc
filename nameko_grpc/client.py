@@ -177,10 +177,11 @@ class Method:
             ("grpc-accept-encoding", ",".join(SUPPORTED_ENCODINGS)),
         ]
 
-        for key, value in metadata:
-            if key.endswith("-bin"):
-                value = base64.b64encode(value)
-            request_headers.append((key, value))
+        if metadata is not None:
+            for key, value in metadata:
+                if key.endswith("-bin"):
+                    value = base64.b64encode(value)
+                request_headers.append((key, value))
 
         if timeout is not None:
             request_headers.append(("grpc-timeout", bucket_timeout(timeout)))
