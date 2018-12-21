@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import json
 import re
 import string
 import time
@@ -6,6 +7,7 @@ import time
 import pytest
 from grpc import StatusCode
 
+from nameko_grpc.constants import Cardinality
 from nameko_grpc.exceptions import GrpcError
 
 
@@ -79,13 +81,20 @@ class TestDeadlineExceededAtServer:
         return protobufs
 
     def test_timeout_while_streaming_request(self, client, protobufs, instrumented):
+
+        stash_metadata = json.dumps([instrumented.path, Cardinality.STREAM_UNARY.value])
+
         def generate_requests(values):
             for value in values:
                 time.sleep(0.01)
-                yield protobufs.ExampleRequest(value=value, stash=instrumented.path)
+                yield protobufs.ExampleRequest(value=value)
 
         with pytest.raises(GrpcError) as error:
-            client.stream_unary(generate_requests(string.ascii_uppercase), timeout=0.05)
+            client.stream_unary(
+                generate_requests(string.ascii_uppercase),
+                timeout=0.05,
+                metadata=[("stash", stash_metadata)],
+            )
         assert error.value.status == StatusCode.DEADLINE_EXCEEDED
         assert error.value.details == "Deadline Exceeded"
 
@@ -95,16 +104,16 @@ class TestDeadlineExceededAtServer:
 
     def test_timeout_while_streaming_response(self, client, protobufs, instrumented):
 
+        stash_metadata = json.dumps([instrumented.path, Cardinality.UNARY_STREAM.value])
+
         response_count = 10
 
         res = client.unary_stream(
             protobufs.ExampleRequest(
-                value="A",
-                delay=10,
-                stash=instrumented.path,
-                response_count=response_count,
+                value="A", delay=10, response_count=response_count
             ),
             timeout=0.05,
+            metadata=[("stash", stash_metadata)],
         )
         with pytest.raises(GrpcError) as error:
             list(res)  # client will throw

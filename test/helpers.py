@@ -1,7 +1,10 @@
 # -*- coding: utf-8 -*-
+import base64
+import json
 import os
 import pickle
 import threading
+import time
 
 import grpc
 import wrapt
@@ -10,6 +13,47 @@ from nameko.testing.utils import find_free_port
 
 from nameko_grpc.constants import Cardinality
 from nameko_grpc.exceptions import GrpcError
+
+
+def extract_metadata(context):
+    """ Extracts invocation metadata from `context` and returns it as JSON.
+
+    Binary headers are included as base64 encoded strings.
+    Duplicate header values are joined as comma separated, preserving order.
+    """
+    metadata = {}
+    for key, value in context.invocation_metadata():
+        if key.endswith("-bin"):
+            value = base64.b64encode(value).decode("utf-8")
+        if key in metadata:
+            metadata[key] = "{},{}".format(metadata[key], value)
+        else:
+            metadata[key] = value
+    return json.dumps(metadata)
+
+
+def maybe_echo_metadata(context):
+    """ Copy metadata from request to response.
+    """
+
+    initial_metadata = []
+    trailing_metadata = []
+
+    for key, value in context.invocation_metadata():
+        if key.startswith("echo-header"):
+            initial_metadata.append((key[12:], value))
+        elif key.startswith("echo-trailer"):
+            trailing_metadata.append((key[13:], value))
+
+    if initial_metadata:
+        context.send_initial_metadata(initial_metadata)
+    if trailing_metadata:
+        context.set_trailing_metadata(trailing_metadata)
+
+
+def maybe_sleep(request):
+    if request.delay:
+        time.sleep(request.delay / 1000)
 
 
 class RemoteClientTransport:
@@ -244,7 +288,7 @@ class Command:
         return metadata_transport.receive()
 
 
-class RequestResponseStash:
+class Stash:
 
     REQUEST = "REQ"
     RESPONSE = "RES"
@@ -259,11 +303,23 @@ class RequestResponseStash:
         with open(self.path, "ab") as fh:
             fh.write(pickle.dumps((type_, value)) + b"|")
 
-    def write_request(self, req):
-        self.write(req, self.REQUEST)
+    def stash_request(self, request):
+        self.write(request, self.REQUEST)
+        return request
 
-    def write_response(self, res):
-        self.write(res, self.RESPONSE)
+    def stash_request_stream(self, iterator):
+        for request in iterator:
+            self.write(request, self.REQUEST)
+            yield request
+
+    def stash_response(self, response):
+        self.write(response, self.RESPONSE)
+        return response
+
+    def stash_response_stream(self, iterator):
+        for response in iterator:
+            self.write(response, self.RESPONSE)
+            yield response
 
     def read(self):
         if not self.path or not os.path.exists(self.path):
@@ -293,43 +349,26 @@ def instrumented(wrapped, instance, args, kwargs):
 
     Stores requests and responses to file for later inspection.
     """
+    request, context = args
 
-    # TODO stop inferring cardinality with isiterable; pass it in instead?
-
-    (request, context) = args
-
-    stash = None
-
-    def isiterable(obj):
-        try:
-            iter(obj)
-            return True
-        except TypeError:
-            return False
-
-    def stashing_iterator(iterable, type_):
-        for item in iterable:
-            nonlocal stash
-            if stash is None:
-                stash = RequestResponseStash(item.stash)
-            stash.write(item, type_)
-            yield item
-
-    if not isiterable(request):
-        if stash is None:
-            stash = RequestResponseStash(request.stash)
-        stash = RequestResponseStash(request.stash)
-        stash.write_request(request)
+    stash_metadata = dict(context.invocation_metadata()).get("stash")
+    if stash_metadata:
+        stash_path, cardinality = json.loads(stash_metadata)
     else:
-        request = stashing_iterator(request, RequestResponseStash.REQUEST)
+        stash_path, cardinality = None, None
+
+    stash = Stash(stash_path)
+
+    if cardinality in (Cardinality.STREAM_UNARY.value, Cardinality.STREAM_STREAM.value):
+        request = stash.stash_request_stream(request)
+    else:
+        request = stash.stash_request(request)
 
     response = wrapped(request, context, **kwargs)
 
-    if not isiterable(response):
-        if stash is None:
-            stash = RequestResponseStash(response.stash)
-        stash.write_response(response)
+    if cardinality in (Cardinality.UNARY_STREAM.value, Cardinality.STREAM_STREAM.value):
+        response = stash.stash_response_stream(response)
     else:
-        response = stashing_iterator(response, RequestResponseStash.RESPONSE)
+        response = stash.stash_response(response)
 
     return response

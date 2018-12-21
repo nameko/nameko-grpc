@@ -17,8 +17,7 @@ message ExampleRequest {
   string blob = 3;  // arbitrary extra data
   int32 delay = 4;
   int32 response_count = 5;
-  string stash = 6;
-  string compression = 7;
+  string compression = 6;
 }
 
 
@@ -26,7 +25,6 @@ message ExampleRequest {
 message ExampleReply {
   string message = 1;
   int32 seqno = 2;
-  string stash = 3;
-  string metadata = 4;
+  string metadata = 3;
 }
 

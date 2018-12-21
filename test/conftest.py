@@ -15,7 +15,7 @@ from nameko.testing.utils import find_free_port
 from nameko_grpc.client import Client
 from nameko_grpc.inspection import Inspector
 
-from helpers import Command, RemoteClientTransport, RequestResponseStash
+from helpers import Command, RemoteClientTransport, Stash
 
 
 def pytest_addoption(parser):
@@ -379,7 +379,7 @@ def start_client(request, client_type):
 def instrumented(tmpdir_factory):
     stashes = tmpdir_factory.mktemp("instrument_stashes")
     stash_file = stashes.join(str(uuid.uuid4()))
-    return RequestResponseStash(stash_file.strpath)
+    return Stash(stash_file.strpath)
 
 
 @pytest.fixture
