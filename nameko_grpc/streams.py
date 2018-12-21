@@ -149,7 +149,7 @@ class SendStream(StreamBase):
                 break
             if message is STREAM_END:
                 break
-            if isinstance(message, Exception):
+            if isinstance(message, Exception):  # XXX only GrpcError supported here?
                 raise message
 
             body = message.SerializeToString()

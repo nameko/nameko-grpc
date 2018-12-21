@@ -128,3 +128,21 @@ class TestDeadlineExceededAtServer:
 
     # add extra test that does mocking and MAKES SURE nameko service is responding
     # correctly (over and above these equivalence tests)
+
+
+class TestMethodException:
+    def test_error_before_response(self, client, protobufs):
+        with pytest.raises(GrpcError) as error:
+            client.unary_error(protobufs.ExampleRequest(value="A"))
+        assert error.value.status == StatusCode.UNKNOWN
+        assert error.value.details == "Exception calling application: boom"
+
+    def test_error_while_streaming_response(self, client, protobufs):
+        res = client.stream_error(
+            protobufs.ExampleRequest(value="A", response_count=10)
+        )
+        with pytest.raises(GrpcError) as error:
+            list(res)
+
+        assert error.value.status == StatusCode.UNKNOWN
+        assert error.value.details == "Exception iterating responses: boom"
