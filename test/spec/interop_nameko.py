@@ -1,6 +1,4 @@
 # -*- coding: utf-8 -*-
-# <grpchome>/src/python/grpcio_tests/src/proto/grpc/testing
-# from src.proto.grpc.testing import empty_pb2, messages_pb2, test_pb2_grpc
 from nameko_grpc.entrypoint import Grpc
 
 import empty_pb2
@@ -17,19 +15,19 @@ _TRAILING_METADATA_KEY = "x-grpc-test-echo-trailing-bin"
 
 def _maybe_echo_metadata(servicer_context):
     """Copies metadata from request to response if it is present."""
-    # invocation_metadata = dict(servicer_context.invocation_metadata())
-    # if _INITIAL_METADATA_KEY in invocation_metadata:
-    #     initial_metadatum = (
-    #         _INITIAL_METADATA_KEY,
-    #         invocation_metadata[_INITIAL_METADATA_KEY],
-    #     )
-    #     servicer_context.send_initial_metadata((initial_metadatum,))
-    # if _TRAILING_METADATA_KEY in invocation_metadata:
-    #     trailing_metadatum = (
-    #         _TRAILING_METADATA_KEY,
-    #         invocation_metadata[_TRAILING_METADATA_KEY],
-    #     )
-    #     servicer_context.set_trailing_metadata((trailing_metadatum,))
+    invocation_metadata = dict(servicer_context.invocation_metadata())
+    if _INITIAL_METADATA_KEY in invocation_metadata:
+        initial_metadatum = (
+            _INITIAL_METADATA_KEY,
+            invocation_metadata[_INITIAL_METADATA_KEY],
+        )
+        servicer_context.send_initial_metadata((initial_metadatum,))
+    if _TRAILING_METADATA_KEY in invocation_metadata:
+        trailing_metadatum = (
+            _TRAILING_METADATA_KEY,
+            invocation_metadata[_TRAILING_METADATA_KEY],
+        )
+        servicer_context.set_trailing_metadata((trailing_metadatum,))
 
 
 def _maybe_echo_status_and_message(request, servicer_context):

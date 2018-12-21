@@ -57,8 +57,8 @@ def server(request, server_type):
         ("channel_soak", False, False),
         ("cancel_after_begin", False, False),
         ("cancel_after_first_response", False, True),  # nameko fails, not sure why
-        ("custom_metadata", True, True),
-        ("status_code_and_message", False, True),  # nameko not implemented yet
+        ("custom_metadata", False, False),
+        ("status_code_and_message", False, True),
     ],
 )
 def test_interop(
