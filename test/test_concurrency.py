@@ -1,17 +1,22 @@
 # -*- coding: utf-8 -*-
+import json
 import random
 import string
+
+from nameko_grpc.constants import Cardinality
 
 
 class TestConcurrency:
     def test_unary_unary(self, client, protobufs, instrumented, client_type):
+
+        stash_metadata = json.dumps([instrumented.path, Cardinality.UNARY_UNARY.value])
 
         futures = []
         for letter in string.ascii_uppercase:
             futures.append(
                 client.unary_unary.future(
                     protobufs.ExampleRequest(value=letter),
-                    metadata=[("stash", instrumented.path)],
+                    metadata=[("stash", stash_metadata)],
                 )
             )
 
@@ -26,12 +31,14 @@ class TestConcurrency:
 
     def test_unary_stream(self, client, protobufs, instrumented, client_type):
 
+        stash_metadata = json.dumps([instrumented.path, Cardinality.UNARY_STREAM.value])
+
         futures = []
         for letter in string.ascii_uppercase:
             futures.append(
                 client.unary_stream.future(
                     protobufs.ExampleRequest(value=letter, response_count=2),
-                    metadata=[("stash", instrumented.path)],
+                    metadata=[("stash", stash_metadata)],
                 )
             )
 
@@ -51,6 +58,9 @@ class TestConcurrency:
     def test_stream_unary(
         self, client, protobufs, instrumented, client_type, server_type
     ):
+
+        stash_metadata = json.dumps([instrumented.path, Cardinality.STREAM_UNARY.value])
+
         def generate_requests(values):
             for value in values:
                 yield protobufs.ExampleRequest(value=value)
@@ -63,7 +73,7 @@ class TestConcurrency:
                 values = string.ascii_lowercase
             futures.append(
                 client.stream_unary.future(
-                    generate_requests(values), metadata=[("stash", instrumented.path)]
+                    generate_requests(values), metadata=[("stash", stash_metadata)]
                 )
             )
 
@@ -81,6 +91,11 @@ class TestConcurrency:
         assert [req.value for req in captured_requests[:26]] != string.ascii_uppercase
 
     def test_stream_stream(self, client, protobufs, instrumented, client_type):
+
+        stash_metadata = json.dumps(
+            [instrumented.path, Cardinality.STREAM_STREAM.value]
+        )
+
         def generate_requests(values):
             for value in values:
                 yield protobufs.ExampleRequest(value=value)
@@ -93,7 +108,7 @@ class TestConcurrency:
                 values = string.ascii_lowercase
             futures.append(
                 client.stream_stream.future(
-                    generate_requests(values), metadata=[("stash", instrumented.path)]
+                    generate_requests(values), metadata=[("stash", stash_metadata)]
                 )
             )
 

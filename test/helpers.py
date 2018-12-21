@@ -288,7 +288,7 @@ class Command:
         return metadata_transport.receive()
 
 
-class RequestResponseStash:
+class Stash:
 
     REQUEST = "REQ"
     RESPONSE = "RES"
@@ -303,11 +303,23 @@ class RequestResponseStash:
         with open(self.path, "ab") as fh:
             fh.write(pickle.dumps((type_, value)) + b"|")
 
-    def write_request(self, req):
-        self.write(req, self.REQUEST)
+    def stash_request(self, request):
+        self.write(request, self.REQUEST)
+        return request
 
-    def write_response(self, res):
-        self.write(res, self.RESPONSE)
+    def stash_request_stream(self, iterator):
+        for request in iterator:
+            self.write(request, self.REQUEST)
+            yield request
+
+    def stash_response(self, response):
+        self.write(response, self.RESPONSE)
+        return response
+
+    def stash_response_stream(self, iterator):
+        for response in iterator:
+            self.write(response, self.RESPONSE)
+            yield response
 
     def read(self):
         if not self.path or not os.path.exists(self.path):
@@ -337,35 +349,26 @@ def instrumented(wrapped, instance, args, kwargs):
 
     Stores requests and responses to file for later inspection.
     """
+    request, context = args
 
-    # TODO stop inferring cardinality with isiterable; pass it in instead?
-
-    (request, context) = args
-
-    stash = RequestResponseStash(dict(context.invocation_metadata()).get("stash"))
-
-    def isiterable(obj):
-        try:
-            iter(obj)
-            return True
-        except TypeError:
-            return False
-
-    def stashing_iterator(iterable, type_):
-        for item in iterable:
-            stash.write(item, type_)
-            yield item
-
-    if not isiterable(request):
-        stash.write_request(request)
+    stash_metadata = dict(context.invocation_metadata()).get("stash")
+    if stash_metadata:
+        stash_path, cardinality = json.loads(stash_metadata)
     else:
-        request = stashing_iterator(request, RequestResponseStash.REQUEST)
+        stash_path, cardinality = None, None
+
+    stash = Stash(stash_path)
+
+    if cardinality in (Cardinality.STREAM_UNARY.value, Cardinality.STREAM_STREAM.value):
+        request = stash.stash_request_stream(request)
+    else:
+        request = stash.stash_request(request)
 
     response = wrapped(request, context, **kwargs)
 
-    if not isiterable(response):
-        stash.write_response(response)
+    if cardinality in (Cardinality.UNARY_STREAM.value, Cardinality.STREAM_STREAM.value):
+        response = stash.stash_response_stream(response)
     else:
-        response = stashing_iterator(response, RequestResponseStash.RESPONSE)
+        response = stash.stash_response(response)
 
     return response
