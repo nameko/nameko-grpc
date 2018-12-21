@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import base64
 import itertools
 import socket
 import threading
@@ -13,6 +14,7 @@ from h2.errors import PROTOCOL_ERROR  # changed under h2 from 2.6.4?
 from nameko_grpc.compression import SUPPORTED_ENCODINGS, UnsupportedEncoding
 from nameko_grpc.connection import ConnectionManager
 from nameko_grpc.constants import Cardinality
+from nameko_grpc.context import HeaderManager
 from nameko_grpc.exceptions import GrpcError
 from nameko_grpc.inspection import Inspector
 from nameko_grpc.streams import ReceiveStream, SendStream
@@ -68,31 +70,35 @@ class ClientConnectionManager(ConnectionManager):
 
         return request_stream, response_stream
 
-    def response_received(self, headers, stream_id):
+    def response_received(self, event):
         """ Called when a response is received on a stream.
 
         If the headers contain an error, we should raise it here.
         """
-        super().response_received(headers, stream_id)
-        self.handle_status(headers, stream_id)
+        super().response_received(event)
+        self.handle_status(event.stream_id)
 
-    def trailers_received(self, headers, stream_id):
+    def trailers_received(self, event):
         """ Called when trailers are received on a stream.
 
         If the trailers contain an error, we should raise it here.
         """
-        super().trailers_received(headers, stream_id)
-        self.handle_status(headers, stream_id)
+        super().trailers_received(event)
+        self.handle_status(event.stream_id)
 
-    def handle_status(self, headers, stream_id):
-        """ Handle the status of a GRPC stream.
+    def handle_status(self, stream_id):
+        """ Called when either a response or trailers are received on a stream.
+
+        If the stream resulted in an error, we should raise it here.
         """
         response_stream = self.receive_streams.get(stream_id)
         if response_stream is None:
             self.conn.reset_stream(stream_id, error_code=PROTOCOL_ERROR)
             return
 
-        headers = OrderedDict(headers)
+        headers = HeaderManager(
+            response_stream.headers.data + response_stream.trailers.data
+        )
         status = int(headers.get("grpc-status", 0))
         if status > 0:
             exc = GrpcError.from_headers(headers)
@@ -129,12 +135,19 @@ class ClientConnectionManager(ConnectionManager):
 
 
 class Future:
-    def __init__(self, response, cardinality):
-        self.response = response
+    def __init__(self, response_stream, output_type, cardinality):
+        self.response_stream = response_stream
+        self.output_type = output_type
         self.cardinality = cardinality
 
+    def initial_metadata(self):
+        return self.response_stream.headers.for_application
+
+    def trailing_metadata(self):
+        return self.response_stream.trailers.for_application
+
     def result(self):
-        response = self.response
+        response = self.response_stream.consume(self.output_type)
         if self.cardinality in (Cardinality.STREAM_UNARY, Cardinality.UNARY_UNARY):
             response = next(response)
         return response
@@ -148,7 +161,7 @@ class Method:
     def __call__(self, request, **kwargs):
         return self.future(request, **kwargs).result()
 
-    def future(self, request, timeout=None, compression=None):
+    def future(self, request, timeout=None, compression=None, metadata=None):
         inspector = Inspector(self.client.stub)
 
         cardinality = inspector.cardinality_for_method(self.name)
@@ -174,9 +187,13 @@ class Method:
             ("grpc-encoding", compression),
             ("grpc-message-type", "{}.{}".format(service_name, input_type.__name__)),
             ("grpc-accept-encoding", ",".join(SUPPORTED_ENCODINGS)),
-            # TODO application headers
-            # application headers, base64 or binary
         ]
+
+        if metadata is not None:
+            for key, value in metadata:
+                if key.endswith("-bin"):
+                    value = base64.b64encode(value)
+                request_headers.append((key, value))
 
         if timeout is not None:
             request_headers.append(("grpc-timeout", bucket_timeout(timeout)))
@@ -186,7 +203,7 @@ class Method:
 
         response_stream = self.client.invoke(request_headers, request, timeout)
 
-        return Future(response_stream.consume(output_type), cardinality)
+        return Future(response_stream, output_type, cardinality)
 
 
 class Proxy:

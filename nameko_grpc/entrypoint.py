@@ -1,23 +1,21 @@
 # -*- coding: utf-8 -*-
 import time
-from collections import OrderedDict
 from functools import partial
 from logging import getLogger
 
 import eventlet
 from grpc import StatusCode
-from h2.exceptions import StreamClosedError
 from nameko.exceptions import ContainerBeingKilled
 from nameko.extensions import Entrypoint, SharedExtension
 
 from nameko_grpc.compression import SUPPORTED_ENCODINGS, select_algorithm
 from nameko_grpc.connection import ConnectionManager
+from nameko_grpc.constants import Cardinality
+from nameko_grpc.context import GrpcContext, HeaderManager
 from nameko_grpc.exceptions import GrpcError
 from nameko_grpc.inspection import Inspector
 from nameko_grpc.streams import ReceiveStream, SendStream
 from nameko_grpc.timeout import unbucket_timeout
-
-from .constants import Cardinality
 
 
 log = getLogger(__name__)
@@ -34,69 +32,48 @@ class ServerConnectionManager(ConnectionManager):
         super().__init__(sock, client_side=False)
         self.handle_request = handle_request
 
-    def request_received(self, headers, stream_id):
+    def request_received(self, event):
         """ Receive a GRPC request and pass it to the GrpcServer to fire any
         appropriate entrypoint.
 
         Establish a `ReceiveStream` to receive the request payload and `SendStream`
         for sending the eventual response.
         """
-        super().request_received(headers, stream_id)
+        super().request_received(event)
 
-        headers = OrderedDict(headers)
+        stream_id = event.stream_id
 
-        compression = select_algorithm(headers["grpc-accept-encoding"])
+        request_headers = HeaderManager(event.headers)
 
-        request_stream = ReceiveStream(stream_id)
+        compression = select_algorithm(request_headers.get("grpc-accept-encoding"))
+
+        request_stream = ReceiveStream(stream_id, headers=request_headers)
         response_stream = SendStream(stream_id, encoding=compression)
 
+        self.receive_streams[stream_id] = request_stream
+        self.send_streams[stream_id] = response_stream
+
         try:
-            self.handle_request(headers, request_stream, response_stream)
-            response_headers = (
+            response_stream.headers.set(
                 (":status", "200"),
                 ("content-type", "application/grpc+proto"),
                 ("grpc-accept-encoding", ",".join(SUPPORTED_ENCODINGS)),
-                # NOTE setting the grpc-encoding header here doesn't give the server
-                # the opportunity to change it; it should probably be set later
-                # if this is a feature we are going to support.
+                # TODO support server changing compression later
                 ("grpc-encoding", compression),
             )
-            self.conn.send_headers(stream_id, response_headers, end_stream=False)
+            self.handle_request(request_stream, response_stream)
 
         except GrpcError as error:
-            response_headers = [(":status", "200")]
-            response_headers.extend(error.as_headers())
-            self.conn.send_headers(stream_id, response_headers, end_stream=True)
-
-        else:
-            self.receive_streams[stream_id] = request_stream
-            self.send_streams[stream_id] = response_stream
+            response_stream.trailers.set((":status", "200"), *error.as_headers())
+            self.end_stream(stream_id)
 
     def send_data(self, stream_id):
         try:
             super().send_data(stream_id)
         except GrpcError as error:
-            response_headers = error.as_headers()
-            try:
-                self.conn.send_headers(stream_id, response_headers, end_stream=True)
-            except StreamClosedError:
-                pass
-
-    def end_stream(self, stream_id):
-        """ Close the outbound response stream with trailers containing the status
-        of the GRPC request.
-
-        Only called when the stream ends successfully, hence status is always good.
-        """
-
-        # XXX this could be better if it was merged back into send_data;
-        # status (and encoding headers?) could come from the send-stream?
-
-        response_headers = (("grpc-status", "0"),)
-        try:
-            self.conn.send_headers(stream_id, response_headers, end_stream=True)
-        except StreamClosedError:
-            pass
+            send_stream = self.send_streams.get(stream_id)
+            send_stream.trailers.set(*error.as_headers())
+            self.end_stream(stream_id)
 
 
 class GrpcServer(SharedExtension):
@@ -134,9 +111,9 @@ class GrpcServer(SharedExtension):
                 break
             time.sleep(0.001)
 
-    def handle_request(self, headers, request_stream, response_stream):
+    def handle_request(self, request_stream, response_stream):
         try:
-            method_path = headers[":path"]
+            method_path = request_stream.headers.get(":path")
             entrypoint = self.entrypoints[method_path]
         except KeyError:
             raise GrpcError(
@@ -145,7 +122,7 @@ class GrpcServer(SharedExtension):
                 debug_error_string="<traceback>",
             )
 
-        encoding = headers.get("grpc-encoding", "identity")
+        encoding = request_stream.headers.get("grpc-encoding", "identity")
         if encoding not in SUPPORTED_ENCODINGS:
             raise GrpcError(
                 status=StatusCode.UNIMPLEMENTED,
@@ -153,7 +130,7 @@ class GrpcServer(SharedExtension):
                 debug_error_string="<traceback>",
             )
 
-        timeout = headers.get("grpc-timeout")
+        timeout = request_stream.headers.get("grpc-timeout")
         if timeout:
             timeout = unbucket_timeout(timeout)
             self.container.spawn_managed_thread(
@@ -184,12 +161,6 @@ class GrpcServer(SharedExtension):
     def kill(self):
         # TODO extension should have a default kill?
         self.stop()
-
-
-class GrpcContext:
-    def __init__(self, cardinality, response_stream):
-        self.cardinality = cardinality
-        self.response_stream = response_stream
 
 
 class Grpc(Entrypoint):
@@ -233,8 +204,7 @@ class Grpc(Entrypoint):
         if self.cardinality in (Cardinality.UNARY_STREAM, Cardinality.UNARY_UNARY):
             request = next(request)
 
-        # XXX not sure that this is for yet...
-        context = GrpcContext(self.cardinality, response_stream)
+        context = GrpcContext(request_stream, response_stream)
 
         args = (request, context)
         kwargs = {}
@@ -263,7 +233,10 @@ class Grpc(Entrypoint):
         if self.cardinality in (Cardinality.STREAM_UNARY, Cardinality.UNARY_UNARY):
             result = (result,)
 
-        response_stream.populate(result)
+        if exc_info is None:
+            response_stream.populate(result)
+        else:
+            response_stream.close(exc_info[1])
 
         return result, exc_info
 
