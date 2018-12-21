@@ -32,9 +32,9 @@ def _maybe_echo_metadata(servicer_context):
 
 def _maybe_echo_status_and_message(request, servicer_context):
     """Sets the response context code and details if the request asks for them"""
-    # if request.HasField("response_status"):
-    #     servicer_context.set_code(request.response_status.code)
-    #     servicer_context.set_details(request.response_status.message)
+    if request.HasField("response_status"):
+        servicer_context.set_code(request.response_status.code)
+        servicer_context.set_details(request.response_status.message)
 
 
 class TestService:

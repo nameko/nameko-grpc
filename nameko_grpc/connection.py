@@ -204,7 +204,6 @@ class ConnectionManager:
 
         if send_stream.exhausted:
             log.debug("closing exhausted stream, stream %s", stream_id)
-            send_stream.trailers.set(("grpc-status", "0"))
             self.end_stream(stream_id)
 
     def end_stream(self, stream_id):
@@ -213,7 +212,8 @@ class ConnectionManager:
         send_stream = self.send_streams.pop(stream_id)
 
         try:
-            if send_stream.trailers:
+            # only servers will send trailers
+            if send_stream.trailers.data:  # XXX want a better interface here
                 self.conn.send_headers(
                     stream_id, send_stream.trailers.for_wire, end_stream=True
                 )

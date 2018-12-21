@@ -61,6 +61,7 @@ class ServerConnectionManager(ConnectionManager):
                 # TODO support server changing compression later
                 ("grpc-encoding", compression),
             )
+            response_stream.trailers.set(("grpc-status", "0"))
             self.handle_request(request_stream, response_stream)
 
         except GrpcError as error:

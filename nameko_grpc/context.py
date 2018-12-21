@@ -130,6 +130,12 @@ class GrpcContext:
         self.request_stream = request_stream
         self.response_stream = response_stream
 
+    def set_code(self, code):
+        self.response_stream.trailers.set(("grpc-status", str(code)))
+
+    def set_details(self, details):
+        self.response_stream.trailers.set(("grpc-message", details))
+
     def invocation_metadata(self):
         return self.request_stream.headers.for_application
 
