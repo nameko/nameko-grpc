@@ -104,7 +104,7 @@ class TestDeadlineExceededAtServer:
 
     def test_timeout_while_streaming_response(self, client, protobufs, instrumented):
 
-        stash_metadata = json.dumps([instrumented.path, Cardinality.STREAM_UNARY.value])
+        stash_metadata = json.dumps([instrumented.path, Cardinality.UNARY_STREAM.value])
 
         response_count = 10
 
