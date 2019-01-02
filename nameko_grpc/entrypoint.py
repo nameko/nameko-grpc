@@ -234,9 +234,22 @@ class Grpc(Entrypoint):
             result = (result,)
 
         if exc_info is None:
-            response_stream.populate(result)
+            try:
+                response_stream.populate(result)
+            except Exception as exception:
+                exc = GrpcError(
+                    status=StatusCode.UNKNOWN,
+                    details="Exception iterating responses: {}".format(exception),
+                    debug_error_string="<traceback>",
+                )
+                response_stream.close(exc)
         else:
-            response_stream.close(exc_info[1])
+            exc = GrpcError(
+                status=StatusCode.UNKNOWN,
+                details="Exception calling application: {}".format(exc_info[1]),
+                debug_error_string="<traceback>",
+            )
+            response_stream.close(exc)
 
         return result, exc_info
 
