@@ -256,7 +256,7 @@ def start_grpc_client(load_stubs, spawn_process, spec_dir, grpc_port):
 
         zmq_port = find_free_port()
         transport = RemoteClientTransport.bind(
-            context, zmq.REQ, "tcp://*:{}".format(zmq_port)
+            context, zmq.REQ, "tcp://127.0.0.1:{}".format(zmq_port)
         )
 
         spawn_process(

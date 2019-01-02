@@ -188,6 +188,7 @@ class Command:
     def retrieve_commands(transport):
         """ Retrieve a series of commands over the given `transport`
         """
+        # this is actually just receive_stream...
         while True:
             command = transport.receive()
             if command == Command.END:
@@ -208,7 +209,9 @@ class Command:
 
         # create a new transport and PUSH the request
         request_transport = RemoteClientTransport.bind(
-            self.transport.context, zmq.PUSH, "tcp://*:{}".format(self.request_port)
+            self.transport.context,
+            zmq.PUSH,
+            "tcp://127.0.0.1:{}".format(self.request_port),
         )
 
         if self.cardinality in (Cardinality.STREAM_UNARY, Cardinality.STREAM_STREAM):
@@ -265,7 +268,9 @@ class Command:
 
         # create a new transport and PULL the response
         response_transport = RemoteClientTransport.bind(
-            self.transport.context, zmq.PULL, "tcp://*:{}".format(self.response_port)
+            self.transport.context,
+            zmq.PULL,
+            "tcp://127.0.0.1:{}".format(self.response_port),
         )
 
         if self.cardinality in (Cardinality.UNARY_STREAM, Cardinality.STREAM_STREAM):
@@ -294,7 +299,9 @@ class Command:
 
         # create a new transport and PULL the metadata
         metadata_transport = RemoteClientTransport.bind(
-            self.transport.context, zmq.PULL, "tcp://*:{}".format(self.metadata_port)
+            self.transport.context,
+            zmq.PULL,
+            "tcp://127.0.0.1:{}".format(self.metadata_port),
         )
         return metadata_transport.receive(close=True)
 
