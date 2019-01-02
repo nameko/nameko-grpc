@@ -87,11 +87,15 @@ class RemoteClientTransport:
     def context(self):
         return self.sock.context
 
-    def receive(self):
+    def receive(self, close=False):
         loaded = pickle.loads(self.sock.recv())
-        if isinstance(loaded, GrpcError):
-            raise loaded
-        return loaded
+        try:
+            if isinstance(loaded, GrpcError):
+                raise loaded
+            return loaded
+        finally:
+            if close:
+                self.close()
 
     def receive_stream(self):
         while True:
@@ -99,9 +103,12 @@ class RemoteClientTransport:
             if item == self.ENDSTREAM:
                 break
             yield item
+        self.close()
 
-    def send(self, result):
+    def send(self, result, close=False):
         self.sock.send(pickle.dumps(result))
+        if close:
+            self.close()
 
     def send_stream(self, result):
         try:
@@ -111,7 +118,10 @@ class RemoteClientTransport:
             state = exc._state
             error = GrpcError(state.code, state.details, state.debug_error_string)
             self.send(error)
-        self.send(self.ENDSTREAM)
+        self.send(self.ENDSTREAM, close=True)
+
+    def close(self):
+        self.sock.close()
 
 
 class Command:
@@ -159,7 +169,7 @@ class Command:
         return state
 
     def __setstate__(self, newstate):
-        # set the mode to RESPOND when unpicking
+        # set the mode to RESPOND when unpickling
         newstate["mode"] = Command.Modes.RESPOND
         self.__dict__.update(newstate)
 
@@ -178,6 +188,7 @@ class Command:
     def retrieve_commands(transport):
         """ Retrieve a series of commands over the given `transport`
         """
+        # this is actually just receive_stream...
         while True:
             command = transport.receive()
             if command == Command.END:
@@ -186,6 +197,7 @@ class Command:
             command.transport = transport
             yield command
             transport.send(True)
+        transport.close()
 
     def send_request(self, request):
         """ Send the request for this command to the remote client.
@@ -197,7 +209,9 @@ class Command:
 
         # create a new transport and PUSH the request
         request_transport = RemoteClientTransport.bind(
-            self.transport.context, zmq.PUSH, "tcp://*:{}".format(self.request_port)
+            self.transport.context,
+            zmq.PUSH,
+            "tcp://127.0.0.1:{}".format(self.request_port),
         )
 
         if self.cardinality in (Cardinality.STREAM_UNARY, Cardinality.STREAM_STREAM):
@@ -205,7 +219,7 @@ class Command:
                 target=request_transport.send_stream, args=(request,)
             ).start()
         else:
-            request_transport.send(request)
+            request_transport.send(request, close=True)
 
     def get_request(self):
         """ Get the request for this command from the caller.
@@ -224,7 +238,7 @@ class Command:
 
         if self.cardinality in (Cardinality.STREAM_UNARY, Cardinality.STREAM_STREAM):
             return request_transport.receive_stream()
-        return request_transport.receive()
+        return request_transport.receive(close=True)
 
     def send_response(self, response):
         """ Send the response for this command
@@ -244,7 +258,7 @@ class Command:
                 target=response_transport.send_stream, args=(response,)
             ).start()
         else:
-            response_transport.send(response)
+            response_transport.send(response, close=True)
 
     def get_response(self):
         """ Get the response for this command from the remote client
@@ -254,12 +268,14 @@ class Command:
 
         # create a new transport and PULL the response
         response_transport = RemoteClientTransport.bind(
-            self.transport.context, zmq.PULL, "tcp://*:{}".format(self.response_port)
+            self.transport.context,
+            zmq.PULL,
+            "tcp://127.0.0.1:{}".format(self.response_port),
         )
 
         if self.cardinality in (Cardinality.UNARY_STREAM, Cardinality.STREAM_STREAM):
             return response_transport.receive_stream()
-        return response_transport.receive()
+        return response_transport.receive(close=True)
 
     def send_metadata(self, metadata):
         """ Send the response metadata for this command
@@ -273,7 +289,7 @@ class Command:
             zmq.PUSH,
             "tcp://127.0.0.1:{}".format(self.metadata_port),
         )
-        metadata_transport.send(metadata)
+        metadata_transport.send(metadata, close=True)
 
     def get_metadata(self):
         """ Get the response metadata for this command from the remote client
@@ -283,9 +299,11 @@ class Command:
 
         # create a new transport and PULL the metadata
         metadata_transport = RemoteClientTransport.bind(
-            self.transport.context, zmq.PULL, "tcp://*:{}".format(self.metadata_port)
+            self.transport.context,
+            zmq.PULL,
+            "tcp://127.0.0.1:{}".format(self.metadata_port),
         )
-        return metadata_transport.receive()
+        return metadata_transport.receive(close=True)
 
 
 class Stash:
