@@ -240,7 +240,7 @@ def start_grpc_client(load_stubs, spawn_process, spec_dir, grpc_port):
             return Method(self, name)
 
         def shutdown(self):
-            self.transport.send(Command.END)
+            self.transport.send(Command.END, close=True)
 
     def make(
         service_name,
