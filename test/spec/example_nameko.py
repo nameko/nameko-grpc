@@ -1,15 +1,10 @@
 # -*- coding: utf-8 -*-
-from functools import partial
-
-from nameko_grpc.entrypoint import Grpc
+from nameko_grpc.entrypoint import grpc
 
 from helpers import extract_metadata, instrumented, maybe_echo_metadata, maybe_sleep
 
 import example_pb2_grpc
 from example_pb2 import ExampleReply
-
-
-grpc = partial(Grpc.decorator, example_pb2_grpc.exampleStub)
 
 
 class Error(Exception):
@@ -19,7 +14,7 @@ class Error(Exception):
 class example:
     name = "example"
 
-    @grpc
+    @grpc(example_pb2_grpc.exampleStub)
     @instrumented
     def unary_unary(self, request, context):
         metadata = extract_metadata(context)
@@ -28,7 +23,7 @@ class example:
         message = request.value * (request.multiplier or 1)
         return ExampleReply(message=message, metadata=metadata)
 
-    @grpc
+    @grpc(example_pb2_grpc.exampleStub)
     @instrumented
     def unary_stream(self, request, context):
         metadata = extract_metadata(context)
@@ -38,7 +33,7 @@ class example:
             maybe_sleep(request)
             yield ExampleReply(message=message, seqno=i + 1, metadata=metadata)
 
-    @grpc
+    @grpc(example_pb2_grpc.exampleStub)
     @instrumented
     def stream_unary(self, request, context):
         metadata = extract_metadata(context)
@@ -51,7 +46,7 @@ class example:
 
         return ExampleReply(message=",".join(messages), metadata=metadata)
 
-    @grpc
+    @grpc(example_pb2_grpc.exampleStub)
     @instrumented
     def stream_stream(self, request, context):
         metadata = extract_metadata(context)
@@ -61,14 +56,14 @@ class example:
             message = req.value * (req.multiplier or 1)
             yield ExampleReply(message=message, seqno=index + 1, metadata=metadata)
 
-    @grpc(expected_exceptions=Error)
+    @grpc(example_pb2_grpc.exampleStub, expected_exceptions=Error)
     @instrumented
     def unary_error(self, request, context):
         maybe_echo_metadata(context)
         maybe_sleep(request)
         raise Error("boom")
 
-    @grpc(expected_exceptions=Error)
+    @grpc(example_pb2_grpc.exampleStub, expected_exceptions=Error)
     @instrumented
     def stream_error(self, request, context):
         metadata = extract_metadata(context)
