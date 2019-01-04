@@ -4,6 +4,7 @@ from queue import Empty, Queue
 
 from nameko_grpc.compression import compress, decompress
 from nameko_grpc.context import HeaderManager
+from nameko_grpc.exceptions import GrpcError
 
 
 HEADER_LENGTH = 5
@@ -50,16 +51,22 @@ class StreamBase:
 
     @property
     def exhausted(self):
+        """ A stream is exhausted if it is closed and there are no more messages to be
+        consumed or bytes to be read.
+        """
         return self.closed and self.queue.empty() and self.buffer.empty()
 
-    def close(self, exception=None):
-        """ Close this stream.
+    def close(self, error=None):
+        """ Close this stream, preventing further messages or data to be added.
 
-        If closed with an exception, the exception will be raised when reading
+        If closed with an error, the error will be raised when reading
         or consuming from this stream.
         """
+        if error:
+            assert isinstance(error, GrpcError)
+
         self.closed = True
-        self.queue.put(exception or STREAM_END)
+        self.queue.put(error or STREAM_END)
 
 
 class ReceiveStream(StreamBase):
@@ -91,11 +98,11 @@ class ReceiveStream(StreamBase):
 
     def consume(self, message_type):
         """ Consume the data in this stream by yielding `message_type` messages,
-        or raising if the stream was closed with an exception.
+        or raising if the stream was closed with an error.
         """
         while True:
             item = self.queue.get()
-            if isinstance(item, Exception):
+            if isinstance(item, GrpcError):
                 raise item
             elif item is STREAM_END:
                 break
@@ -170,7 +177,7 @@ class SendStream(StreamBase):
                 break
             if message is STREAM_END:
                 break
-            if isinstance(message, Exception):  # XXX only GrpcError supported here?
+            if isinstance(message, GrpcError):
                 raise message
 
             body = message.SerializeToString()

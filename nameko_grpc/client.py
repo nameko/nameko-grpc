@@ -101,8 +101,8 @@ class ClientConnectionManager(ConnectionManager):
         )
         status = int(headers.get("grpc-status", 0))
         if status > 0:
-            exc = GrpcError.from_headers(headers)
-            response_stream.close(exc)
+            error = GrpcError.from_headers(headers)
+            response_stream.close(error)
 
     def send_pending_requests(self):
         """ Initiate requests for any pending invocations.
@@ -262,12 +262,12 @@ class Client:
         while True:
             elapsed = time.time() - start
             if elapsed > deadline:
-                exc = GrpcError(
+                error = GrpcError(
                     status=StatusCode.DEADLINE_EXCEEDED,
                     details="Deadline Exceeded",
                     debug_error_string="<traceback>",
                 )
-                response_stream.close(exc)
+                response_stream.close(error)
                 send_stream.close()
             time.sleep(0.001)
 

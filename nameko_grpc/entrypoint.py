@@ -103,12 +103,12 @@ class GrpcServer(SharedExtension):
                 request_stream.close()
                 # XXX does server actually need to do this according to the spec?
                 # perhaps we could just close the stream.
-                exc = GrpcError(
+                error = GrpcError(
                     status=StatusCode.DEADLINE_EXCEEDED,
                     details="Deadline Exceeded",
                     debug_error_string="<traceback>",
                 )
-                response_stream.close(exc)
+                response_stream.close(error)
                 break
             time.sleep(0.001)
 
@@ -238,19 +238,19 @@ class Grpc(Entrypoint):
             try:
                 response_stream.populate(result)
             except Exception as exception:
-                exc = GrpcError(
+                error = GrpcError(
                     status=StatusCode.UNKNOWN,
                     details="Exception iterating responses: {}".format(exception),
                     debug_error_string="<traceback>",
                 )
-                response_stream.close(exc)
+                response_stream.close(error)
         else:
-            exc = GrpcError(
+            error = GrpcError(
                 status=StatusCode.UNKNOWN,
                 details="Exception calling application: {}".format(exc_info[1]),
                 debug_error_string="<traceback>",
             )
-            response_stream.close(exc)
+            response_stream.close(error)
 
         return result, exc_info
 
