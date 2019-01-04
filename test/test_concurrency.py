@@ -44,7 +44,8 @@ class TestConcurrency:
 
         for index, future in enumerate(futures):
             result = future.result()
-            assert [(response.message, response.seqno) for response in result] == [
+            responses = [(response.message, response.seqno) for response in result]
+            assert responses == [
                 (string.ascii_uppercase[index], 1),
                 (string.ascii_uppercase[index], 2),
             ]
@@ -114,14 +115,12 @@ class TestConcurrency:
 
         for index, future in enumerate(futures):
             result = future.result()
+            responses = [(response.seqno, response.message) for response in result]
             if index % 2 == 0:
-                assert [
-                    (response.seqno, response.message) for response in result
-                ] == list(enumerate(string.ascii_uppercase, 1))
+                expected = list(enumerate(string.ascii_uppercase, 1))
             else:
-                assert [
-                    (response.seqno, response.message) for response in result
-                ] == list(enumerate(string.ascii_lowercase, 1))
+                expected = list(enumerate(string.ascii_lowercase, 1))
+            assert responses == expected
 
         # verify messages from concurrent requests are interleaved
         # there is a 1/626! chance of concurrent requests being handled in order,
