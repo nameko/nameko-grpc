@@ -43,7 +43,7 @@ class TestConcurrency:
             )
 
         for index, future in enumerate(futures):
-            result = future.result()
+            result = list(future.result())
             responses = [(response.message, response.seqno) for response in result]
             assert responses == [
                 (string.ascii_uppercase[index], 1),
@@ -114,7 +114,7 @@ class TestConcurrency:
             )
 
         for index, future in enumerate(futures):
-            result = future.result()
+            result = list(future.result())
             responses = [(response.seqno, response.message) for response in result]
             if index % 2 == 0:
                 expected = list(enumerate(string.ascii_uppercase, 1))
