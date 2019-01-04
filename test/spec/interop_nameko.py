@@ -8,7 +8,7 @@ import interop_pb2_grpc
 import messages_pb2
 
 
-grpc = Grpc.decorator(interop_pb2_grpc.TestServiceStub)
+grpc = Grpc.implementing(interop_pb2_grpc.TestServiceStub)
 
 
 _INITIAL_METADATA_KEY = "x-grpc-test-echo-initial"
