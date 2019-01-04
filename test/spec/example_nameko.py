@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from nameko_grpc.entrypoint import grpc
+from nameko_grpc.entrypoint import Grpc
 
 from helpers import extract_metadata, instrumented, maybe_echo_metadata, maybe_sleep
 
@@ -11,10 +11,13 @@ class Error(Exception):
     pass
 
 
+grpc = Grpc.implementing(example_pb2_grpc.exampleStub)
+
+
 class example:
     name = "example"
 
-    @grpc(example_pb2_grpc.exampleStub)
+    @grpc
     @instrumented
     def unary_unary(self, request, context):
         metadata = extract_metadata(context)
@@ -23,7 +26,7 @@ class example:
         message = request.value * (request.multiplier or 1)
         return ExampleReply(message=message, metadata=metadata)
 
-    @grpc(example_pb2_grpc.exampleStub)
+    @grpc
     @instrumented
     def unary_stream(self, request, context):
         metadata = extract_metadata(context)
@@ -33,7 +36,7 @@ class example:
             maybe_sleep(request)
             yield ExampleReply(message=message, seqno=i + 1, metadata=metadata)
 
-    @grpc(example_pb2_grpc.exampleStub)
+    @grpc
     @instrumented
     def stream_unary(self, request, context):
         metadata = extract_metadata(context)
@@ -46,7 +49,7 @@ class example:
 
         return ExampleReply(message=",".join(messages), metadata=metadata)
 
-    @grpc(example_pb2_grpc.exampleStub)
+    @grpc
     @instrumented
     def stream_stream(self, request, context):
         metadata = extract_metadata(context)
@@ -56,14 +59,14 @@ class example:
             message = req.value * (req.multiplier or 1)
             yield ExampleReply(message=message, seqno=index + 1, metadata=metadata)
 
-    @grpc(example_pb2_grpc.exampleStub, expected_exceptions=Error)
+    @grpc(expected_exceptions=Error)
     @instrumented
     def unary_error(self, request, context):
         maybe_echo_metadata(context)
         maybe_sleep(request)
         raise Error("boom")
 
-    @grpc(example_pb2_grpc.exampleStub, expected_exceptions=Error)
+    @grpc(expected_exceptions=Error)
     @instrumented
     def stream_error(self, request, context):
         metadata = extract_metadata(context)

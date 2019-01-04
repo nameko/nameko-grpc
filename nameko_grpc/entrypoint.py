@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
 import time
+import types
 from functools import partial
 from logging import getLogger
 
 import eventlet
 from grpc import StatusCode
 from nameko.exceptions import ContainerBeingKilled
-from nameko.extensions import Entrypoint, SharedExtension
+from nameko.extensions import Entrypoint, SharedExtension, register_entrypoint
 
 from nameko_grpc.compression import SUPPORTED_ENCODINGS, select_algorithm
 from nameko_grpc.connection import ConnectionManager
@@ -191,6 +192,35 @@ class Grpc(Entrypoint):
         if self.is_bound():
             return Inspector(self.stub).cardinality_for_method(self.method_name)
 
+    @classmethod
+    def implementing(cls, stub):
+        return partial(cls.decorator, stub)
+
+    @classmethod
+    def decorator(cls, stub, *args, **kwargs):
+        """ Override Entrypoint.decorator to ensure `stub` is passed to instance.
+
+        Would be nicer if Nameko had a better mechanism for this.
+        """
+
+        def registering_decorator(fn, args, kwargs):
+            instance = cls(stub, *args, **kwargs)
+            register_entrypoint(fn, instance)
+            return fn
+
+        if len(args) == 1 and isinstance(args[0], types.FunctionType):
+            # usage without arguments to the decorator:
+            # @foobar
+            # def spam():
+            #     pass
+            return registering_decorator(args[0], args=(), kwargs={})
+        else:
+            # usage with arguments to the decorator:
+            # @foobar('shrub', ...)
+            # def spam():
+            #     pass
+            return partial(registering_decorator, args=args, kwargs=kwargs)
+
     def setup(self):
         self.grpc_server.register(self)
 
@@ -252,6 +282,3 @@ class Grpc(Entrypoint):
             response_stream.close(exc)
 
         return result, exc_info
-
-
-grpc = Grpc.decorator
