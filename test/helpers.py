@@ -9,7 +9,6 @@ import time
 import grpc
 import wrapt
 import zmq
-from nameko.testing.utils import find_free_port
 
 from nameko_grpc.constants import Cardinality
 from nameko_grpc.exceptions import GrpcError
@@ -73,6 +72,12 @@ class RemoteClientTransport:
         socket = context.socket(socket_type)
         socket.bind(target)
         return RemoteClientTransport(socket)
+
+    @classmethod
+    def bind_to_free_port(cls, context, socket_type, target):
+        socket = context.socket(socket_type)
+        port = socket.bind_to_random_port(target)
+        return RemoteClientTransport(socket), port
 
     @classmethod
     def connect(cls, context, socket_type, target):
@@ -156,16 +161,23 @@ class Command:
         self.kwargs = kwargs
         self.transport = transport
 
-        self.request_port = find_free_port()
-        self.response_port = find_free_port()
-        self.metadata_port = find_free_port()
+        self.request_port = None
+        self.response_port = None
+        self.metadata_port = None
+
+        self._request_transport = None
+        self._response_transport = None
+        self._metadata_transport = None
 
         self.mode = Command.Modes.ISSUE
 
     def __getstate__(self):
-        # remove the local `transport` before pickling
+        # remove the local transports before pickling
         state = self.__dict__.copy()
         state["transport"] = None
+        state["_request_transport"] = None
+        state["_response_transport"] = None
+        state["_metadata_transport"] = None
         return state
 
     def __setstate__(self, newstate):
@@ -180,6 +192,11 @@ class Command:
         """
         if self.mode is not Command.Modes.ISSUE:
             raise ValueError("Command must be in ISSUE mode to be issued")
+
+        # ensure transports are established and bound to ports before transmitting
+        assert self.request_transport
+        assert self.response_transport
+        assert self.metadata_transport
 
         self.transport.send(self)
         assert self.transport.receive() is True
@@ -199,6 +216,67 @@ class Command:
             transport.send(True)
         transport.close()
 
+    def bind_transport(self, socket_type):
+        """ Bind a new transport using the given `socket_type`.
+        """
+        transport, port = RemoteClientTransport.bind_to_free_port(
+            self.transport.context, socket_type, "tcp://127.0.0.1"
+        )
+        return transport, port
+
+    def connect_transport(self, socket_type, port):
+        """ Connect a new transport to `port` using the given `socket_type`.
+        """
+        transport = RemoteClientTransport.connect(
+            self.transport.context, socket_type, "tcp://127.0.0.1:{}".format(port)
+        )
+        return transport
+
+    @property
+    def request_transport(self):
+        """ Bind or connect the request transport.
+
+        Depending on the mode of this command, either binds a new transport to a free
+        port, or connects to the established port.
+        """
+        if self._request_transport is None:
+            if self.mode is Command.Modes.ISSUE:
+                transport, self.request_port = self.bind_transport(zmq.PUSH)
+            else:
+                transport = self.connect_transport(zmq.PULL, self.request_port)
+            self._request_transport = transport
+        return self._request_transport
+
+    @property
+    def response_transport(self):
+        """ Bind or connect the response transport.
+
+        Depending on the mode of this command, either binds a new transport to a free
+        port, or connects to the established port.
+        """
+        if self._response_transport is None:
+            if self.mode is Command.Modes.ISSUE:
+                transport, self.response_port = self.bind_transport(zmq.PULL)
+            else:
+                transport = self.connect_transport(zmq.PUSH, self.response_port)
+            self._response_transport = transport
+        return self._response_transport
+
+    @property
+    def metadata_transport(self):
+        """ Bind or connect the metadata transport.
+
+        Depending on the mode of this command, either binds a new transport to a free
+        port, or connects to the established port.
+        """
+        if self._metadata_transport is None:
+            if self.mode is Command.Modes.ISSUE:
+                transport, self.metadata_port = self.bind_transport(zmq.PULL)
+            else:
+                transport = self.connect_transport(zmq.PUSH, self.metadata_port)
+            self._metadata_transport = transport
+        return self._metadata_transport
+
     def send_request(self, request):
         """ Send the request for this command to the remote client.
 
@@ -207,19 +285,12 @@ class Command:
         if self.mode is not Command.Modes.ISSUE:
             raise ValueError("Command must be in ISSUE mode to send request")
 
-        # create a new transport and PUSH the request
-        request_transport = RemoteClientTransport.bind(
-            self.transport.context,
-            zmq.PUSH,
-            "tcp://127.0.0.1:{}".format(self.request_port),
-        )
-
         if self.cardinality in (Cardinality.STREAM_UNARY, Cardinality.STREAM_STREAM):
             threading.Thread(
-                target=request_transport.send_stream, args=(request,)
+                target=self.request_transport.send_stream, args=(request,)
             ).start()
         else:
-            request_transport.send(request, close=True)
+            self.request_transport.send(request, close=True)
 
     def get_request(self):
         """ Get the request for this command from the caller.
@@ -229,16 +300,9 @@ class Command:
         if self.mode is not Command.Modes.RESPOND:
             raise ValueError("Command must be in RESPOND mode to get request")
 
-        # create a new transport and PULL the request
-        request_transport = RemoteClientTransport.connect(
-            self.transport.context,
-            zmq.PULL,
-            "tcp://127.0.0.1:{}".format(self.request_port),
-        )
-
         if self.cardinality in (Cardinality.STREAM_UNARY, Cardinality.STREAM_STREAM):
-            return request_transport.receive_stream()
-        return request_transport.receive(close=True)
+            return self.request_transport.receive_stream()
+        return self.request_transport.receive(close=True)
 
     def send_response(self, response):
         """ Send the response for this command
@@ -246,19 +310,12 @@ class Command:
         if self.mode is not Command.Modes.RESPOND:
             raise ValueError("Command must be in RESPOND mode to send a response")
 
-        # create a new transport and PUSH the response
-        response_transport = RemoteClientTransport.connect(
-            self.transport.context,
-            zmq.PUSH,
-            "tcp://127.0.0.1:{}".format(self.response_port),
-        )
-
         if self.cardinality in (Cardinality.UNARY_STREAM, Cardinality.STREAM_STREAM):
             threading.Thread(
-                target=response_transport.send_stream, args=(response,)
+                target=self.response_transport.send_stream, args=(response,)
             ).start()
         else:
-            response_transport.send(response, close=True)
+            self.response_transport.send(response, close=True)
 
     def get_response(self):
         """ Get the response for this command from the remote client
@@ -266,16 +323,9 @@ class Command:
         if self.mode is not Command.Modes.ISSUE:
             raise ValueError("Command must be in ISSUE mode to get a response")
 
-        # create a new transport and PULL the response
-        response_transport = RemoteClientTransport.bind(
-            self.transport.context,
-            zmq.PULL,
-            "tcp://127.0.0.1:{}".format(self.response_port),
-        )
-
         if self.cardinality in (Cardinality.UNARY_STREAM, Cardinality.STREAM_STREAM):
-            return response_transport.receive_stream()
-        return response_transport.receive(close=True)
+            return self.response_transport.receive_stream()
+        return self.response_transport.receive(close=True)
 
     def send_metadata(self, metadata):
         """ Send the response metadata for this command
@@ -283,13 +333,7 @@ class Command:
         if self.mode is not Command.Modes.RESPOND:
             raise ValueError("Command must be in RESPOND mode to send metadata")
 
-        # create a new transport and PUSH the metadata
-        metadata_transport = RemoteClientTransport.connect(
-            self.transport.context,
-            zmq.PUSH,
-            "tcp://127.0.0.1:{}".format(self.metadata_port),
-        )
-        metadata_transport.send(metadata, close=True)
+        self.metadata_transport.send(metadata, close=True)
 
     def get_metadata(self):
         """ Get the response metadata for this command from the remote client
@@ -297,13 +341,7 @@ class Command:
         if self.mode is not Command.Modes.ISSUE:
             raise ValueError("Command must be in ISSUE mode to get a metadata")
 
-        # create a new transport and PULL the metadata
-        metadata_transport = RemoteClientTransport.bind(
-            self.transport.context,
-            zmq.PULL,
-            "tcp://127.0.0.1:{}".format(self.metadata_port),
-        )
-        return metadata_transport.receive(close=True)
+        return self.metadata_transport.receive(close=True)
 
 
 class Stash:
