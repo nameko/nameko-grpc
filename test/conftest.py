@@ -10,9 +10,12 @@ from importlib import import_module
 
 import pytest
 from eventlet.green import zmq
-from nameko.testing.utils import find_free_port
+from mock import Mock
+from nameko.testing.services import dummy
+from nameko.testing.utils import find_free_port, get_extension
 
 from nameko_grpc.client import Client
+from nameko_grpc.dependency_provider import GrpcProxy
 from nameko_grpc.inspection import Inspector
 
 from helpers import Command, RemoteClientTransport, Stash
@@ -24,7 +27,7 @@ def pytest_addoption(parser):
         "--client",
         action="store",
         type="choice",
-        choices=["nameko", "grpc", "all"],
+        choices=["nameko", "dp", "grpc", "all"],
         dest="client",
         default="all",
         help="Use this client type",
@@ -340,6 +343,43 @@ def start_nameko_client(load_stubs, spec_dir, grpc_port):
         client.stop()
 
 
+@pytest.fixture
+def start_dependency_provider(load_stubs, spec_dir, grpc_port, container_factory):
+    def make(
+        service_name,
+        proto_name=None,
+        compression_algorithm="none",
+        compression_level="high",
+    ):
+        if proto_name is None:
+            proto_name = service_name
+
+        stubs = load_stubs(proto_name)
+        stub_cls = getattr(stubs, "{}Stub".format(service_name))
+
+        class Service:
+            name = "caller"
+
+            example_grpc = GrpcProxy(
+                "//127.0.0.1:{}".format(grpc_port),
+                stub_cls,
+                compression_algorithm=compression_algorithm,
+                compression_level=compression_level,
+            )
+
+            @dummy
+            def call(self):
+                pass
+
+        container = container_factory(Service, {})
+        container.start()
+
+        grpc_proxy = get_extension(container, GrpcProxy)
+        return grpc_proxy.get_dependency(Mock())
+
+    yield make
+
+
 @pytest.fixture(params=["server|grpc", "server|nameko"])
 def server_type(request):
     return request.param[7:]
@@ -357,7 +397,7 @@ def start_server(request, server_type):
         return request.getfixturevalue("start_nameko_server")
 
 
-@pytest.fixture(params=["client|grpc", "client|nameko"])
+@pytest.fixture(params=["client|grpc", "client|nameko", "client|dp"])
 def client_type(request):
     return request.param[7:]
 
@@ -372,6 +412,10 @@ def start_client(request, client_type):
         if request.config.option.client not in ("nameko", "all"):
             pytest.skip("nameko client not requested")
         return request.getfixturevalue("start_nameko_client")
+    if client_type == "dp":
+        if request.config.option.client not in ("dp", "all"):
+            pytest.skip("dp client not requested")
+        return request.getfixturevalue("start_dependency_provider")
 
 
 @pytest.fixture

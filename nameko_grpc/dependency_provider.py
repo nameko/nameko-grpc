@@ -47,9 +47,6 @@ class GrpcProxy(DependencyProvider):
         self.manager.stop()
         self.sock.close()
 
-    # XXX should use the DP client as a parameter to the client fixture to avoid
-    # accidentally not covering it.
-
     @property
     def default_compression(self):
         if self.compression_algorithm != "none":
