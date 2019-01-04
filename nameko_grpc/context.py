@@ -53,25 +53,16 @@ def sort_headers_for_wire(headers):
     return sorted(headers, key=weight)
 
 
-class AlreadySent(Exception):
-    # XXX really seems like this should live on the stream/
-    pass
-
-
 class HeaderManager:
     def __init__(self, data=None):
         """
-        Object for managing headers (or trailers). Maintains state tracking whether
-        or not the headers have been transmitted over the wire.
-        XXX really seems like this should live on the stream/
+        Object for managing headers (or trailers).
 
         Accepts a list of tuples in the form `("<name>", "<value>")`
         """
         if data is None:
             data = []
         self.data = data
-
-        self.sent = False
 
     def get(self, name, default=None):
         """ Get a header by `name`.
@@ -105,17 +96,17 @@ class HeaderManager:
     def append(self, *headers):
         """ Add new headers.
 
-        Preseveves and appends to any existing header with the same name.
+        Preserves and appends to any existing header with the same name.
         """
         self.data.extend(headers)
+
+    def __len__(self):
+        return len(self.data)
 
     @property
     def for_wire(self):
         """ A sorted list of headers for transmitting over the wire.
         """
-        if self.sent:
-            raise AlreadySent()
-        self.sent = True
         return list(map(maybe_base64_encode, sort_headers_for_wire(self.data)))
 
     @property

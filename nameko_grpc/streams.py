@@ -116,6 +116,7 @@ class SendStream(StreamBase):
 
     def __init__(self, *args, encoding=None, **kwargs):
         self.encoding = encoding
+        self.headers_sent = False
         super().__init__(*args, **kwargs)
 
     def populate(self, iterable):
@@ -127,9 +128,29 @@ class SendStream(StreamBase):
             self.queue.put(item)
         self.close()
 
-    @property
-    def send_headers(self):
-        return self.headers.data and not self.headers.sent and not self.queue.empty()
+    def headers_to_send(self):
+        """ Return any headers to be sent with this stream.
+
+        Headers may only be transmitted once. `SendStream` maintains this state by
+        only allowing this method to be called once.
+
+        Additionally, it does not return any headers until there is at least one
+        message to be sent. This allows for headers to be changed at any point before
+        there is data ready to be sent.
+        """
+        if self.headers_sent or len(self.headers) == 0 or self.queue.empty():
+            return False
+
+        self.headers_sent = True
+        return self.headers.for_wire
+
+    def trailers_to_send(self):
+        """ Return any trailers to be sent after this stream.
+        """
+        if len(self.trailers) == 0:
+            return False
+
+        return self.trailers.for_wire
 
     def read(self, max_bytes, chunk_size):
         """ Read up to `max_bytes` from the stream, yielding up to `chunk_size`

@@ -175,8 +175,10 @@ class ConnectionManager:
     def send_data(self, stream_id):
         """ Attempt to send any pending data on a stream.
 
-        Up to the current flow-control window size bytes may be sent. If the
-        `SendStream` is exhausted (no more data to send), the stream is closed.
+        Up to the current flow-control window size bytes may be sent.
+
+        If the `SentStream` has headers that have not been sent, they are sent first.
+        If the `SendStream` is exhausted (no more data to send), the stream is closed.
         """
         send_stream = self.send_streams.get(stream_id)
 
@@ -189,10 +191,9 @@ class ConnectionManager:
             window_size = self.conn.local_flow_control_window(stream_id=stream_id)
             max_frame_size = self.conn.max_outbound_frame_size
 
-            if send_stream.send_headers:
-                self.conn.send_headers(
-                    stream_id, send_stream.headers.for_wire, end_stream=False
-                )
+            headers = send_stream.headers_to_send()
+            if headers:
+                self.conn.send_headers(stream_id, headers, end_stream=False)
 
             for chunk in send_stream.read(window_size, max_frame_size):
                 log.debug("sending data on stream %s: %s...", stream_id, chunk[:100])
@@ -212,11 +213,9 @@ class ConnectionManager:
         send_stream = self.send_streams.pop(stream_id)
 
         try:
-            # only servers will send trailers
-            if send_stream.trailers.data:  # XXX want a better interface here
-                self.conn.send_headers(
-                    stream_id, send_stream.trailers.for_wire, end_stream=True
-                )
+            trailers = send_stream.trailers_to_send()
+            if trailers:
+                self.conn.send_headers(stream_id, trailers, end_stream=True)
             else:
                 self.conn.end_stream(stream_id)
         except StreamClosedError:
