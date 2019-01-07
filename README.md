@@ -15,7 +15,9 @@ Python 3.4+ is supported.
 
 ## Tests
 
-The (limited) tests are run against every permutation of GRPC server/client to Nameko server/client. This roughly demonstrates equivalence between the two implementations.
+Most tests are run against every permutation of GRPC server/client to Nameko server/client. This roughly demonstrates equivalence between the two implementations.
+
+Additionally, we run the interop tests from the offical GRPC repo, which are used to verify compatibility between language implementations. The Nameko GRPC implementation supports every feature that the official Python GRPC implementation does.
 
 
 ## Style
@@ -34,7 +36,7 @@ from example_pb2 import ExampleReply
 from example_pb2_grpc import exampleStub
 
 
-grpc = Grpc.decorator(exampleStub)
+grpc = Grpc.implementing(exampleStub)
 
 
 class ExampleService:
@@ -106,11 +108,3 @@ with Client("//127.0.0.1", exampleStub) as client:
         print(response.message)
 
 ```
-
-
-
-## TODO
-
-* Implement context
-* Allow optional snake_case method names even with CamelCased proto definition
-
