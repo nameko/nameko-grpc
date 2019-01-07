@@ -104,12 +104,12 @@ class GrpcServer(SharedExtension):
                 request_stream.close()
                 # XXX does server actually need to do this according to the spec?
                 # perhaps we could just close the stream.
-                exc = GrpcError(
+                error = GrpcError(
                     status=StatusCode.DEADLINE_EXCEEDED,
                     details="Deadline Exceeded",
                     debug_error_string="<traceback>",
                 )
-                response_stream.close(exc)
+                response_stream.close(error)
                 break
             time.sleep(0.001)
 
@@ -161,7 +161,6 @@ class GrpcServer(SharedExtension):
         super(GrpcServer, self).stop()
 
     def kill(self):
-        # TODO extension should have a default kill?
         self.stop()
 
 
@@ -175,7 +174,7 @@ class Grpc(Entrypoint):
 
     @property
     def method_path(self):
-        if self.is_bound():  # TODO why is this not a property?
+        if self.is_bound():
             return Inspector(self.stub).path_for_method(self.method_name)
 
     @property
@@ -268,18 +267,18 @@ class Grpc(Entrypoint):
             try:
                 response_stream.populate(result)
             except Exception as exception:
-                exc = GrpcError(
+                error = GrpcError(
                     status=StatusCode.UNKNOWN,
                     details="Exception iterating responses: {}".format(exception),
                     debug_error_string="<traceback>",
                 )
-                response_stream.close(exc)
+                response_stream.close(error)
         else:
-            exc = GrpcError(
+            error = GrpcError(
                 status=StatusCode.UNKNOWN,
                 details="Exception calling application: {}".format(exc_info[1]),
                 debug_error_string="<traceback>",
             )
-            response_stream.close(exc)
+            response_stream.close(error)
 
         return result, exc_info

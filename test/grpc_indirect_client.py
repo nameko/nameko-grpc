@@ -55,19 +55,16 @@ if __name__ == "__main__":
 
     port = sys.argv[1]
 
-    spec_path = sys.argv[2]
-    sys.path.append(spec_path)
+    proto_name = sys.argv[2]
+    service_name = sys.argv[3]
 
-    proto_name = sys.argv[3]
-    service_name = sys.argv[4]
-
-    compression_algorithm = sys.argv[5]
-    compression_level = sys.argv[6]
+    compression_algorithm = sys.argv[4]
+    compression_level = sys.argv[5]
 
     grpc_module = import_module("{}_pb2_grpc".format(proto_name))
     stub_cls = getattr(grpc_module, "{}Stub".format(service_name))
 
-    zmq_port = sys.argv[7]
+    zmq_port = sys.argv[6]
 
     channel_options = [
         (

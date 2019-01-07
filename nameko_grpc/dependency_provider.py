@@ -47,9 +47,6 @@ class GrpcProxy(DependencyProvider):
         self.manager.stop()
         self.sock.close()
 
-    # XXX should use the DP client as a parameter to the client fixture to avoid
-    # accidentally not covering it.
-
     @property
     def default_compression(self):
         if self.compression_algorithm != "none":
@@ -61,12 +58,12 @@ class GrpcProxy(DependencyProvider):
         while True:
             elapsed = time.time() - start
             if elapsed > deadline:
-                exc = GrpcError(
+                error = GrpcError(
                     status=StatusCode.DEADLINE_EXCEEDED,
                     details="Deadline Exceeded",
                     debug_error_string="<traceback>",
                 )
-                response_stream.close(exc)
+                response_stream.close(error)
                 send_stream.close()
                 break
             time.sleep(0.001)
