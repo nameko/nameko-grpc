@@ -15,15 +15,11 @@ if __name__ == "__main__":
 
     port = sys.argv[1]
 
-    # TODO do this via env and PYTHONPATH when starting this subprocess
-    source_dir = sys.argv[2]
-    sys.path.append(source_dir)
+    proto_name = sys.argv[2]
+    service_name = sys.argv[3]
 
-    proto_name = sys.argv[3]
-    service_name = sys.argv[4]
-
-    compression_algorithm = sys.argv[5]
-    compression_level = sys.argv[6]
+    compression_algorithm = sys.argv[4]
+    compression_level = sys.argv[5]
 
     service_module = import_module("{}_grpc".format(proto_name))
     service_cls = getattr(service_module, service_name)

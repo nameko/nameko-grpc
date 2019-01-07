@@ -127,10 +127,10 @@ def spawn_process():
 
     procs = []
 
-    def spawn(*args):
+    def spawn(*args, env=None):
         popen_args = [sys.executable]
         popen_args.extend(args)
-        procs.append(subprocess.Popen(popen_args))
+        procs.append(subprocess.Popen(popen_args, env=env))
 
     yield spawn
 
@@ -157,14 +157,17 @@ def start_grpc_server(compile_proto, spawn_process, spec_dir, grpc_port):
         if proto_name is None:
             proto_name = service_name
 
+        env = os.environ.copy()
+        env["PYTHONPATH"] = spec_dir.strpath
+
         spawn_process(
             server_script,
             str(grpc_port),
-            spec_dir.strpath,
             proto_name,
             service_name,
             compression_algorithm,
             compression_level,
+            env=env,
         )
 
         # wait for server to start
@@ -261,15 +264,18 @@ def start_grpc_client(load_stubs, spawn_process, spec_dir, grpc_port):
             context, zmq.REQ, "tcp://127.0.0.1"
         )
 
+        env = os.environ.copy()
+        env["PYTHONPATH"] = spec_dir.strpath
+
         spawn_process(
             client_script,
             str(grpc_port),
-            spec_dir.strpath,
             proto_name,
             service_name,
             compression_algorithm,
             compression_level,
             str(zmq_port),
+            env=env,
         )
 
         client = Client(stub_cls, transport)
