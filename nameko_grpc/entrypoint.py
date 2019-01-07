@@ -160,7 +160,6 @@ class GrpcServer(SharedExtension):
         super(GrpcServer, self).stop()
 
     def kill(self):
-        # TODO extension should have a default kill?
         self.stop()
 
 
@@ -174,7 +173,7 @@ class Grpc(Entrypoint):
 
     @property
     def method_path(self):
-        if self.is_bound():  # TODO why is this not a property?
+        if self.is_bound():
             return Inspector(self.stub).path_for_method(self.method_name)
 
     @property
