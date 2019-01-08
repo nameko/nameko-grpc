@@ -141,7 +141,7 @@ class SendStream(StreamBase):
     def headers_to_send(self, defer_until_data=True):
         """ Return any headers to be sent with this stream.
 
-        Headers may only be transmitted once, before any data is sent.
+        Headers may only be transmitted before any data is sent.
         This state is maintained by only returning headers from this method once.
 
         When `defer_until_data` is true, no headers are returned until there is at least

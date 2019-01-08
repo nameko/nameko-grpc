@@ -13,7 +13,6 @@ from h2.errors import PROTOCOL_ERROR  # changed under h2 from 2.6.4?
 from nameko_grpc.compression import SUPPORTED_ENCODINGS, UnsupportedEncoding
 from nameko_grpc.connection import ConnectionManager
 from nameko_grpc.constants import Cardinality
-from nameko_grpc.context import HeaderManager
 from nameko_grpc.exceptions import GrpcError
 from nameko_grpc.inspection import Inspector
 from nameko_grpc.streams import ReceiveStream, SendStream
@@ -73,7 +72,17 @@ class ClientConnectionManager(ConnectionManager):
         If the headers contain an error, we should raise it here.
         """
         super().response_received(event)
-        self.handle_status(event.stream_id)
+
+        response_stream = self.receive_streams.get(event.stream_id)
+        if response_stream is None:
+            self.conn.reset_stream(event.stream_id, error_code=PROTOCOL_ERROR)
+            return
+
+        headers = response_stream.headers
+
+        if int(headers.get("grpc-status", 0)) > 0:
+            error = GrpcError.from_headers(headers)
+            response_stream.close(error)
 
     def trailers_received(self, event):
         """ Called when trailers are received on a stream.
@@ -81,24 +90,16 @@ class ClientConnectionManager(ConnectionManager):
         If the trailers contain an error, we should raise it here.
         """
         super().trailers_received(event)
-        self.handle_status(event.stream_id)
 
-    def handle_status(self, stream_id):
-        """ Called when either a response or trailers are received on a stream.
-
-        If the stream resulted in an error, we should raise it here.
-        """
-        response_stream = self.receive_streams.get(stream_id)
+        response_stream = self.receive_streams.get(event.stream_id)
         if response_stream is None:
-            self.conn.reset_stream(stream_id, error_code=PROTOCOL_ERROR)
+            self.conn.reset_stream(event.stream_id, error_code=PROTOCOL_ERROR)
             return
 
-        headers = HeaderManager(  # XXX ugh
-            response_stream.headers.data + response_stream.trailers.data
-        )
-        status = int(headers.get("grpc-status", 0))
-        if status > 0:
-            error = GrpcError.from_headers(headers)
+        trailers = response_stream.trailers
+
+        if int(trailers.get("grpc-status", 0)) > 0:
+            error = GrpcError.from_headers(trailers)
             response_stream.close(error)
 
     def send_pending_requests(self):
@@ -121,9 +122,6 @@ class ClientConnectionManager(ConnectionManager):
         try:
             super().send_data(stream_id)
         except UnsupportedEncoding:
-
-            # TODO make stream raise grpcerror instead?
-            # send_data could then be identical in client and entrypoint
 
             response_stream = self.receive_streams[stream_id]
             request_stream = self.send_streams[stream_id]
@@ -179,7 +177,6 @@ class Method:
             )
             compression = self.client.default_compression
 
-        # XXX pass these as parameters and let stream turn them into headers?
         request_headers = [
             (":method", "POST"),
             (":scheme", "http"),
