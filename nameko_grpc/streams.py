@@ -3,8 +3,8 @@ import struct
 from queue import Empty, Queue
 
 from nameko_grpc.compression import compress, decompress
-from nameko_grpc.context import HeaderManager
 from nameko_grpc.exceptions import GrpcError
+from nameko_grpc.headers import HeaderManager
 
 
 HEADER_LENGTH = 5
