@@ -1,10 +1,9 @@
 # -*- coding: utf-8 -*-
-import base64
 import itertools
 import socket
 import threading
 import time
-from collections import OrderedDict, deque
+from collections import deque
 from logging import getLogger
 from urllib.parse import urlparse
 
@@ -59,14 +58,12 @@ class ClientConnectionManager(ConnectionManager):
         """
         stream_id = next(self.counter)
 
-        self.pending_requests.append((stream_id, request_headers))
-
-        headers = OrderedDict(request_headers)
-
-        request_stream = SendStream(stream_id, encoding=headers["grpc-encoding"])
+        request_stream = SendStream(stream_id, headers=request_headers)
         response_stream = ReceiveStream(stream_id)
         self.receive_streams[stream_id] = response_stream
         self.send_streams[stream_id] = request_stream
+
+        self.pending_requests.append(stream_id)
 
         return request_stream, response_stream
 
@@ -96,7 +93,7 @@ class ClientConnectionManager(ConnectionManager):
             self.conn.reset_stream(stream_id, error_code=PROTOCOL_ERROR)
             return
 
-        headers = HeaderManager(
+        headers = HeaderManager(  # XXX ugh
             response_stream.headers.data + response_stream.trailers.data
         )
         status = int(headers.get("grpc-status", 0))
@@ -110,17 +107,23 @@ class ClientConnectionManager(ConnectionManager):
         Sends initial headers and any request data that is ready to be sent.
         """
         while self.pending_requests:
-            stream_id, request_headers = self.pending_requests.popleft()
+            stream_id = self.pending_requests.popleft()
 
             log.debug("initiating request, new stream %s", stream_id)
 
-            self.conn.send_headers(stream_id, request_headers)
+            # send headers immediately rather than waiting for data. this ensures
+            # streams are established with increasing stream ids regardless of when
+            # the request data is available
+            self.send_headers(stream_id, immediate=True)
             self.send_data(stream_id)
 
     def send_data(self, stream_id):
         try:
             super().send_data(stream_id)
         except UnsupportedEncoding:
+
+            # TODO make stream raise grpcerror instead?
+            # send_data could then be identical in client and entrypoint
 
             response_stream = self.receive_streams[stream_id]
             request_stream = self.send_streams[stream_id]
@@ -176,6 +179,7 @@ class Method:
             )
             compression = self.client.default_compression
 
+        # XXX pass these as parameters and let stream turn them into headers?
         request_headers = [
             (":method", "POST"),
             (":scheme", "http"),
@@ -191,8 +195,6 @@ class Method:
 
         if metadata is not None:
             for key, value in metadata:
-                if key.endswith("-bin"):
-                    value = base64.b64encode(value)
                 request_headers.append((key, value))
 
         if timeout is not None:
