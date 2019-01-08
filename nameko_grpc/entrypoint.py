@@ -44,10 +44,12 @@ class ServerConnectionManager(ConnectionManager):
 
         stream_id = event.stream_id
 
-        request_stream = ReceiveStream(stream_id, headers=event.headers)
+        request_stream = ReceiveStream(stream_id)
         response_stream = SendStream(stream_id)
         self.receive_streams[stream_id] = request_stream
         self.send_streams[stream_id] = response_stream
+
+        request_stream.headers.set(*event.headers, from_wire=True)
 
         compression = select_algorithm(
             request_stream.headers.get("grpc-accept-encoding")

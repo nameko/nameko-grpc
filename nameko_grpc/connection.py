@@ -5,7 +5,7 @@ from threading import Event
 
 from h2.config import H2Configuration
 from h2.connection import H2Connection
-from h2.errors import PROTOCOL_ERROR  # changed under h2 from 2.6.4?
+from h2.errors import ErrorCodes
 from h2.events import (
     DataReceived,
     RemoteSettingsChanged,
@@ -121,7 +121,7 @@ class ConnectionManager:
         if not receive_stream:
             return
 
-        receive_stream.headers.set(*event.headers)
+        receive_stream.headers.set(*event.headers, from_wire=True)
 
     def data_received(self, event):
         """ Called when data is received on a stream.
@@ -134,7 +134,7 @@ class ConnectionManager:
         receive_stream = self.receive_streams.get(stream_id)
         if receive_stream is None:
             try:
-                self.conn.reset_stream(stream_id, error_code=PROTOCOL_ERROR)
+                self.conn.reset_stream(stream_id, error_code=ErrorCodes.PROTOCOL_ERROR)
             except StreamClosedError:
                 pass
             return
@@ -172,7 +172,7 @@ class ConnectionManager:
         if not receive_stream:
             return
 
-        receive_stream.trailers.set(*event.headers)
+        receive_stream.trailers.set(*event.headers, from_wire=True)
 
     def send_headers(self, stream_id, immediate=False):
         """ Attempt to send any headers on a stream.

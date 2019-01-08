@@ -39,11 +39,11 @@ class ByteBuffer:
 
 
 class StreamBase:
-    def __init__(self, stream_id, headers=None, trailers=None):
+    def __init__(self, stream_id):
         self.stream_id = stream_id
 
-        self.headers = HeaderManager(headers)
-        self.trailers = HeaderManager(trailers)
+        self.headers = HeaderManager()
+        self.trailers = HeaderManager()
 
         self.queue = Queue()
         self.buffer = ByteBuffer()

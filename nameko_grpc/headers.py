@@ -14,20 +14,6 @@ def is_http2_header(name):
     return name in ("te", "content-type", "user-agent", "accept-encoding")
 
 
-def maybe_base64_decode(header):
-    name, value = header
-    if name.endswith("-bin"):
-        value = base64.b64decode(value)
-    return name, value
-
-
-def maybe_base64_encode(header):
-    name, value = header
-    if name.endswith("-bin"):
-        value = base64.b64encode(value)
-    return name, value
-
-
 def filter_headers_for_application(headers):
     def include(header):
         name, _ = header
@@ -35,7 +21,7 @@ def filter_headers_for_application(headers):
             return False
         return True
 
-    return filter(include, headers)
+    return list(filter(include, headers))
 
 
 def sort_headers_for_wire(headers):
@@ -53,51 +39,95 @@ def sort_headers_for_wire(headers):
     return sorted(headers, key=weight)
 
 
-class HeaderManager:
-    def __init__(self, data=None):
-        """
-        Object for managing headers (or trailers).
+def check_encoded(headers):
+    for name, value in headers:
+        assert isinstance(name, bytes)
+        assert isinstance(value, bytes)
 
-        Accepts a list of tuples in the form `("<name>", "<value>")`
+
+def check_decoded(headers):
+    for name, value in headers:
+        assert not isinstance(name, bytes)
+        if name.endswith("-bin"):
+            assert isinstance(value, bytes)
+        else:
+            assert not isinstance(value, bytes)
+
+
+def decode_header(header):
+    name, value = header
+    name = name.decode("utf-8")
+    if name.endswith("-bin"):
+        value = base64.b64decode(value)
+    else:
+        value = value.decode("utf-8")
+    return name, value
+
+
+def encode_header(header):
+    name, value = header
+    name = name.encode("utf-8")
+    if name.endswith(b"-bin"):
+        value = base64.b64encode(value)
+    else:
+        value = value.encode("utf-8")
+    return name, value
+
+
+class HeaderManager:
+    def __init__(self):
         """
-        if data is None:
-            data = []
-        self.data = data
+        Object for managing headers (or trailers). Headers are encoded before
+        transmitting over the wire and stored in their non-encoded form.
+        """
+        self.data = []
+
+    @staticmethod
+    def decode(headers):
+        return list(map(decode_header, headers))
+
+    @staticmethod
+    def encode(headers):
+        return list(map(encode_header, headers))
 
     def get(self, name, default=None):
         """ Get a header by `name`.
 
-        Performs base64 decoding of binary values, and joins duplicate headers into a
-        comma-separated string of values.
+        Joins duplicate headers into a comma-separated string of values.
         """
         matches = []
         for key, value in self.data:
             if key == name:
-                _, value = maybe_base64_decode((key, value))
                 matches.append(value)
         if not matches:
             return default
         return ",".join(matches)
 
-    def set(self, *headers):
+    def set(self, *headers, from_wire=False):
         """ Set headers.
 
-        Overwrites any existing header with the same name.
+        Overwrites any existing header with the same name. Optionally decodes
+        the headers first.
         """
-        for name, _ in headers:
-            self.clear(name)
-        self.append(*headers)
+        if from_wire:
+            headers = self.decode(headers)
+        check_decoded(headers)
 
-    def clear(self, name):
-        """ Clear a header by `name`.
-        """
-        self.data = list(filter(lambda header: header[0] != name, self.data))
+        # clear existing headers with these names
+        to_clear = dict(headers).keys()
+        self.data = [(key, value) for (key, value) in self.data if key not in to_clear]
 
-    def append(self, *headers):
+        self.data.extend(headers)
+
+    def append(self, *headers, from_wire=False):
         """ Add new headers.
 
-        Preserves and appends to any existing header with the same name.
+        Preserves and appends to any existing header with the same name. Optionally
+        decodes the headers first.
         """
+        if from_wire:
+            headers = self.decode(headers)
+        check_decoded(headers)
         self.data.extend(headers)
 
     def __len__(self):
@@ -105,12 +135,12 @@ class HeaderManager:
 
     @property
     def for_wire(self):
-        """ A sorted list of headers for transmitting over the wire.
+        """ A sorted list of encoded headers for transmitting over the wire.
         """
-        return list(map(maybe_base64_encode, sort_headers_for_wire(self.data)))
+        return self.encode(sort_headers_for_wire(self.data))
 
     @property
     def for_application(self):
-        """ A filtered and processed list of headers for use by the application.
+        """ A filtered list of headers for use by the application.
         """
-        return list(map(maybe_base64_decode, filter_headers_for_application(self.data)))
+        return filter_headers_for_application(self.data)

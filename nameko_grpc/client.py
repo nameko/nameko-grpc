@@ -8,7 +8,7 @@ from logging import getLogger
 from urllib.parse import urlparse
 
 from grpc import StatusCode
-from h2.errors import PROTOCOL_ERROR  # changed under h2 from 2.6.4?
+from h2.errors import ErrorCodes
 
 from nameko_grpc.compression import SUPPORTED_ENCODINGS, UnsupportedEncoding
 from nameko_grpc.connection import ConnectionManager
@@ -57,10 +57,12 @@ class ClientConnectionManager(ConnectionManager):
         """
         stream_id = next(self.counter)
 
-        request_stream = SendStream(stream_id, headers=request_headers)
+        request_stream = SendStream(stream_id)
         response_stream = ReceiveStream(stream_id)
         self.receive_streams[stream_id] = response_stream
         self.send_streams[stream_id] = request_stream
+
+        request_stream.headers.set(*request_headers)
 
         self.pending_requests.append(stream_id)
 
@@ -73,9 +75,10 @@ class ClientConnectionManager(ConnectionManager):
         """
         super().response_received(event)
 
-        response_stream = self.receive_streams.get(event.stream_id)
+        stream_id = event.stream_id
+        response_stream = self.receive_streams.get(stream_id)
         if response_stream is None:
-            self.conn.reset_stream(event.stream_id, error_code=PROTOCOL_ERROR)
+            self.conn.reset_stream(stream_id, error_code=ErrorCodes.PROTOCOL_ERROR)
             return
 
         headers = response_stream.headers
@@ -91,9 +94,10 @@ class ClientConnectionManager(ConnectionManager):
         """
         super().trailers_received(event)
 
-        response_stream = self.receive_streams.get(event.stream_id)
+        stream_id = event.stream_id
+        response_stream = self.receive_streams.get(stream_id)
         if response_stream is None:
-            self.conn.reset_stream(event.stream_id, error_code=PROTOCOL_ERROR)
+            self.conn.reset_stream(stream_id, error_code=ErrorCodes.PROTOCOL_ERROR)
             return
 
         trailers = response_stream.trailers
