@@ -6,6 +6,7 @@ from mock import patch
 from nameko_grpc.exceptions import GrpcError
 
 
+@pytest.mark.equivalence
 class TestCompression:
     """ Some of these tests are incomplete because the standard Python GRPC client
     and/or server don't conform to the spec.

@@ -11,6 +11,7 @@ from nameko_grpc.constants import Cardinality
 from nameko_grpc.exceptions import GrpcError
 
 
+@pytest.mark.equivalence
 class TestMethodNotFound:
     @pytest.fixture(autouse=True)
     def unregister_grpc_method(self, stubs):
@@ -35,6 +36,7 @@ class TestMethodNotFound:
         assert error.value.details == "Method not found!"
 
 
+@pytest.mark.equivalence
 class TestDeadlineExceededAtClient:
     @pytest.fixture
     def protobufs(self, compile_proto, spec_dir):
@@ -74,6 +76,7 @@ class TestDeadlineExceededAtClient:
         assert error.value.details == "Deadline Exceeded"
 
 
+@pytest.mark.equivalence
 class TestDeadlineExceededAtServer:
     @pytest.fixture
     def protobufs(self, compile_proto, spec_dir):
@@ -130,6 +133,7 @@ class TestDeadlineExceededAtServer:
     # correctly (over and above these equivalence tests)
 
 
+@pytest.mark.equivalence
 class TestMethodException:
     def test_error_before_response(self, client, protobufs):
         with pytest.raises(GrpcError) as error:

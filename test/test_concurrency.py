@@ -3,9 +3,12 @@ import json
 import random
 import string
 
+import pytest
+
 from nameko_grpc.constants import Cardinality
 
 
+@pytest.mark.equivalence
 class TestConcurrency:
     def test_unary_unary(self, client, protobufs, instrumented, client_type):
 
@@ -130,6 +133,7 @@ class TestConcurrency:
         assert [req.value for req in captured_requests[:26]] != string.ascii_uppercase
 
 
+@pytest.mark.equivalence
 class TestMultipleClients:
     def test_unary_unary(self, start_client, server, protobufs):
 
