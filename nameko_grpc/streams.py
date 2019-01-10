@@ -3,8 +3,8 @@ import struct
 from queue import Empty, Queue
 
 from nameko_grpc.compression import compress, decompress
-from nameko_grpc.context import HeaderManager
 from nameko_grpc.exceptions import GrpcError
+from nameko_grpc.headers import HeaderManager
 
 
 HEADER_LENGTH = 5
@@ -39,11 +39,11 @@ class ByteBuffer:
 
 
 class StreamBase:
-    def __init__(self, stream_id, headers=None, trailers=None):
+    def __init__(self, stream_id):
         self.stream_id = stream_id
 
-        self.headers = headers or HeaderManager()
-        self.trailers = trailers or HeaderManager()
+        self.headers = HeaderManager()
+        self.trailers = HeaderManager()
 
         self.queue = Queue()
         self.buffer = ByteBuffer()
@@ -121,10 +121,13 @@ class SendStream(StreamBase):
     bytes.
     """
 
-    def __init__(self, *args, encoding=None, **kwargs):
-        self.encoding = encoding
+    def __init__(self, *args, **kwargs):
         self.headers_sent = False
         super().__init__(*args, **kwargs)
+
+    @property
+    def encoding(self):
+        return self.headers.get("grpc-encoding")
 
     def populate(self, iterable):
         """ Populate this stream with an iterable of messages.
@@ -135,17 +138,20 @@ class SendStream(StreamBase):
             self.queue.put(item)
         self.close()
 
-    def headers_to_send(self):
+    def headers_to_send(self, defer_until_data=True):
         """ Return any headers to be sent with this stream.
 
-        Headers may only be transmitted once. `SendStream` maintains this state by
-        only allowing this method to be called once.
+        Headers may only be transmitted before any data is sent.
+        This state is maintained by only returning headers from this method once.
 
-        Additionally, it does not return any headers until there is at least one
-        message to be sent. This allows for headers to be changed at any point before
-        there is data ready to be sent.
+        When `defer_until_data` is true, no headers are returned until there is at least
+        one message ready to be sent. This allows for header values to be changed until
+        the last possible moment (enabling the server to change encoding, for example).
         """
-        if self.headers_sent or len(self.headers) == 0 or self.queue.empty():
+        if self.headers_sent or len(self.headers) == 0:
+            return False
+
+        if defer_until_data and self.queue.empty():
             return False
 
         self.headers_sent = True

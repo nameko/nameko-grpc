@@ -1,20 +1,18 @@
 # -*- coding: utf-8 -*-
-import base64
 import itertools
 import socket
 import threading
 import time
-from collections import OrderedDict, deque
+from collections import deque
 from logging import getLogger
 from urllib.parse import urlparse
 
 from grpc import StatusCode
-from h2.errors import PROTOCOL_ERROR  # changed under h2 from 2.6.4?
+from h2.errors import ErrorCodes
 
 from nameko_grpc.compression import SUPPORTED_ENCODINGS, UnsupportedEncoding
 from nameko_grpc.connection import ConnectionManager
 from nameko_grpc.constants import Cardinality
-from nameko_grpc.context import HeaderManager
 from nameko_grpc.exceptions import GrpcError
 from nameko_grpc.inspection import Inspector
 from nameko_grpc.streams import ReceiveStream, SendStream
@@ -59,14 +57,14 @@ class ClientConnectionManager(ConnectionManager):
         """
         stream_id = next(self.counter)
 
-        self.pending_requests.append((stream_id, request_headers))
-
-        headers = OrderedDict(request_headers)
-
-        request_stream = SendStream(stream_id, encoding=headers["grpc-encoding"])
+        request_stream = SendStream(stream_id)
         response_stream = ReceiveStream(stream_id)
         self.receive_streams[stream_id] = response_stream
         self.send_streams[stream_id] = request_stream
+
+        request_stream.headers.set(*request_headers)
+
+        self.pending_requests.append(stream_id)
 
         return request_stream, response_stream
 
@@ -76,7 +74,18 @@ class ClientConnectionManager(ConnectionManager):
         If the headers contain an error, we should raise it here.
         """
         super().response_received(event)
-        self.handle_status(event.stream_id)
+
+        stream_id = event.stream_id
+        response_stream = self.receive_streams.get(stream_id)
+        if response_stream is None:
+            self.conn.reset_stream(stream_id, error_code=ErrorCodes.PROTOCOL_ERROR)
+            return
+
+        headers = response_stream.headers
+
+        if int(headers.get("grpc-status", 0)) > 0:
+            error = GrpcError.from_headers(headers)
+            response_stream.close(error)
 
     def trailers_received(self, event):
         """ Called when trailers are received on a stream.
@@ -84,24 +93,17 @@ class ClientConnectionManager(ConnectionManager):
         If the trailers contain an error, we should raise it here.
         """
         super().trailers_received(event)
-        self.handle_status(event.stream_id)
 
-    def handle_status(self, stream_id):
-        """ Called when either a response or trailers are received on a stream.
-
-        If the stream resulted in an error, we should raise it here.
-        """
+        stream_id = event.stream_id
         response_stream = self.receive_streams.get(stream_id)
         if response_stream is None:
-            self.conn.reset_stream(stream_id, error_code=PROTOCOL_ERROR)
+            self.conn.reset_stream(stream_id, error_code=ErrorCodes.PROTOCOL_ERROR)
             return
 
-        headers = HeaderManager(
-            response_stream.headers.data + response_stream.trailers.data
-        )
-        status = int(headers.get("grpc-status", 0))
-        if status > 0:
-            error = GrpcError.from_headers(headers)
+        trailers = response_stream.trailers
+
+        if int(trailers.get("grpc-status", 0)) > 0:
+            error = GrpcError.from_headers(trailers)
             response_stream.close(error)
 
     def send_pending_requests(self):
@@ -110,11 +112,14 @@ class ClientConnectionManager(ConnectionManager):
         Sends initial headers and any request data that is ready to be sent.
         """
         while self.pending_requests:
-            stream_id, request_headers = self.pending_requests.popleft()
+            stream_id = self.pending_requests.popleft()
 
             log.debug("initiating request, new stream %s", stream_id)
 
-            self.conn.send_headers(stream_id, request_headers)
+            # send headers immediately rather than waiting for data. this ensures
+            # streams are established with increasing stream ids regardless of when
+            # the request data is available
+            self.send_headers(stream_id, immediate=True)
             self.send_data(stream_id)
 
     def send_data(self, stream_id):
@@ -191,8 +196,6 @@ class Method:
 
         if metadata is not None:
             for key, value in metadata:
-                if key.endswith("-bin"):
-                    value = base64.b64encode(value)
                 request_headers.append((key, value))
 
         if timeout is not None:

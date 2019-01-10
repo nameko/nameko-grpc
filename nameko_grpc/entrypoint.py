@@ -12,7 +12,7 @@ from nameko.extensions import Entrypoint, SharedExtension, register_entrypoint
 from nameko_grpc.compression import SUPPORTED_ENCODINGS, select_algorithm
 from nameko_grpc.connection import ConnectionManager
 from nameko_grpc.constants import Cardinality
-from nameko_grpc.context import GrpcContext, HeaderManager
+from nameko_grpc.context import GrpcContext
 from nameko_grpc.exceptions import GrpcError
 from nameko_grpc.inspection import Inspector
 from nameko_grpc.streams import ReceiveStream, SendStream
@@ -44,15 +44,16 @@ class ServerConnectionManager(ConnectionManager):
 
         stream_id = event.stream_id
 
-        request_headers = HeaderManager(event.headers)
-
-        compression = select_algorithm(request_headers.get("grpc-accept-encoding"))
-
-        request_stream = ReceiveStream(stream_id, headers=request_headers)
-        response_stream = SendStream(stream_id, encoding=compression)
-
+        request_stream = ReceiveStream(stream_id)
+        response_stream = SendStream(stream_id)
         self.receive_streams[stream_id] = request_stream
         self.send_streams[stream_id] = response_stream
+
+        request_stream.headers.set(*event.headers, from_wire=True)
+
+        compression = select_algorithm(
+            request_stream.headers.get("grpc-accept-encoding")
+        )
 
         try:
             response_stream.headers.set(

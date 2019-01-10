@@ -5,7 +5,7 @@ from threading import Event
 
 from h2.config import H2Configuration
 from h2.connection import H2Connection
-from h2.errors import PROTOCOL_ERROR  # changed under h2 from 2.6.4?
+from h2.errors import ErrorCodes
 from h2.events import (
     DataReceived,
     RemoteSettingsChanged,
@@ -97,9 +97,11 @@ class ConnectionManager:
     def on_iteration(self):
         """ Called on every iteration of the event loop.
 
-        If there are any open `SendStream`s with data to send, try to send it.
+        If there are any open `SendStream`s with headers or data to send, try to send
+        them.
         """
         for stream_id in list(self.send_streams.keys()):
+            self.send_headers(stream_id)
             self.send_data(stream_id)
 
     def request_received(self, event):
@@ -119,7 +121,7 @@ class ConnectionManager:
         if not receive_stream:
             return
 
-        receive_stream.headers.set(*event.headers)
+        receive_stream.headers.set(*event.headers, from_wire=True)
 
     def data_received(self, event):
         """ Called when data is received on a stream.
@@ -132,7 +134,7 @@ class ConnectionManager:
         receive_stream = self.receive_streams.get(stream_id)
         if receive_stream is None:
             try:
-                self.conn.reset_stream(stream_id, error_code=PROTOCOL_ERROR)
+                self.conn.reset_stream(stream_id, error_code=ErrorCodes.PROTOCOL_ERROR)
             except StreamClosedError:
                 pass
             return
@@ -170,14 +172,29 @@ class ConnectionManager:
         if not receive_stream:
             return
 
-        receive_stream.trailers.set(*event.headers)
+        receive_stream.trailers.set(*event.headers, from_wire=True)
+
+    def send_headers(self, stream_id, immediate=False):
+        """ Attempt to send any headers on a stream.
+
+        Streams determine when headers should be sent. By default headers are not
+        returned until there is also data ready to be sent. This can be overriddden
+        with the `immediate` argument.
+        """
+        send_stream = self.send_streams.get(stream_id)
+
+        if not send_stream:
+            return
+
+        headers = send_stream.headers_to_send(not immediate)
+        if headers:
+            self.conn.send_headers(stream_id, headers, end_stream=False)
 
     def send_data(self, stream_id):
         """ Attempt to send any pending data on a stream.
 
         Up to the current flow-control window size bytes may be sent.
 
-        If the `SentStream` has headers that have not been sent, they are sent first.
         If the `SendStream` is exhausted (no more data to send), the stream is closed.
         """
         send_stream = self.send_streams.get(stream_id)
@@ -187,13 +204,13 @@ class ConnectionManager:
             # has been completely sent
             return
 
+        if not send_stream.headers_sent:
+            # don't attempt to send any data until the headers have been sent
+            return
+
         try:
             window_size = self.conn.local_flow_control_window(stream_id=stream_id)
             max_frame_size = self.conn.max_outbound_frame_size
-
-            headers = send_stream.headers_to_send()
-            if headers:
-                self.conn.send_headers(stream_id, headers, end_stream=False)
 
             for chunk in send_stream.read(window_size, max_frame_size):
                 log.debug("sending data on stream %s: %s...", stream_id, chunk[:100])

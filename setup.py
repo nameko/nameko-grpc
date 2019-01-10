@@ -20,7 +20,7 @@ setup(
     author="onefinestay",
     url="http://github.com/nameko/nameko-grpc",
     packages=find_packages(exclude=["test", "test.*"]),
-    install_requires=["nameko", "h2==2.6.2"],
+    install_requires=["nameko", "h2>=3"],
     extras_require={
         "dev": [
             "pytest",
