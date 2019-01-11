@@ -7,11 +7,20 @@ from urllib.parse import urlparse
 from grpc import StatusCode
 from nameko.extensions import DependencyProvider
 
-from nameko_grpc.client import ClientConnectionManager, Proxy
+from nameko_grpc.client import ClientConnectionManager, Method
 from nameko_grpc.exceptions import GrpcError
 
 
 log = getLogger(__name__)
+
+
+class Proxy:
+    def __init__(self, client, context_data):
+        self.client = client
+        self.context_data = context_data
+
+    def __getattr__(self, name):
+        return Method(self.client, name, context_data=self.context_data)
 
 
 class GrpcProxy(DependencyProvider):
@@ -82,4 +91,4 @@ class GrpcProxy(DependencyProvider):
         return response_stream
 
     def get_dependency(self, worker_ctx):
-        return Proxy(self)
+        return Proxy(self, worker_ctx.context_data)

@@ -296,6 +296,7 @@ def start_nameko_server(spec_dir, container_factory, grpc_port):
         proto_name=None,
         compression_algorithm="none",
         compression_level="high",
+        config=None,
     ):
         if proto_name is None:
             proto_name = service_name
@@ -303,14 +304,18 @@ def start_nameko_server(spec_dir, container_factory, grpc_port):
         service_module = import_module("{}_nameko".format(proto_name))
         service_cls = getattr(service_module, service_name)
 
-        container = container_factory(
-            service_cls,
+        if config is None:
+            config = {}
+
+        config.update(
             {
                 "GRPC_BIND_PORT": grpc_port,
                 "GRPC_COMPRESSION_ALGORITHM": compression_algorithm,
                 "GRPC_COMPRESSION_LEVEL": compression_level,
-            },
+            }
         )
+
+        container = container_factory(service_cls, config)
         container.start()
 
         return container
@@ -381,7 +386,7 @@ def start_dependency_provider(load_stubs, spec_dir, grpc_port, container_factory
         container.start()
 
         grpc_proxy = get_extension(container, GrpcProxy)
-        return grpc_proxy.get_dependency(Mock())
+        return grpc_proxy.get_dependency(Mock(context_data={}))
 
     yield make
 

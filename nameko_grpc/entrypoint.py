@@ -12,7 +12,7 @@ from nameko.extensions import Entrypoint, SharedExtension, register_entrypoint
 from nameko_grpc.compression import SUPPORTED_ENCODINGS, select_algorithm
 from nameko_grpc.connection import ConnectionManager
 from nameko_grpc.constants import Cardinality
-from nameko_grpc.context import GrpcContext
+from nameko_grpc.context import GrpcContext, context_data_from_metadata
 from nameko_grpc.exceptions import GrpcError
 from nameko_grpc.inspection import Inspector
 from nameko_grpc.streams import ReceiveStream, SendStream
@@ -240,8 +240,7 @@ class Grpc(Entrypoint):
         args = (request, context)
         kwargs = {}
 
-        # context_data = self.unpack_message_headers(message)
-        context_data = {}
+        context_data = context_data_from_metadata(context.invocation_metadata())
 
         handle_result = partial(self.handle_result, response_stream)
         try:
