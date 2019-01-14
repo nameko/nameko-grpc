@@ -2,6 +2,7 @@ sudo: false
 language: python
 services:
   - docker
+  - rabbitmq
 
 install:
   - pip install tox
