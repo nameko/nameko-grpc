@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
+import pytest
 
 
+@pytest.mark.equivalence
 class TestStandard:
     def test_unary_unary(self, client, protobufs):
         response = client.unary_unary(protobufs.ExampleRequest(value="A"))
@@ -35,6 +37,7 @@ class TestStandard:
         ]
 
 
+@pytest.mark.equivalence
 class TestLarge:
     def test_large_unary_request(self, client, protobufs):
         response = client.unary_unary(
@@ -69,6 +72,7 @@ class TestLarge:
         ]
 
 
+@pytest.mark.equivalence
 class TestFuture:
     def test_unary_unary(self, client, protobufs):
         response_future = client.unary_unary.future(protobufs.ExampleRequest(value="A"))

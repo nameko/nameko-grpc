@@ -74,6 +74,14 @@ def encode_header(header):
     return name, value
 
 
+def comma_join(values):
+    if all(map(lambda item: isinstance(item, bytes), values)):
+        separator = b","
+    else:
+        separator = ","
+    return separator.join(values)
+
+
 class HeaderManager:
     def __init__(self):
         """
@@ -101,7 +109,7 @@ class HeaderManager:
                 matches.append(value)
         if not matches:
             return default
-        return ",".join(matches)
+        return comma_join(matches)
 
     def set(self, *headers, from_wire=False):
         """ Set headers.

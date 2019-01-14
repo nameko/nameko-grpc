@@ -13,6 +13,7 @@ from h2.errors import ErrorCodes
 from nameko_grpc.compression import SUPPORTED_ENCODINGS, UnsupportedEncoding
 from nameko_grpc.connection import ConnectionManager
 from nameko_grpc.constants import Cardinality
+from nameko_grpc.context import metadata_from_context_data
 from nameko_grpc.exceptions import GrpcError
 from nameko_grpc.inspection import Inspector
 from nameko_grpc.streams import ReceiveStream, SendStream
@@ -159,9 +160,10 @@ class Future:
 
 
 class Method:
-    def __init__(self, client, name):
+    def __init__(self, client, name, context_data=None):
         self.client = client
         self.name = name
+        self.context_data = context_data or {}
 
     def __call__(self, request, **kwargs):
         return self.future(request, **kwargs).result()
@@ -195,8 +197,14 @@ class Method:
         ]
 
         if metadata is not None:
-            for key, value in metadata:
-                request_headers.append((key, value))
+            metadata = metadata[:]
+        else:
+            metadata = []
+
+        metadata.extend(metadata_from_context_data(self.context_data))
+
+        for key, value in metadata:
+            request_headers.append((key, value))
 
         if timeout is not None:
             request_headers.append(("grpc-timeout", bucket_timeout(timeout)))

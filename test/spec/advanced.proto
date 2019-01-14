@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package nameko;
+
+service advanced {
+  rpc unary_unary (SimpleRequest) returns (SimpleReply) {}
+  rpc unary_stream (SimpleRequest) returns (stream SimpleReply) {}
+  rpc stream_unary (stream SimpleRequest) returns (SimpleReply) {}
+  rpc stream_stream (stream SimpleRequest) returns (stream SimpleReply) {}
+}
+
+
+message SimpleRequest {
+  string value = 1;
+}
+
+
+
+message SimpleReply {
+  string message = 1;
+}
+
