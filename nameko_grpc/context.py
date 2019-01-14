@@ -29,7 +29,7 @@ def metadata_from_context_data(data):
 
 def context_data_from_metadata(metadata):
     """ Utility function transforming `metadata` into a context data dictionary.
-`
+
     Metadata may have been encoded at the client by `metadata_from_context_data`, or
     it may be "normal" GRPC metadata. In this case, duplicate values are allowed;
     they become a list in the context data.
