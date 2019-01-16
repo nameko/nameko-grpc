@@ -16,13 +16,17 @@ class ByteBuffer:
     def __init__(self):
         self.bytes = bytearray()
 
-    def peek(self, slice):
-        return self.bytes[slice]
+    def peek(self, view=None):
+        if view is None:
+            view = slice(0, len(self.bytes))
+        return self.bytes[view]
 
-    def discard(self, max_bytes):
+    def discard(self, max_bytes=None):
         self.read(max_bytes)
 
-    def read(self, max_bytes):
+    def read(self, max_bytes=None):
+        if max_bytes is None:
+            max_bytes = len(self.bytes)
         length = min(max_bytes, len(self.bytes))
         data = self.bytes[:length]
         self.bytes = self.bytes[length:]
@@ -113,6 +117,7 @@ class ReceiveStream(StreamBase):
 
             message = message_type()
             message.ParseFromString(message_data)
+
             yield message
 
 
@@ -165,37 +170,44 @@ class SendStream(StreamBase):
 
         return self.trailers.for_wire
 
+    def flush_queue_to_buffer(self):
+        """ Write the bytes from any messages in the queue to the buffer.
+        """
+        while True:
+            try:
+                message = self.queue.get_nowait()
+            except Empty:
+                break
+
+            # any error should be raised immediately
+            if isinstance(message, GrpcError):
+                raise message
+
+            # add the bytes from the message to the buffer
+            if message and message != STREAM_END:
+                body = message.SerializeToString()
+                compressed, body = compress(body, self.encoding)
+
+                data = (
+                    struct.pack("?", compressed) + struct.pack(">I", len(body)) + body
+                )
+                self.buffer.write(data)
+
     def read(self, max_bytes, chunk_size):
         """ Read up to `max_bytes` from the stream, yielding up to `chunk_size`
         bytes at a time.
         """
         sent = 0
 
-        while len(self.buffer) >= chunk_size and sent < max_bytes:
-            chunk = self.buffer.read(chunk_size)
+        while sent < max_bytes:
+
+            # ensure any messages enqueued during reading are flushed
+            self.flush_queue_to_buffer()
+
+            # chunk data out of buffer
+            max_read = min(chunk_size, max_bytes - sent)
+            chunk = self.buffer.read(max_read)
+            if not chunk:
+                break  # buffer is empty
             sent += len(chunk)
             yield chunk
-
-        while True:
-            try:
-                message = self.queue.get_nowait()
-            except Empty:
-                break
-            if message is STREAM_END:
-                break
-            if isinstance(message, GrpcError):
-                raise message
-
-            body = message.SerializeToString()
-            compressed, body = compress(body, self.encoding)
-
-            data = struct.pack("?", compressed) + struct.pack(">I", len(body)) + body
-            self.buffer.write(data)
-
-            while sent < max_bytes:
-                max_read = min(chunk_size, max_bytes - sent)
-                chunk = self.buffer.read(max_read)
-                if not chunk:
-                    break  # no more data to send
-                sent += len(chunk)
-                yield chunk
