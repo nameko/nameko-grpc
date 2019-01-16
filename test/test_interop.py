@@ -56,7 +56,7 @@ def server(request, server_type):
         ("rpc_soak", False, False),
         ("channel_soak", False, False),
         ("cancel_after_begin", False, False),
-        ("cancel_after_first_response", False, True),  # nameko fails, not sure why
+        ("cancel_after_first_response", False, False),
         ("custom_metadata", False, False),
         ("status_code_and_message", False, False),
     ],

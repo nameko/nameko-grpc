@@ -13,6 +13,7 @@ from h2.events import (
     ResponseReceived,
     SettingsAcknowledged,
     StreamEnded,
+    StreamReset,
     TrailersReceived,
     WindowUpdated,
 )
@@ -79,6 +80,8 @@ class ConnectionManager:
                     self.data_received(event)
                 elif isinstance(event, StreamEnded):
                     self.stream_ended(event)
+                elif isinstance(event, StreamReset):
+                    self.stream_reset(event)
                 elif isinstance(event, WindowUpdated):
                     self.window_updated(event)
                 elif isinstance(event, RemoteSettingsChanged):
@@ -156,6 +159,16 @@ class ConnectionManager:
         Close any `ReceiveStream` that was opened for this stream.
         """
         log.debug("stream ended, stream %s", event.stream_id)
+        receive_stream = self.receive_streams.pop(event.stream_id, None)
+        if receive_stream:
+            receive_stream.close()
+
+    def stream_reset(self, event):
+        """ Called when an incoming stream is reset.
+
+        Close any `ReceiveStream` that was opened for this stream.
+        """
+        log.debug("stream reset, stream %s", event.stream_id)
         receive_stream = self.receive_streams.pop(event.stream_id, None)
         if receive_stream:
             receive_stream.close()
