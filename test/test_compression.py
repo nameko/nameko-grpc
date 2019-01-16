@@ -1,8 +1,17 @@
 # -*- coding: utf-8 -*-
+import gzip
+import zlib
+
 import pytest
 from grpc import StatusCode
 from mock import patch
 
+from nameko_grpc.compression import (
+    UnsupportedEncoding,
+    compress,
+    decompress,
+    select_algorithm,
+)
 from nameko_grpc.exceptions import GrpcError
 
 
@@ -233,3 +242,56 @@ class TestCompression:
         clear from the reference implementation exactly how it should behave.
         """
         pytest.skip("See docstring for details")
+
+
+class TestDecompress:
+    def test_preferred_algorithm(self):
+        payload = b"\x00" * 1000
+
+        assert decompress(zlib.compress(payload)) == payload
+
+    def test_fallback_algorithm(self):
+        payload = b"\x00" * 1000
+
+        assert decompress(gzip.compress(payload)) == payload
+
+    def test_unsupported_algorithm(self):
+        payload = b"\x00" * 1000
+
+        with pytest.raises(UnsupportedEncoding):
+            decompress(payload)  # not correctly encoded
+
+
+class TestCompress:
+    def test_identity(self):
+        payload = b"\x00" * 1000
+        assert compress(payload, "identity") == (False, payload)
+
+    def test_deflate(self):
+        payload = b"\x00" * 1000
+        assert compress(payload, "deflate") == (True, zlib.compress(payload))
+
+    def test_gzip(self):
+        payload = b"\x00" * 1000
+        assert compress(payload, "gzip") == (True, gzip.compress(payload))
+
+    def test_unsupported_algorithm(self):
+        payload = b"\x00" * 1000
+
+        with pytest.raises(UnsupportedEncoding):
+            compress(payload, "bogus")
+
+
+class TestSelectAlgorithm:
+    def test_preferred_algorithm(self):
+        assert select_algorithm("deflate,gzip,unsupported") == "deflate"
+
+    def test_fallback_algorithm(self):
+        assert select_algorithm("unsupported,gzip,identity") == "gzip"
+
+    def test_identity(self):
+        assert select_algorithm("unsupported,identity") == "identity"
+
+    def test_unsupported_algo(self):
+        with pytest.raises(UnsupportedEncoding):
+            select_algorithm("unsupported")

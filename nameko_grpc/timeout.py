@@ -24,9 +24,12 @@ def unbucket_timeout(value):
 
 def bucket_timeout(value):
 
-    for period in buckets:
+    periods = list(buckets)
+    bucket_period = periods.pop(0)
+
+    for period in periods:
         if value // period > 1:
-            last_period = period
+            bucket_period = period
         else:
             break
-    return "{}{}".format(int(value / last_period), buckets[last_period])
+    return "{}{}".format(round(value / bucket_period), buckets[bucket_period])

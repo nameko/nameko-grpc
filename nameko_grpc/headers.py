@@ -35,7 +35,6 @@ def sort_headers_for_wire(headers):
             return 2
         return 3
 
-    # XXX needs unit test!
     return sorted(headers, key=weight)
 
 
