@@ -144,3 +144,25 @@ class TestTeeable:
         assert consume_trackers["tee2"] == list(range(10))
         assert consume_trackers["tee3"] == list(range(10))
         assert tracker == list(range(10))
+
+    def test_generator_throws(self, tracker):
+        class Boom(Exception):
+            pass
+
+        def make_generator():
+            for i in range(10):
+                tracker.append(i)
+                yield i
+            raise Boom("boom")
+
+        with pytest.raises(Boom):
+            list(make_generator())
+
+        gen = Teeable(make_generator())
+        tee = gen.tee()
+
+        with pytest.raises(Boom):
+            list(gen)
+
+        with pytest.raises(Boom):
+            list(tee)
