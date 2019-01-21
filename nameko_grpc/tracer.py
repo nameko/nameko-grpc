@@ -19,28 +19,23 @@ GRPC_ADAPTER = {
 class GrpcEntrypointAdapter(DefaultAdapter):
     def process(self, message, kwargs):
 
-        kwargs["extra"][constants.TRACE_KEY] = {}  # add info here first
+        worker_ctx = kwargs["extra"]["worker_ctx"]
+        cardinality = worker_ctx.entrypoint.cardinality
 
-        message, kwargs = super().process(message, kwargs)
-
-        trace_data = kwargs["extra"][constants.TRACE_KEY]
-
-        # add cardinality to trace_data
-        cardinality = kwargs["extra"]["worker_ctx"].entrypoint.cardinality
-        trace_data["cardinality"] = cardinality
-
-        # add stream part to trace_data
         stream_part = kwargs["extra"].get("stream_part", None)
+        stream_age = kwargs["extra"].get("stream_age", None)
+
+        trace_data = {"cardinality": cardinality}
         if stream_part:
             trace_data["stream_part"] = stream_part
-
-        # add stream age to trace_data
-        stream_age = kwargs["extra"].get("stream_age", None)
         if stream_age:
             trace_data["stream_age"] = stream_age
 
-        # remove response from trace_data if this is the top-level trace for a
-        # streaming response
+        kwargs["extra"][constants.TRACE_KEY] = trace_data
+
+        message, kwargs = super().process(message, kwargs)
+
+        # replace `response` if this is the top-level trace for a streaming response
         if (
             cardinality in (Cardinality.UNARY_STREAM, Cardinality.STREAM_STREAM)
             and stream_part is None
@@ -48,8 +43,7 @@ class GrpcEntrypointAdapter(DefaultAdapter):
         ):
             trace_data["response"] = "streaming"
 
-        # remove request from trace_data if this is the top-level trace for a
-        # streaming request
+        # replace `request` if this is the top-level trace for a streaming request
         if (
             cardinality in (Cardinality.STREAM_UNARY, Cardinality.STREAM_STREAM)
             and stream_part is None
@@ -206,7 +200,8 @@ class GrpcTracer(Tracer):
             stream_age = (timestamp - stream_start).total_seconds()
 
             # NB> this is _idential_ to block above; all the cleverness to extract
-            # rhe traceback is already in the adapter (stream part not identical, actly)
+            # rhe traceback is already in the adapter
+            # (stream part not identical, actually. nor log level)
             extra = {
                 "stage": constants.Stage.response,
                 "worker_ctx": worker_ctx,
@@ -219,7 +214,7 @@ class GrpcTracer(Tracer):
             }
             try:
                 adapter = self.adapter_factory(worker_ctx)
-                adapter.info(
+                adapter.warning(
                     "[%s] entrypoint result trace [stream_part %s]",
                     worker_ctx.call_id,
                     index,
