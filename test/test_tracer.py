@@ -44,6 +44,9 @@ class TestTracerIntegration:
         def is_stream(record):
             return getattr(record, "stream_part", False)
 
+        def is_not_stream(record):
+            return not is_stream(record)
+
         def match_all(*fns):
             def check(val):
                 return all(fn(val) for fn in fns)
@@ -56,8 +59,12 @@ class TestTracerIntegration:
         def extract_records():
             trace_records = list(filter(is_trace, caplog.records))
 
-            request_trace = extract_trace(next(filter(is_request, trace_records)))
-            response_trace = extract_trace(next(filter(is_response, trace_records)))
+            request_trace = extract_trace(
+                next(filter(match_all(is_request, is_not_stream), trace_records))
+            )
+            response_trace = extract_trace(
+                next(filter(match_all(is_response, is_not_stream), trace_records))
+            )
 
             request_stream = list(
                 map(
@@ -176,7 +183,7 @@ class TestTracerIntegration:
         assert len(request_stream) == 0
 
         assert len(result_stream) == 2
-        for index, trace in enumerate(result_stream, 1):
+        for index, trace in enumerate(result_stream):
             check_trace(
                 trace,
                 dict(
@@ -184,7 +191,8 @@ class TestTracerIntegration:
                     **{
                         "stage": "response",
                         "cardinality": Cardinality.UNARY_STREAM,
-                        "stream_part": index,
+                        "response": responses[index],
+                        "stream_part": index + 1,
                         "response_time": None,
                         "stream_age": lambda value: value > 0,
                     }
@@ -236,7 +244,7 @@ class TestTracerIntegration:
         )
 
         assert len(request_stream) == 2
-        for index, trace in enumerate(request_stream, 1):
+        for index, trace in enumerate(request_stream):
             check_trace(
                 trace,
                 dict(
@@ -244,7 +252,8 @@ class TestTracerIntegration:
                     **{
                         "stage": "request",
                         "cardinality": Cardinality.STREAM_UNARY,
-                        "stream_part": index,
+                        "request": requests[index],
+                        "stream_part": index + 1,
                         "stream_age": lambda value: value > 0,
                     }
                 ),
@@ -300,7 +309,7 @@ class TestTracerIntegration:
         )
 
         assert len(request_stream) == 2
-        for index, trace in enumerate(request_stream, 1):
+        for index, trace in enumerate(request_stream):
             check_trace(
                 trace,
                 dict(
@@ -308,14 +317,15 @@ class TestTracerIntegration:
                     **{
                         "stage": "request",
                         "cardinality": Cardinality.STREAM_STREAM,
-                        "stream_part": index,
+                        "request": requests[index],
+                        "stream_part": index + 1,
                         "stream_age": lambda value: value > 0,
                     }
                 ),
             )
 
         assert len(result_stream) == 2
-        for index, trace in enumerate(result_stream, 1):
+        for index, trace in enumerate(result_stream):
             check_trace(
                 trace,
                 dict(
@@ -323,8 +333,9 @@ class TestTracerIntegration:
                     **{
                         "stage": "response",
                         "cardinality": Cardinality.STREAM_STREAM,
-                        "stream_part": index,
-                        "response_time": None,
+                        "response": responses[index],
+                        "stream_part": index + 1,
+                        "response_time": None,  # XXX
                         "stream_age": lambda value: value > 0,
                     }
                 ),
@@ -333,8 +344,9 @@ class TestTracerIntegration:
     def test_error_before_response(
         self, client, protobufs, get_log_records, check_trace
     ):
+        request = protobufs.ExampleRequest(value="A")
         with pytest.raises(GrpcError) as error:
-            client.unary_error(protobufs.ExampleRequest(value="A"))
+            client.unary_error(request)
         assert error.value.status == StatusCode.UNKNOWN
         assert error.value.details == "Exception calling application: boom"
 
@@ -348,6 +360,8 @@ class TestTracerIntegration:
             "entrypoint_name": "unary_error",
             "entrypoint_type": "Grpc",
             "service": "example",
+            "call_args": {"context": ANY, "request": request},
+            "call_args_redacted": False,
         }
 
         check_trace(
@@ -383,13 +397,15 @@ class TestTracerIntegration:
     def test_error_while_streaming_response(
         self, client, protobufs, get_log_records, check_trace
     ):
+
+        # NOTE it's important that the server sleeps between streaming responses
+        # otherwise it terminates the stream with an error before any parts of the
+        # response stream are put on the wire
+        request = protobufs.ExampleRequest(value="A", response_count=10, delay=10)
         responses = []
         with pytest.raises(GrpcError) as error:
-            responses.extend(
-                client.stream_error(
-                    protobufs.ExampleRequest(value="A", response_count=10)
-                )
-            )
+            for response in client.stream_error(request):
+                responses.append(response)
 
         assert error.value.status == StatusCode.UNKNOWN
         assert error.value.details == "Exception iterating responses: boom"
@@ -404,6 +420,8 @@ class TestTracerIntegration:
             "entrypoint_name": "stream_error",
             "entrypoint_type": "Grpc",
             "service": "example",
+            "call_args": {"context": ANY, "request": request},
+            "call_args_redacted": False,
         }
 
         check_trace(
@@ -431,7 +449,7 @@ class TestTracerIntegration:
         assert len(result_stream) == 10
 
         # check first 9 stream parts
-        for index, trace in enumerate(result_stream[:-1], 1):
+        for index, trace in enumerate(result_stream[:-1]):
             check_trace(
                 trace,
                 dict(
@@ -439,8 +457,8 @@ class TestTracerIntegration:
                     **{
                         "stage": "response",
                         "cardinality": Cardinality.UNARY_STREAM,
-                        "stream_part": index,
-                        # "result": "something",
+                        "response": responses[index],
+                        "stream_part": index + 1,
                         "response_status": "success",
                         "response_time": None,
                         "stream_age": lambda value: value > 0,

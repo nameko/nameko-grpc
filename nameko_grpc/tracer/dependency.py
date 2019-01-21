@@ -4,7 +4,6 @@ import sys
 from datetime import datetime
 
 from nameko_tracer import Tracer, constants
-from nameko_tracer.adapters import DefaultAdapter
 
 from nameko_grpc.constants import Cardinality
 
@@ -14,47 +13,6 @@ logger = logging.getLogger(__name__)
 GRPC_ADAPTER = {
     "nameko_grpc.entrypoint.Grpc": ("nameko_grpc.tracer.GrpcEntrypointAdapter")
 }
-
-
-class GrpcEntrypointAdapter(DefaultAdapter):
-    def process(self, message, kwargs):
-
-        worker_ctx = kwargs["extra"]["worker_ctx"]
-        cardinality = worker_ctx.entrypoint.cardinality
-
-        stream_part = kwargs["extra"].get("stream_part", None)
-        stream_age = kwargs["extra"].get("stream_age", None)
-
-        trace_data = {"cardinality": cardinality}
-        if stream_part:
-            trace_data["stream_part"] = stream_part
-        if stream_age:
-            trace_data["stream_age"] = stream_age
-
-        kwargs["extra"][constants.TRACE_KEY] = trace_data
-
-        message, kwargs = super().process(message, kwargs)
-
-        # replace `response` if this is the top-level trace for a streaming response
-        if (
-            cardinality in (Cardinality.UNARY_STREAM, Cardinality.STREAM_STREAM)
-            and stream_part is None
-            and trace_data["stage"] == "response"
-        ):
-            trace_data["response"] = "streaming"
-
-        # replace `request` if this is the top-level trace for a streaming request
-        if (
-            cardinality in (Cardinality.STREAM_UNARY, Cardinality.STREAM_STREAM)
-            and stream_part is None
-            and trace_data["stage"] == "request"
-        ):
-            trace_data["call_args"]["request"] == "streaming"
-
-        return message, kwargs
-
-    def get_result(self, result):
-        return result
 
 
 class GrpcTracer(Tracer):
@@ -152,6 +110,7 @@ class GrpcTracer(Tracer):
                 "timestamp": timestamp,
                 "stream_age": stream_age,
                 "stream_part": index,
+                "request": request,
             }
             try:
                 adapter = self.adapter_factory(worker_ctx)
