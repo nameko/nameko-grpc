@@ -16,7 +16,7 @@ def default(obj):
 
     if isinstance(obj, GrpcContext):
         return {
-            "request_metadata": obj.invocation_metadata,
+            "request_metadata": obj.invocation_metadata(),
             "response_headers": obj.response_stream.headers.for_application,
             "response_trailers": obj.response_stream.trailers.for_application,
         }

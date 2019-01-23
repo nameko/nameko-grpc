@@ -857,9 +857,7 @@ class TestGrpcResponseFields:
 
 
 class TestGrpcContextFields:
-    def test_unary_unary(
-        self, client, protobufs, get_log_records, check_trace, check_format
-    ):
+    def test_unary_unary(self, client, protobufs, get_log_records, check_trace):
         request = protobufs.ExampleRequest(value="A")
         response = client.unary_unary(request)
         assert response.message == "A"
@@ -876,9 +874,7 @@ class TestGrpcContextFields:
 
         assert len(result_stream) == 0
 
-    def test_unary_stream(
-        self, client, protobufs, get_log_records, check_trace, check_format
-    ):
+    def test_unary_stream(self, client, protobufs, get_log_records, check_trace):
         request = protobufs.ExampleRequest(value="A", response_count=2)
         responses = list(client.unary_stream(request))
         assert [(response.message, response.seqno) for response in responses] == [
@@ -900,9 +896,7 @@ class TestGrpcContextFields:
         for index, trace in enumerate(result_stream):
             check_trace(trace, common)
 
-    def test_stream_unary(
-        self, client, protobufs, get_log_records, check_trace, check_format
-    ):
+    def test_stream_unary(self, client, protobufs, get_log_records, check_trace):
         def generate_requests():
             for value in ["A", "B"]:
                 yield protobufs.ExampleRequest(value=value)
@@ -925,9 +919,7 @@ class TestGrpcContextFields:
 
         assert len(result_stream) == 0
 
-    def test_stream_stream(
-        self, client, protobufs, get_log_records, check_trace, check_format
-    ):
+    def test_stream_stream(self, client, protobufs, get_log_records, check_trace):
         def generate_requests():
             for value in ["A", "B"]:
                 yield protobufs.ExampleRequest(value=value)
@@ -954,6 +946,82 @@ class TestGrpcContextFields:
         assert len(result_stream) == 2
         for index, trace in enumerate(result_stream):
             check_trace(trace, common)
+
+    def test_invocation_metadata(
+        self, client, protobufs, get_log_records, check_trace, check_format
+    ):
+        request = protobufs.ExampleRequest(value="A")
+        response = client.unary_unary(
+            request, metadata=[("foo", "foo1"), ("foo", "foo2")]
+        )
+        assert response.message == "A"
+
+        request_trace, response_trace, request_stream, result_stream = get_log_records()
+
+        expected = json.dumps(
+            {
+                "request_metadata": [("foo", "foo1"), ("foo", "foo2")],
+                "response_headers": [],
+                "response_trailers": [],
+            }
+        )
+
+        check_format(request_trace, {"grpc_context": expected})
+
+        check_format(response_trace, {"grpc_context": expected})
+
+    def test_response_headers(
+        self, client, protobufs, get_log_records, check_trace, check_format
+    ):
+        request = protobufs.ExampleRequest(value="A")
+        response = client.unary_unary(
+            request, metadata=[("echo-header-foo", "foo1"), ("echo-header-foo", "foo2")]
+        )
+        assert response.message == "A"
+
+        request_trace, response_trace, request_stream, result_stream = get_log_records()
+
+        expected = json.dumps(
+            {
+                "request_metadata": [
+                    ("echo-header-foo", "foo1"),
+                    ("echo-header-foo", "foo2"),
+                ],
+                "response_headers": [("foo", "foo1"), ("foo", "foo2")],
+                "response_trailers": [],
+            }
+        )
+
+        check_format(request_trace, {"grpc_context": expected})
+
+        check_format(response_trace, {"grpc_context": expected})
+
+    def test_response_trailers(
+        self, client, protobufs, get_log_records, check_trace, check_format
+    ):
+        request = protobufs.ExampleRequest(value="A")
+        response = client.unary_unary(
+            request,
+            metadata=[("echo-trailer-foo", "foo1"), ("echo-trailer-foo", "foo2")],
+        )
+        assert response.message == "A"
+
+        request_trace, response_trace, request_stream, result_stream = get_log_records()
+
+        expected = json.dumps(
+            {
+                "request_metadata": [
+                    ("echo-trailer-foo", "foo1"),
+                    ("echo-trailer-foo", "foo2"),
+                ],
+                "response_headers": [],
+                "response_trailers": [("foo", "foo1"), ("foo", "foo2")],
+            }
+        )
+
+        check_format(request_trace, {"grpc_context": expected})
+
+        check_format(response_trace, {"grpc_context": expected})
 
 
 class TestExceptionFields:
