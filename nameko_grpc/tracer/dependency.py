@@ -126,11 +126,13 @@ class GrpcTracer(Tracer):
     def log_result_stream(self, worker_ctx, result_stream):
 
         stream_start = datetime.utcnow()
+        worker_setup_timestamp = self.worker_timestamps[worker_ctx]
 
         try:
             for index, result in enumerate(result_stream, start=1):
                 timestamp = datetime.utcnow()
                 stream_age = (timestamp - stream_start).total_seconds()
+                response_time = (timestamp - worker_setup_timestamp).total_seconds()
 
                 extra = {
                     "stage": constants.Stage.response,
@@ -138,7 +140,7 @@ class GrpcTracer(Tracer):
                     "result": result,
                     "exc_info_": None,
                     "timestamp": timestamp,
-                    "response_time": None,  # TODO i think we want this on stream end
+                    "response_time": response_time,
                     "stream_age": stream_age,
                     "stream_part": index,
                 }
@@ -157,6 +159,7 @@ class GrpcTracer(Tracer):
 
             timestamp = datetime.utcnow()
             stream_age = (timestamp - stream_start).total_seconds()
+            response_time = (timestamp - worker_setup_timestamp).total_seconds()
 
             # NB> this is _idential_ to block above; all the cleverness to extract
             # rhe traceback is already in the adapter
@@ -167,7 +170,7 @@ class GrpcTracer(Tracer):
                 "result": None,
                 "exc_info_": sys.exc_info(),
                 "timestamp": timestamp,
-                "response_time": None,  # TODO i think we want this on stream end
+                "response_time": response_time,
                 "stream_age": stream_age,
                 "stream_part": index + 1,
             }

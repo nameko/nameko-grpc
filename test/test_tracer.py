@@ -8,11 +8,16 @@ from datetime import datetime
 
 import pytest
 from grpc import StatusCode
-from mock import ANY
 from nameko_tracer.constants import Stage
 
 from nameko_grpc.constants import Cardinality
 from nameko_grpc.exceptions import GrpcError
+from nameko_grpc.tracer.adapter import (
+    GRPC_CONTEXT,
+    GRPC_REQUEST,
+    GRPC_RESPONSE,
+    GRPC_STREAM,
+)
 
 
 @pytest.fixture
@@ -368,7 +373,7 @@ class TestCallArgsField:
         request_trace, response_trace, request_stream, result_stream = get_log_records()
 
         common = {
-            "call_args": {"context": ANY, "request": request},
+            "call_args": {"context": GRPC_CONTEXT, "request": GRPC_REQUEST},
             "call_args_redacted": False,
         }
 
@@ -391,7 +396,7 @@ class TestCallArgsField:
         request_trace, response_trace, request_stream, result_stream = get_log_records()
 
         common = {
-            "call_args": {"context": ANY, "request": request},
+            "call_args": {"context": GRPC_CONTEXT, "request": GRPC_REQUEST},
             "call_args_redacted": False,
         }
 
@@ -416,9 +421,9 @@ class TestCallArgsField:
 
         request_trace, response_trace, request_stream, result_stream = get_log_records()
 
-        # streaming request, so the request object is replaced
+        # streaming request
         common = {
-            "call_args": {"context": ANY, "request": "streaming"},
+            "call_args": {"context": GRPC_CONTEXT, "request": GRPC_STREAM},
             "call_args_redacted": False,
         }
 
@@ -446,9 +451,9 @@ class TestCallArgsField:
 
         request_trace, response_trace, request_stream, result_stream = get_log_records()
 
-        # streaming request, so the request object is replaced
+        # streaming request
         common = {
-            "call_args": {"context": ANY, "request": "streaming"},
+            "call_args": {"context": GRPC_CONTEXT, "request": GRPC_STREAM},
             "call_args_redacted": False,
         }
 
@@ -476,7 +481,7 @@ class TestResponseFields:
         check_trace(
             response_trace,
             {
-                # "response": response,   # XXX want this?
+                "response": GRPC_RESPONSE,
                 "response_status": "success",
                 "response_time": lambda value: value > 0,
             },
@@ -497,8 +502,8 @@ class TestResponseFields:
         check_trace(
             response_trace,
             {
-                # "response": "streaming",  # XXX want this?
-                "response_status": "success",
+                "response": GRPC_STREAM,  # streaming response
+                "response_status": None,  # still pending
                 "response_time": lambda value: value > 0,
             },
         )
@@ -508,7 +513,7 @@ class TestResponseFields:
             check_trace(
                 trace,
                 {
-                    # "response": responses[index],  # XXX want this?
+                    "response": GRPC_RESPONSE,  # individual response
                     "response_status": "success",
                     "response_time": lambda value: value > 0,
                 },
@@ -528,7 +533,7 @@ class TestResponseFields:
         check_trace(
             response_trace,
             {
-                # "response": response,  # XXX want this?
+                "response": GRPC_RESPONSE,
                 "response_status": "success",
                 "response_time": lambda value: value > 0,
             },
@@ -553,8 +558,8 @@ class TestResponseFields:
         check_trace(
             response_trace,
             {
-                # "response": "streaming",
-                "response_status": "success",
+                "response": GRPC_STREAM,  # streaming response
+                "response_status": None,  # still pending
                 "response_time": lambda value: value > 0,
             },
         )
@@ -564,7 +569,7 @@ class TestResponseFields:
             check_trace(
                 trace,
                 {
-                    # "response": responses[index],
+                    "response": GRPC_RESPONSE,  # individual response
                     "response_status": "success",
                     "response_time": lambda value: value > 0,
                 },
@@ -584,7 +589,7 @@ class TestResponseFields:
         check_trace(
             response_trace,
             {
-                # response: None  # XXX
+                "response": GRPC_RESPONSE,
                 "response_status": "error",
                 "response_time": lambda value: value > 0,
             },
@@ -613,8 +618,8 @@ class TestResponseFields:
         check_trace(
             response_trace,
             {
-                # response: None  # XXX
-                "response_status": "success",  # XXX URM
+                "response": GRPC_STREAM,  # streaming response
+                "response_status": None,  # still pending
                 "response_time": lambda value: value > 0,
             },
         )
@@ -626,7 +631,7 @@ class TestResponseFields:
             check_trace(
                 trace,
                 {
-                    # "response": responses[index],
+                    "response": GRPC_RESPONSE,  # individual response
                     "response_status": "success",
                     "response_time": lambda value: value > 0,
                 },
@@ -636,7 +641,7 @@ class TestResponseFields:
         check_trace(
             result_stream[-1],
             {
-                # response: None # XXX
+                "response": GRPC_RESPONSE,  # XXX wrong
                 "response_status": "error",
                 "response_time": lambda value: value > 0,
             },
@@ -651,7 +656,7 @@ class TestGrpcRequestFields:
 
         request_trace, response_trace, request_stream, result_stream = get_log_records()
 
-        common = {"request": request}
+        common = {"grpc_request": request}
 
         check_trace(request_trace, common)
 
@@ -671,7 +676,7 @@ class TestGrpcRequestFields:
 
         request_trace, response_trace, request_stream, result_stream = get_log_records()
 
-        common = {"request": request}
+        common = {"grpc_request": request}
 
         check_trace(request_trace, common)
 
@@ -694,11 +699,7 @@ class TestGrpcRequestFields:
 
         request_trace, response_trace, request_stream, result_stream = get_log_records()
 
-        # XXX is this actually the API we want? would it be clearer if request/grpc_req
-        # _wasn't_ populated apart from when we actually had one?
-        # ALSO what do we want to do about serialization; not a lot of point in logging
-        # a grpc message [is there a "to dict" or similar?]
-        common = {"request": "streaming"}
+        common = {"grpc_request": GRPC_STREAM}
 
         check_trace(request_trace, common)
 
@@ -706,7 +707,7 @@ class TestGrpcRequestFields:
 
         assert len(request_stream) == 2
         for index, trace in enumerate(request_stream):
-            check_trace(trace, {"request": requests[index]})
+            check_trace(trace, {"grpc_request": requests[index]})
 
         assert len(result_stream) == 0
 
@@ -724,7 +725,7 @@ class TestGrpcRequestFields:
 
         request_trace, response_trace, request_stream, result_stream = get_log_records()
 
-        common = {"request": "streaming"}
+        common = {"grpc_request": GRPC_STREAM}
 
         check_trace(request_trace, common)
 
@@ -732,7 +733,7 @@ class TestGrpcRequestFields:
 
         assert len(request_stream) == 2
         for index, trace in enumerate(request_stream):
-            check_trace(trace, {"request": requests[index]})
+            check_trace(trace, {"grpc_request": requests[index]})
 
         assert len(result_stream) == 2
         for index, trace in enumerate(result_stream):
@@ -747,14 +748,7 @@ class TestGrpcResponseFields:
 
         request_trace, response_trace, request_stream, result_stream = get_log_records()
 
-        check_trace(
-            response_trace,
-            {
-                "response": response,
-                # "response_status": "success",
-                # "response_time": lambda value: value > 0,
-            },
-        )
+        check_trace(response_trace, {"grpc_response": response})
 
         assert len(result_stream) == 0
 
@@ -768,18 +762,11 @@ class TestGrpcResponseFields:
 
         request_trace, response_trace, request_stream, result_stream = get_log_records()
 
-        check_trace(
-            response_trace,
-            {
-                "response": "streaming",
-                # "response_status": "success",
-                # "response_time": lambda value: value > 0,
-            },
-        )
+        check_trace(response_trace, {"grpc_response": GRPC_STREAM})
 
         assert len(result_stream) == 2
         for index, trace in enumerate(result_stream):
-            check_trace(trace, {"stage": "response", "response": responses[index]})
+            check_trace(trace, {"grpc_response": responses[index]})
 
     def test_stream_unary(self, client, protobufs, get_log_records, check_trace):
         def generate_requests():
@@ -792,14 +779,7 @@ class TestGrpcResponseFields:
 
         request_trace, response_trace, request_stream, result_stream = get_log_records()
 
-        check_trace(
-            response_trace,
-            {
-                "response": response,
-                # "response_status": "success",
-                # "response_time": lambda value: value > 0,
-            },
-        )
+        check_trace(response_trace, {"grpc_response": response})
 
         assert len(result_stream) == 0
 
@@ -817,25 +797,17 @@ class TestGrpcResponseFields:
 
         request_trace, response_trace, request_stream, result_stream = get_log_records()
 
-        check_trace(
-            response_trace,
-            {
-                "response": "streaming",
-                # "response_status": "success",  # XXX
-                # "response_time": lambda value: value > 0,
-            },
-        )
+        check_trace(response_trace, {"grpc_response": GRPC_STREAM})
 
         assert len(result_stream) == 2
         for index, trace in enumerate(result_stream):
-            check_trace(
-                trace,
-                {
-                    "response": responses[index],
-                    # "response_status": "success",
-                    # "response_time": None,  # XXX
-                },
-            )
+            check_trace(trace, {"grpc_response": responses[index]})
+
+
+# TODO: class TestGrpcContext:
+# - invocation metadata
+# - response headers
+# - response trailers
 
 
 class TestExceptionFields:
@@ -853,8 +825,7 @@ class TestExceptionFields:
         check_trace(
             response_trace,
             {
-                # "response_status": "error",
-                # "response_time": lambda value: value > 0,
+                "response_status": "error",
                 "exception_value": "boom",
                 "exception_type": "Error",
                 "exception_path": "example_nameko.Error",
@@ -884,33 +855,22 @@ class TestExceptionFields:
 
         request_trace, response_trace, request_stream, result_stream = get_log_records()
 
-        check_trace(
-            response_trace,
-            {
-                # "response_status": "success",  # XXX URM
-                # "response_time": lambda value: value > 0,
-            },
-        )
+        check_trace(response_trace, {"response": GRPC_STREAM, "response_status": None})
 
         assert len(result_stream) == 10
 
         # check first 9 stream parts
         for index, trace in enumerate(result_stream[:-1]):
             check_trace(
-                trace,
-                {
-                    "response": responses[index],
-                    # "response_status": "success",
-                    # "response_time": None,
-                },
+                trace, {"response": GRPC_RESPONSE, "response_status": "success"}
             )
 
         # check last stream part
         check_trace(
             result_stream[-1],
             {
-                # "response_status": "error",
-                # "response_time": None,
+                "response": GRPC_RESPONSE,
+                "response_status": "error",
                 "exception_value": "boom",
                 "exception_type": "Error",
                 "exception_path": "example_nameko.Error",
@@ -918,402 +878,4 @@ class TestExceptionFields:
                 "exception_traceback": lambda tb: 'raise Error("boom")' in tb,
                 "exception_expected": True,
             },
-        )
-
-
-@pytest.mark.usefixtures("predictable_call_ids")
-class TestTracerIntegration:
-    def test_unary_unary(self, client, protobufs, get_log_records, check_trace):
-        request = protobufs.ExampleRequest(value="A")
-        response = client.unary_unary(request)
-        assert response.message == "A"
-
-        request_trace, response_trace, request_stream, result_stream = get_log_records()
-
-        common = {
-            "hostname": socket.gethostname(),
-            "timestamp": lambda dt: isinstance(dt, datetime),
-            "call_id": "example.unary_unary.0",
-            "call_id_stack": ["example.unary_unary.0"],
-            "entrypoint_name": "unary_unary",
-            "entrypoint_type": "Grpc",
-            "service": "example",
-            "call_args": {"context": ANY, "request": request},
-            "call_args_redacted": False,
-        }
-
-        check_trace(
-            request_trace,
-            dict(
-                common, **{"stage": "request", "cardinality": Cardinality.UNARY_UNARY}
-            ),
-        )
-
-        check_trace(
-            response_trace,
-            dict(
-                common,
-                **{
-                    "stage": "response",
-                    "cardinality": Cardinality.UNARY_UNARY,
-                    "response": response,
-                    "response_status": "success",
-                    "response_time": lambda value: value > 0,
-                }
-            ),
-        )
-
-        assert len(request_stream) == 0
-
-        assert len(result_stream) == 0
-
-    def test_unary_stream(self, client, protobufs, get_log_records, check_trace):
-        request = protobufs.ExampleRequest(value="A", response_count=2)
-        responses = list(client.unary_stream(request))
-        assert [(response.message, response.seqno) for response in responses] == [
-            ("A", 1),
-            ("A", 2),
-        ]
-
-        request_trace, response_trace, request_stream, result_stream = get_log_records()
-
-        common = {
-            "hostname": socket.gethostname(),
-            "timestamp": lambda dt: isinstance(dt, datetime),
-            "call_id": "example.unary_stream.0",
-            "call_id_stack": ["example.unary_stream.0"],
-            "entrypoint_name": "unary_stream",
-            "entrypoint_type": "Grpc",
-            "service": "example",
-            "call_args": {"context": ANY, "request": request},
-            "call_args_redacted": False,
-        }
-
-        check_trace(
-            request_trace,
-            dict(
-                common, **{"stage": "request", "cardinality": Cardinality.UNARY_STREAM}
-            ),
-        )
-
-        check_trace(
-            response_trace,
-            dict(
-                common,
-                **{
-                    "stage": "response",
-                    "cardinality": Cardinality.UNARY_STREAM,
-                    "response": "streaming",
-                    "response_status": "success",
-                    "response_time": lambda value: value > 0,
-                }
-            ),
-        )
-
-        assert len(request_stream) == 0
-
-        assert len(result_stream) == 2
-        for index, trace in enumerate(result_stream):
-            check_trace(
-                trace,
-                dict(
-                    common,
-                    **{
-                        "stage": "response",
-                        "cardinality": Cardinality.UNARY_STREAM,
-                        "response": responses[index],
-                        "stream_part": index + 1,
-                        "response_time": None,
-                        "stream_age": lambda value: value > 0,
-                    }
-                ),
-            )
-
-    def test_stream_unary(self, client, protobufs, get_log_records, check_trace):
-        def generate_requests():
-            for value in ["A", "B"]:
-                yield protobufs.ExampleRequest(value=value)
-
-        requests = list(generate_requests())
-        response = client.stream_unary(requests)
-        assert response.message == "A,B"
-
-        request_trace, response_trace, request_stream, result_stream = get_log_records()
-
-        common = {
-            "hostname": socket.gethostname(),
-            "timestamp": lambda dt: isinstance(dt, datetime),
-            "call_id": "example.stream_unary.0",
-            "call_id_stack": ["example.stream_unary.0"],
-            "entrypoint_name": "stream_unary",
-            "entrypoint_type": "Grpc",
-            "service": "example",
-            "call_args": {"context": ANY, "request": "streaming"},
-            "call_args_redacted": False,
-        }
-
-        check_trace(
-            request_trace,
-            dict(
-                common, **{"stage": "request", "cardinality": Cardinality.STREAM_UNARY}
-            ),
-        )
-
-        check_trace(
-            response_trace,
-            dict(
-                common,
-                **{
-                    "stage": "response",
-                    "cardinality": Cardinality.STREAM_UNARY,
-                    "response": response,
-                    "response_status": "success",
-                    "response_time": lambda value: value > 0,
-                }
-            ),
-        )
-
-        assert len(request_stream) == 2
-        for index, trace in enumerate(request_stream):
-            check_trace(
-                trace,
-                dict(
-                    common,
-                    **{
-                        "stage": "request",
-                        "cardinality": Cardinality.STREAM_UNARY,
-                        "request": requests[index],
-                        "stream_part": index + 1,
-                        "stream_age": lambda value: value > 0,
-                    }
-                ),
-            )
-
-        assert len(result_stream) == 0
-
-    def test_stream_stream(self, client, protobufs, get_log_records, check_trace):
-        def generate_requests():
-            for value in ["A", "B"]:
-                yield protobufs.ExampleRequest(value=value)
-
-        requests = list(generate_requests())
-        responses = list(client.stream_stream(requests))
-        assert [(response.message, response.seqno) for response in responses] == [
-            ("A", 1),
-            ("B", 2),
-        ]
-
-        request_trace, response_trace, request_stream, result_stream = get_log_records()
-
-        common = {
-            "hostname": socket.gethostname(),
-            "timestamp": lambda dt: isinstance(dt, datetime),
-            "call_id": "example.stream_stream.0",
-            "call_id_stack": ["example.stream_stream.0"],
-            "entrypoint_name": "stream_stream",
-            "entrypoint_type": "Grpc",
-            "service": "example",
-            "call_args": {"context": ANY, "request": "streaming"},
-            "call_args_redacted": False,
-        }
-
-        check_trace(
-            request_trace,
-            dict(
-                common, **{"stage": "request", "cardinality": Cardinality.STREAM_STREAM}
-            ),
-        )
-
-        check_trace(
-            response_trace,
-            dict(
-                common,
-                **{
-                    "stage": "response",
-                    "cardinality": Cardinality.STREAM_STREAM,
-                    "response": "streaming",
-                    "response_status": "success",
-                    "response_time": lambda value: value > 0,
-                }
-            ),
-        )
-
-        assert len(request_stream) == 2
-        for index, trace in enumerate(request_stream):
-            check_trace(
-                trace,
-                dict(
-                    common,
-                    **{
-                        "stage": "request",
-                        "cardinality": Cardinality.STREAM_STREAM,
-                        "request": requests[index],
-                        "stream_part": index + 1,
-                        "stream_age": lambda value: value > 0,
-                    }
-                ),
-            )
-
-        assert len(result_stream) == 2
-        for index, trace in enumerate(result_stream):
-            check_trace(
-                trace,
-                dict(
-                    common,
-                    **{
-                        "stage": "response",
-                        "cardinality": Cardinality.STREAM_STREAM,
-                        "response": responses[index],
-                        "stream_part": index + 1,
-                        "response_time": None,  # XXX
-                        "stream_age": lambda value: value > 0,
-                    }
-                ),
-            )
-
-    def test_error_before_response(
-        self, client, protobufs, get_log_records, check_trace
-    ):
-        request = protobufs.ExampleRequest(value="A")
-        with pytest.raises(GrpcError) as error:
-            client.unary_error(request)
-        assert error.value.status == StatusCode.UNKNOWN
-        assert error.value.details == "Exception calling application: boom"
-
-        request_trace, response_trace, request_stream, result_stream = get_log_records()
-
-        common = {
-            "hostname": socket.gethostname(),
-            "timestamp": lambda dt: isinstance(dt, datetime),
-            "call_id": "example.unary_error.0",
-            "call_id_stack": ["example.unary_error.0"],
-            "entrypoint_name": "unary_error",
-            "entrypoint_type": "Grpc",
-            "service": "example",
-            "call_args": {"context": ANY, "request": request},
-            "call_args_redacted": False,
-        }
-
-        check_trace(
-            request_trace,
-            dict(
-                common, **{"stage": "request", "cardinality": Cardinality.UNARY_UNARY}
-            ),
-        )
-
-        check_trace(
-            response_trace,
-            dict(
-                common,
-                **{
-                    "stage": "response",
-                    "cardinality": Cardinality.UNARY_UNARY,
-                    "response_status": "error",
-                    "response_time": lambda value: value > 0,
-                    "exception_value": "boom",
-                    "exception_type": "Error",
-                    "exception_path": "example_nameko.Error",
-                    "exception_args": ["boom"],
-                    "exception_traceback": lambda tb: 'raise Error("boom")' in tb,
-                    "exception_expected": True,
-                }
-            ),
-        )
-
-        assert len(request_stream) == 0
-
-        assert len(result_stream) == 0
-
-    def test_error_while_streaming_response(
-        self, client, protobufs, get_log_records, check_trace
-    ):
-
-        # NOTE it's important that the server sleeps between streaming responses
-        # otherwise it terminates the stream with an error before any parts of the
-        # response stream are put on the wire
-        request = protobufs.ExampleRequest(value="A", response_count=10, delay=10)
-        responses = []
-        with pytest.raises(GrpcError) as error:
-            for response in client.stream_error(request):
-                responses.append(response)
-
-        assert error.value.status == StatusCode.UNKNOWN
-        assert error.value.details == "Exception iterating responses: boom"
-
-        request_trace, response_trace, request_stream, result_stream = get_log_records()
-
-        common = {
-            "hostname": socket.gethostname(),
-            "timestamp": lambda dt: isinstance(dt, datetime),
-            "call_id": "example.stream_error.0",
-            "call_id_stack": ["example.stream_error.0"],
-            "entrypoint_name": "stream_error",
-            "entrypoint_type": "Grpc",
-            "service": "example",
-            "call_args": {"context": ANY, "request": request},
-            "call_args_redacted": False,
-        }
-
-        check_trace(
-            request_trace,
-            dict(
-                common, **{"stage": "request", "cardinality": Cardinality.UNARY_STREAM}
-            ),
-        )
-
-        check_trace(
-            response_trace,
-            dict(
-                common,
-                **{
-                    "stage": "response",
-                    "cardinality": Cardinality.UNARY_STREAM,
-                    "response_status": "success",  # XXX URM
-                    "response_time": lambda value: value > 0,
-                }
-            ),
-        )
-
-        assert len(request_stream) == 0
-
-        assert len(result_stream) == 10
-
-        # check first 9 stream parts
-        for index, trace in enumerate(result_stream[:-1]):
-            check_trace(
-                trace,
-                dict(
-                    common,
-                    **{
-                        "stage": "response",
-                        "cardinality": Cardinality.UNARY_STREAM,
-                        "response": responses[index],
-                        "stream_part": index + 1,
-                        "response_status": "success",
-                        "response_time": None,
-                        "stream_age": lambda value: value > 0,
-                    }
-                ),
-            )
-
-        # check last stream part
-        check_trace(
-            result_stream[-1],
-            dict(
-                common,
-                **{
-                    "stage": "response",
-                    "cardinality": Cardinality.UNARY_STREAM,
-                    "stream_part": 10,
-                    "response_status": "error",
-                    "response_time": None,
-                    "stream_age": lambda value: value > 0,
-                    "exception_value": "boom",
-                    "exception_type": "Error",
-                    "exception_path": "example_nameko.Error",
-                    "exception_args": ["boom"],
-                    "exception_traceback": lambda tb: 'raise Error("boom")' in tb,
-                    "exception_expected": True,
-                }
-            ),
         )
