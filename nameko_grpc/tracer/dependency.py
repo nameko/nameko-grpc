@@ -128,62 +128,38 @@ class GrpcTracer(Tracer):
         stream_start = datetime.utcnow()
         worker_setup_timestamp = self.worker_timestamps[worker_ctx]
 
-        try:
-            for index, result in enumerate(result_stream, start=1):
-                timestamp = datetime.utcnow()
-                stream_age = (timestamp - stream_start).total_seconds()
-                response_time = (timestamp - worker_setup_timestamp).total_seconds()
-
-                extra = {
-                    "stage": constants.Stage.response,
-                    "worker_ctx": worker_ctx,
-                    "result": result,
-                    "exc_info_": None,
-                    "timestamp": timestamp,
-                    "response_time": response_time,
-                    "stream_age": stream_age,
-                    "stream_part": index,
-                }
-                try:
-                    adapter = self.adapter_factory(worker_ctx)
-                    adapter.info(
-                        "[%s] entrypoint result trace [stream_part %s]",
-                        worker_ctx.call_id,
-                        index,
-                        extra=extra,
-                    )
-                except Exception:
-                    logger.warning("Failed to log entrypoint trace", exc_info=True)
-
-        except Exception:
-
+        def log(stream_part, result, exc_info, level):
             timestamp = datetime.utcnow()
             stream_age = (timestamp - stream_start).total_seconds()
             response_time = (timestamp - worker_setup_timestamp).total_seconds()
 
-            # NB> this is _idential_ to block above; all the cleverness to extract
-            # rhe traceback is already in the adapter
-            # (stream part not identical, actually. nor log level)
             extra = {
                 "stage": constants.Stage.response,
                 "worker_ctx": worker_ctx,
-                "result": None,
-                "exc_info_": sys.exc_info(),
+                "result": result,
+                "exc_info_": exc_info,
                 "timestamp": timestamp,
                 "response_time": response_time,
                 "stream_age": stream_age,
-                "stream_part": index + 1,
+                "stream_part": stream_part,
             }
             try:
                 adapter = self.adapter_factory(worker_ctx)
-                adapter.warning(
+                adapter.log(
+                    level,
                     "[%s] entrypoint result trace [stream_part %s]",
                     worker_ctx.call_id,
-                    index,
+                    stream_part,
                     extra=extra,
                 )
             except Exception:
                 logger.warning("Failed to log entrypoint trace", exc_info=True)
+
+        try:
+            for index, result in enumerate(result_stream, start=1):
+                log(index, result, None, logging.INFO)
+        except Exception:
+            log(index + 1, None, sys.exc_info(), logging.WARNING)
 
     def worker_setup(self, worker_ctx):
         """ Log entrypoint call details
