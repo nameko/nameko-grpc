@@ -11,6 +11,7 @@ from grpc import StatusCode
 from nameko_tracer.constants import Stage
 
 from nameko_grpc.constants import Cardinality
+from nameko_grpc.context import GrpcContext
 from nameko_grpc.exceptions import GrpcError
 from nameko_grpc.tracer.adapter import (
     GRPC_CONTEXT,
@@ -804,10 +805,96 @@ class TestGrpcResponseFields:
             check_trace(trace, {"grpc_response": responses[index]})
 
 
-# TODO: class TestGrpcContext:
-# - invocation metadata
-# - response headers
-# - response trailers
+class TestGrpcContextFields:
+    def test_unary_unary(self, client, protobufs, get_log_records, check_trace):
+        request = protobufs.ExampleRequest(value="A")
+        response = client.unary_unary(request)
+        assert response.message == "A"
+
+        request_trace, response_trace, request_stream, result_stream = get_log_records()
+
+        common = {"grpc_context": lambda value: isinstance(value, GrpcContext)}
+
+        check_trace(request_trace, common)
+
+        check_trace(response_trace, common)
+
+        assert len(request_stream) == 0
+
+        assert len(result_stream) == 0
+
+    def test_unary_stream(self, client, protobufs, get_log_records, check_trace):
+        request = protobufs.ExampleRequest(value="A", response_count=2)
+        responses = list(client.unary_stream(request))
+        assert [(response.message, response.seqno) for response in responses] == [
+            ("A", 1),
+            ("A", 2),
+        ]
+
+        request_trace, response_trace, request_stream, result_stream = get_log_records()
+
+        common = {"grpc_context": lambda value: isinstance(value, GrpcContext)}
+
+        check_trace(request_trace, common)
+
+        check_trace(response_trace, common)
+
+        assert len(request_stream) == 0
+
+        assert len(result_stream) == 2
+        for index, trace in enumerate(result_stream):
+            check_trace(trace, common)
+
+    def test_stream_unary(self, client, protobufs, get_log_records, check_trace):
+        def generate_requests():
+            for value in ["A", "B"]:
+                yield protobufs.ExampleRequest(value=value)
+
+        requests = list(generate_requests())
+        response = client.stream_unary(requests)
+        assert response.message == "A,B"
+
+        request_trace, response_trace, request_stream, result_stream = get_log_records()
+
+        common = {"grpc_context": lambda value: isinstance(value, GrpcContext)}
+
+        check_trace(request_trace, common)
+
+        check_trace(response_trace, common)
+
+        assert len(request_stream) == 2
+        for index, trace in enumerate(request_stream):
+            check_trace(trace, common)
+
+        assert len(result_stream) == 0
+
+    def test_stream_stream(self, client, protobufs, get_log_records, check_trace):
+        def generate_requests():
+            for value in ["A", "B"]:
+                yield protobufs.ExampleRequest(value=value)
+
+        requests = list(generate_requests())
+        responses = list(client.stream_stream(requests))
+        assert [(response.message, response.seqno) for response in responses] == [
+            ("A", 1),
+            ("B", 2),
+        ]
+
+        request_trace, response_trace, request_stream, result_stream = get_log_records()
+
+        common = {"grpc_context": lambda value: isinstance(value, GrpcContext)}
+
+        check_trace(request_trace, common)
+
+        check_trace(response_trace, common)
+
+        assert len(request_stream) == 2
+        for index, trace in enumerate(request_stream):
+            check_trace(trace, common)
+
+        assert len(result_stream) == 2
+        for index, trace in enumerate(result_stream):
+            check_trace(trace, common)
 
 
 class TestExceptionFields:

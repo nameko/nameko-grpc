@@ -132,14 +132,10 @@ def add_grpc_response(extra):
 
 
 def add_grpc_context(extra):
-    grpc_context = extra["grpc_context"]
+    request, context = extra["worker_ctx"].args
 
     trace_data = extra[constants.TRACE_KEY]
-    trace_data["grpc_context"] = {
-        "request_headers": grpc_context.invocation_metadata,
-        "response_headers": grpc_context.headers,
-        "response_trailers": grpc_context.trailers,
-    }
+    trace_data["grpc_context"] = context
 
 
 class GrpcEntrypointAdapter(DefaultAdapter):
@@ -154,7 +150,7 @@ class GrpcEntrypointAdapter(DefaultAdapter):
 
         add_grpc_request(extra)
         add_grpc_response(extra)
-        # add_grpc_context(extra)
+        add_grpc_context(extra)
 
         clean_call_args(extra)
         clean_response(extra)
