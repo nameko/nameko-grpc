@@ -6,6 +6,7 @@ from nameko_grpc.constants import Cardinality
 
 
 def clean_call_args(extra):
+    # TODO can fix this by overriding get_call_args
     cardinality = get_cardinality(extra)
     if cardinality in (Cardinality.STREAM_UNARY, Cardinality.STREAM_STREAM):
         trace_data = extra[constants.TRACE_KEY]
@@ -13,6 +14,7 @@ def clean_call_args(extra):
 
 
 def clean_response(extra):
+    # TODO can fix this by overriding get_result
     if not is_response(extra):
         return
 
