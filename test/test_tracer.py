@@ -2,11 +2,13 @@
 """ Test integration with https://github.com/nameko/nameko-tracer
 """
 
+import json
 import logging
 import socket
 from datetime import datetime
 
 import pytest
+from google.protobuf.json_format import MessageToJson
 from grpc import StatusCode
 from nameko_tracer.constants import Stage
 
@@ -19,6 +21,7 @@ from nameko_grpc.tracer.adapter import (
     GRPC_RESPONSE,
     GRPC_STREAM,
 )
+from nameko_grpc.tracer.formatter import GrpcFormatter
 
 
 @pytest.fixture
@@ -66,19 +69,15 @@ def get_log_records(caplog):
     def extract_records():
         trace_records = list(filter(is_trace, caplog.records))
 
-        request_trace = extract_trace(
-            next(filter(match_all(is_request, is_not_stream), trace_records))
+        request_trace = next(
+            filter(match_all(is_request, is_not_stream), trace_records)
         )
-        response_trace = extract_trace(
-            next(filter(match_all(is_response, is_not_stream), trace_records))
+        response_trace = next(
+            filter(match_all(is_response, is_not_stream), trace_records)
         )
 
-        request_stream = list(
-            map(extract_trace, filter(match_all(is_request, is_stream), trace_records))
-        )
-        response_stream = list(
-            map(extract_trace, filter(match_all(is_response, is_stream), trace_records))
-        )
+        request_stream = list(filter(match_all(is_request, is_stream), trace_records))
+        response_stream = list(filter(match_all(is_response, is_stream), trace_records))
         return request_trace, response_trace, request_stream, response_stream
 
     return extract_records
@@ -86,7 +85,25 @@ def get_log_records(caplog):
 
 @pytest.fixture
 def check_trace():
-    def check(data, requires):
+    def check(record, requires):
+        data = record.nameko_trace
+        for key, value in requires.items():
+            if callable(value):
+                assert value(data[key])
+            else:
+                assert data[key] == value
+
+    return check
+
+
+@pytest.fixture
+def check_format():
+
+    formatter = GrpcFormatter()
+
+    def check(record, requires):
+        formatted = formatter.format(record)
+        data = json.loads(formatted)
         for key, value in requires.items():
             if callable(value):
                 assert value(data[key])
@@ -364,8 +381,6 @@ class TestEssentialFields:
 
 
 class TestCallArgsField:
-    # XXX these are all a bit boring and similar; are they adding value?
-    # also we should really test call args redaction
     def test_unary_unary(self, client, protobufs, get_log_records, check_trace):
         request = protobufs.ExampleRequest(value="A")
         response = client.unary_unary(request)
@@ -650,24 +665,31 @@ class TestResponseFields:
 
 
 class TestGrpcRequestFields:
-    def test_unary_unary(self, client, protobufs, get_log_records, check_trace):
+    def test_unary_unary(
+        self, client, protobufs, get_log_records, check_trace, check_format
+    ):
         request = protobufs.ExampleRequest(value="A")
         response = client.unary_unary(request)
         assert response.message == "A"
 
         request_trace, response_trace, request_stream, result_stream = get_log_records()
 
-        common = {"grpc_request": request}
+        common_trace = {"grpc_request": request}
+        common_format = {"grpc_request": MessageToJson(request)}
 
-        check_trace(request_trace, common)
+        check_trace(request_trace, common_trace)
+        check_format(request_trace, common_format)
 
-        check_trace(response_trace, common)
+        check_trace(response_trace, common_trace)
+        check_format(response_trace, common_format)
 
         assert len(request_stream) == 0
 
         assert len(result_stream) == 0
 
-    def test_unary_stream(self, client, protobufs, get_log_records, check_trace):
+    def test_unary_stream(
+        self, client, protobufs, get_log_records, check_trace, check_format
+    ):
         request = protobufs.ExampleRequest(value="A", response_count=2)
         responses = list(client.unary_stream(request))
         assert [(response.message, response.seqno) for response in responses] == [
@@ -677,19 +699,25 @@ class TestGrpcRequestFields:
 
         request_trace, response_trace, request_stream, result_stream = get_log_records()
 
-        common = {"grpc_request": request}
+        common_trace = {"grpc_request": request}
+        common_format = {"grpc_request": MessageToJson(request)}
 
-        check_trace(request_trace, common)
+        check_trace(request_trace, common_trace)
+        check_format(request_trace, common_format)
 
-        check_trace(response_trace, common)
+        check_trace(response_trace, common_trace)
+        check_format(response_trace, common_format)
 
         assert len(request_stream) == 0
 
         assert len(result_stream) == 2
         for index, trace in enumerate(result_stream):
-            check_trace(trace, common)
+            check_trace(response_trace, common_trace)
+            check_format(response_trace, common_format)
 
-    def test_stream_unary(self, client, protobufs, get_log_records, check_trace):
+    def test_stream_unary(
+        self, client, protobufs, get_log_records, check_trace, check_format
+    ):
         def generate_requests():
             for value in ["A", "B"]:
                 yield protobufs.ExampleRequest(value=value)
@@ -703,16 +731,21 @@ class TestGrpcRequestFields:
         common = {"grpc_request": GRPC_STREAM}
 
         check_trace(request_trace, common)
+        check_format(response_trace, common)
 
         check_trace(response_trace, common)
+        check_format(response_trace, common)
 
         assert len(request_stream) == 2
         for index, trace in enumerate(request_stream):
             check_trace(trace, {"grpc_request": requests[index]})
+            check_format(trace, {"grpc_request": MessageToJson(requests[index])})
 
         assert len(result_stream) == 0
 
-    def test_stream_stream(self, client, protobufs, get_log_records, check_trace):
+    def test_stream_stream(
+        self, client, protobufs, get_log_records, check_trace, check_format
+    ):
         def generate_requests():
             for value in ["A", "B"]:
                 yield protobufs.ExampleRequest(value=value)
@@ -729,20 +762,26 @@ class TestGrpcRequestFields:
         common = {"grpc_request": GRPC_STREAM}
 
         check_trace(request_trace, common)
+        check_format(request_trace, common)
 
         check_trace(response_trace, common)
+        check_format(response_trace, common)
 
         assert len(request_stream) == 2
         for index, trace in enumerate(request_stream):
             check_trace(trace, {"grpc_request": requests[index]})
+            check_format(trace, {"grpc_request": MessageToJson(requests[index])})
 
         assert len(result_stream) == 2
         for index, trace in enumerate(result_stream):
             check_trace(trace, common)
+            check_format(trace, common)
 
 
 class TestGrpcResponseFields:
-    def test_unary_unary(self, client, protobufs, get_log_records, check_trace):
+    def test_unary_unary(
+        self, client, protobufs, get_log_records, check_trace, check_format
+    ):
         request = protobufs.ExampleRequest(value="A")
         response = client.unary_unary(request)
         assert response.message == "A"
@@ -750,10 +789,13 @@ class TestGrpcResponseFields:
         request_trace, response_trace, request_stream, result_stream = get_log_records()
 
         check_trace(response_trace, {"grpc_response": response})
+        check_format(response_trace, {"grpc_response": MessageToJson(response)})
 
         assert len(result_stream) == 0
 
-    def test_unary_stream(self, client, protobufs, get_log_records, check_trace):
+    def test_unary_stream(
+        self, client, protobufs, get_log_records, check_trace, check_format
+    ):
         request = protobufs.ExampleRequest(value="A", response_count=2)
         responses = list(client.unary_stream(request))
         assert [(response.message, response.seqno) for response in responses] == [
@@ -764,12 +806,16 @@ class TestGrpcResponseFields:
         request_trace, response_trace, request_stream, result_stream = get_log_records()
 
         check_trace(response_trace, {"grpc_response": GRPC_STREAM})
+        check_format(response_trace, {"grpc_response": GRPC_STREAM})
 
         assert len(result_stream) == 2
         for index, trace in enumerate(result_stream):
             check_trace(trace, {"grpc_response": responses[index]})
+            check_format(trace, {"grpc_response": MessageToJson(responses[index])})
 
-    def test_stream_unary(self, client, protobufs, get_log_records, check_trace):
+    def test_stream_unary(
+        self, client, protobufs, get_log_records, check_trace, check_format
+    ):
         def generate_requests():
             for value in ["A", "B"]:
                 yield protobufs.ExampleRequest(value=value)
@@ -781,10 +827,13 @@ class TestGrpcResponseFields:
         request_trace, response_trace, request_stream, result_stream = get_log_records()
 
         check_trace(response_trace, {"grpc_response": response})
+        check_format(response_trace, {"grpc_response": response})
 
         assert len(result_stream) == 0
 
-    def test_stream_stream(self, client, protobufs, get_log_records, check_trace):
+    def test_stream_stream(
+        self, client, protobufs, get_log_records, check_trace, check_format
+    ):
         def generate_requests():
             for value in ["A", "B"]:
                 yield protobufs.ExampleRequest(value=value)
@@ -799,14 +848,18 @@ class TestGrpcResponseFields:
         request_trace, response_trace, request_stream, result_stream = get_log_records()
 
         check_trace(response_trace, {"grpc_response": GRPC_STREAM})
+        check_format(response_trace, {"grpc_response": GRPC_STREAM})
 
         assert len(result_stream) == 2
         for index, trace in enumerate(result_stream):
             check_trace(trace, {"grpc_response": responses[index]})
+            check_format(trace, {"grpc_response": MessageToJson(responses[index])})
 
 
 class TestGrpcContextFields:
-    def test_unary_unary(self, client, protobufs, get_log_records, check_trace):
+    def test_unary_unary(
+        self, client, protobufs, get_log_records, check_trace, check_format
+    ):
         request = protobufs.ExampleRequest(value="A")
         response = client.unary_unary(request)
         assert response.message == "A"
@@ -823,7 +876,9 @@ class TestGrpcContextFields:
 
         assert len(result_stream) == 0
 
-    def test_unary_stream(self, client, protobufs, get_log_records, check_trace):
+    def test_unary_stream(
+        self, client, protobufs, get_log_records, check_trace, check_format
+    ):
         request = protobufs.ExampleRequest(value="A", response_count=2)
         responses = list(client.unary_stream(request))
         assert [(response.message, response.seqno) for response in responses] == [
@@ -845,7 +900,9 @@ class TestGrpcContextFields:
         for index, trace in enumerate(result_stream):
             check_trace(trace, common)
 
-    def test_stream_unary(self, client, protobufs, get_log_records, check_trace):
+    def test_stream_unary(
+        self, client, protobufs, get_log_records, check_trace, check_format
+    ):
         def generate_requests():
             for value in ["A", "B"]:
                 yield protobufs.ExampleRequest(value=value)
@@ -868,7 +925,9 @@ class TestGrpcContextFields:
 
         assert len(result_stream) == 0
 
-    def test_stream_stream(self, client, protobufs, get_log_records, check_trace):
+    def test_stream_stream(
+        self, client, protobufs, get_log_records, check_trace, check_format
+    ):
         def generate_requests():
             for value in ["A", "B"]:
                 yield protobufs.ExampleRequest(value=value)
