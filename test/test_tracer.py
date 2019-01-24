@@ -607,7 +607,7 @@ class TestResponseFields:
         check_trace(
             response_trace,
             {
-                "response": GRPC_RESPONSE,
+                "response": lambda data, key: key not in data,
                 "response_status": "error",
                 "response_time": lambda data, key: data[key] > 0,
             },
@@ -659,7 +659,7 @@ class TestResponseFields:
         check_trace(
             result_stream[-1],
             {
-                "response": GRPC_RESPONSE,  # XXX wrong
+                "response": lambda data, key: key not in data,
                 "response_status": "error",
                 "response_time": lambda data, key: data[key] > 0,
             },
@@ -1041,8 +1041,6 @@ class TestExceptionFields:
         check_trace(
             response_trace,
             {
-                "response": GRPC_RESPONSE,  # XXX wrong
-                "response_status": "error",
                 "exception_value": "boom",
                 "exception_type": "Error",
                 "exception_path": "example_nameko.Error",
@@ -1082,16 +1080,12 @@ class TestExceptionFields:
 
         # check first 9 stream parts
         for index, trace in enumerate(result_stream[:-1]):
-            check_trace(
-                trace, {"response": GRPC_RESPONSE, "response_status": "success"}
-            )
+            check_trace(trace, {"exception_value": lambda data, key: key not in data})
 
         # check last stream part
         check_trace(
             result_stream[-1],
             {
-                "response": GRPC_RESPONSE,
-                "response_status": "error",
                 "exception_value": "boom",
                 "exception_type": "Error",
                 "exception_path": "example_nameko.Error",

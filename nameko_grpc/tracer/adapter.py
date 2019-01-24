@@ -27,7 +27,7 @@ def clean_call_args(extra):
 def clean_response(extra):
     # TODO can fix this by overriding get_result
 
-    if not is_response(extra):
+    if not is_response(extra) or extra["exc_info_"]:
         return
 
     trace_data = extra[constants.TRACE_KEY]
