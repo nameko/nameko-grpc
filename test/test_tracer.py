@@ -89,7 +89,7 @@ def check_trace():
         data = record.nameko_trace
         for key, value in requires.items():
             if callable(value):
-                assert value(data[key])
+                assert value(data, key)
             else:
                 assert data[key] == value
 
@@ -99,6 +99,7 @@ def check_trace():
 @pytest.fixture
 def check_format():
 
+    # TODO install formatter when starting service, rather than instaniating manually
     formatter = GrpcFormatter()
 
     def check(record, requires):
@@ -131,6 +132,7 @@ class TestEssentialFields:
         - stage
         - stream_part (for streams)
         - stream_age (for streams)
+        - context_data  # TODO: this, plus check format
 
     """
 
@@ -143,7 +145,7 @@ class TestEssentialFields:
 
         common = {
             "hostname": socket.gethostname(),
-            "timestamp": lambda dt: isinstance(dt, datetime),
+            "timestamp": lambda data, key: isinstance(data[key], datetime),
             "entrypoint_name": "unary_unary",
             "entrypoint_type": "Grpc",
             "service": "example",
@@ -172,7 +174,7 @@ class TestEssentialFields:
 
         common = {
             "hostname": socket.gethostname(),
-            "timestamp": lambda dt: isinstance(dt, datetime),
+            "timestamp": lambda data, key: isinstance(data[key], datetime),
             "entrypoint_name": "unary_stream",
             "entrypoint_type": "Grpc",
             "service": "example",
@@ -196,7 +198,7 @@ class TestEssentialFields:
                     **{
                         "stage": "response",
                         "stream_part": index + 1,
-                        "stream_age": lambda value: value > 0,
+                        "stream_age": lambda data, key: data[key] > 0,
                     }
                 ),
             )
@@ -214,7 +216,7 @@ class TestEssentialFields:
 
         common = {
             "hostname": socket.gethostname(),
-            "timestamp": lambda dt: isinstance(dt, datetime),
+            "timestamp": lambda data, key: isinstance(data[key], datetime),
             "entrypoint_name": "stream_unary",
             "entrypoint_type": "Grpc",
             "service": "example",
@@ -236,7 +238,7 @@ class TestEssentialFields:
                     **{
                         "stage": "request",
                         "stream_part": index + 1,
-                        "stream_age": lambda value: value > 0,
+                        "stream_age": lambda data, key: data[key] > 0,
                     }
                 ),
             )
@@ -259,7 +261,7 @@ class TestEssentialFields:
 
         common = {
             "hostname": socket.gethostname(),
-            "timestamp": lambda dt: isinstance(dt, datetime),
+            "timestamp": lambda data, key: isinstance(data[key], datetime),
             "entrypoint_name": "stream_stream",
             "entrypoint_type": "Grpc",
             "service": "example",
@@ -281,7 +283,7 @@ class TestEssentialFields:
                     **{
                         "stage": "request",
                         "stream_part": index + 1,
-                        "stream_age": lambda value: value > 0,
+                        "stream_age": lambda data, key: data[key] > 0,
                     }
                 ),
             )
@@ -295,7 +297,7 @@ class TestEssentialFields:
                     **{
                         "stage": "response",
                         "stream_part": index + 1,
-                        "stream_age": lambda value: value > 0,
+                        "stream_age": lambda data, key: data[key] > 0,
                     }
                 ),
             )
@@ -313,7 +315,7 @@ class TestEssentialFields:
 
         common = {
             "hostname": socket.gethostname(),
-            "timestamp": lambda dt: isinstance(dt, datetime),
+            "timestamp": lambda data, key: isinstance(data[key], datetime),
             "entrypoint_name": "unary_error",
             "entrypoint_type": "Grpc",
             "service": "example",
@@ -350,7 +352,7 @@ class TestEssentialFields:
 
         common = {
             "hostname": socket.gethostname(),
-            "timestamp": lambda dt: isinstance(dt, datetime),
+            "timestamp": lambda data, key: isinstance(data[key], datetime),
             "entrypoint_name": "stream_error",
             "entrypoint_type": "Grpc",
             "service": "example",
@@ -374,7 +376,7 @@ class TestEssentialFields:
                     **{
                         "stage": "response",
                         "stream_part": index + 1,
-                        "stream_age": lambda value: value > 0,
+                        "stream_age": lambda data, key: data[key] > 0,
                     }
                 ),
             )
@@ -499,7 +501,7 @@ class TestResponseFields:
             {
                 "response": GRPC_RESPONSE,
                 "response_status": "success",
-                "response_time": lambda value: value > 0,
+                "response_time": lambda data, key: data[key] > 0,
             },
         )
 
@@ -520,7 +522,7 @@ class TestResponseFields:
             {
                 "response": GRPC_STREAM,  # streaming response
                 "response_status": None,  # still pending
-                "response_time": lambda value: value > 0,
+                "response_time": lambda data, key: data[key] > 0,
             },
         )
 
@@ -531,7 +533,7 @@ class TestResponseFields:
                 {
                     "response": GRPC_RESPONSE,  # individual response
                     "response_status": "success",
-                    "response_time": lambda value: value > 0,
+                    "response_time": lambda data, key: data[key] > 0,
                 },
             )
 
@@ -551,7 +553,7 @@ class TestResponseFields:
             {
                 "response": GRPC_RESPONSE,
                 "response_status": "success",
-                "response_time": lambda value: value > 0,
+                "response_time": lambda data, key: data[key] > 0,
             },
         )
 
@@ -576,7 +578,7 @@ class TestResponseFields:
             {
                 "response": GRPC_STREAM,  # streaming response
                 "response_status": None,  # still pending
-                "response_time": lambda value: value > 0,
+                "response_time": lambda data, key: data[key] > 0,
             },
         )
 
@@ -587,7 +589,7 @@ class TestResponseFields:
                 {
                     "response": GRPC_RESPONSE,  # individual response
                     "response_status": "success",
-                    "response_time": lambda value: value > 0,
+                    "response_time": lambda data, key: data[key] > 0,
                 },
             )
 
@@ -607,7 +609,7 @@ class TestResponseFields:
             {
                 "response": GRPC_RESPONSE,
                 "response_status": "error",
-                "response_time": lambda value: value > 0,
+                "response_time": lambda data, key: data[key] > 0,
             },
         )
 
@@ -636,7 +638,7 @@ class TestResponseFields:
             {
                 "response": GRPC_STREAM,  # streaming response
                 "response_status": None,  # still pending
-                "response_time": lambda value: value > 0,
+                "response_time": lambda data, key: data[key] > 0,
             },
         )
 
@@ -649,7 +651,7 @@ class TestResponseFields:
                 {
                     "response": GRPC_RESPONSE,  # individual response
                     "response_status": "success",
-                    "response_time": lambda value: value > 0,
+                    "response_time": lambda data, key: data[key] > 0,
                 },
             )
 
@@ -659,7 +661,7 @@ class TestResponseFields:
             {
                 "response": GRPC_RESPONSE,  # XXX wrong
                 "response_status": "error",
-                "response_time": lambda value: value > 0,
+                "response_time": lambda data, key: data[key] > 0,
             },
         )
 
@@ -827,7 +829,7 @@ class TestGrpcResponseFields:
         request_trace, response_trace, request_stream, result_stream = get_log_records()
 
         check_trace(response_trace, {"grpc_response": response})
-        check_format(response_trace, {"grpc_response": response})
+        check_format(response_trace, {"grpc_response": MessageToJson(response)})
 
         assert len(result_stream) == 0
 
@@ -864,7 +866,7 @@ class TestGrpcContextFields:
 
         request_trace, response_trace, request_stream, result_stream = get_log_records()
 
-        common = {"grpc_context": lambda value: isinstance(value, GrpcContext)}
+        common = {"grpc_context": lambda data, key: isinstance(data[key], GrpcContext)}
 
         check_trace(request_trace, common)
 
@@ -884,7 +886,7 @@ class TestGrpcContextFields:
 
         request_trace, response_trace, request_stream, result_stream = get_log_records()
 
-        common = {"grpc_context": lambda value: isinstance(value, GrpcContext)}
+        common = {"grpc_context": lambda data, key: isinstance(data[key], GrpcContext)}
 
         check_trace(request_trace, common)
 
@@ -907,7 +909,7 @@ class TestGrpcContextFields:
 
         request_trace, response_trace, request_stream, result_stream = get_log_records()
 
-        common = {"grpc_context": lambda value: isinstance(value, GrpcContext)}
+        common = {"grpc_context": lambda data, key: isinstance(data[key], GrpcContext)}
 
         check_trace(request_trace, common)
 
@@ -933,7 +935,7 @@ class TestGrpcContextFields:
 
         request_trace, response_trace, request_stream, result_stream = get_log_records()
 
-        common = {"grpc_context": lambda value: isinstance(value, GrpcContext)}
+        common = {"grpc_context": lambda data, key: isinstance(data[key], GrpcContext)}
 
         check_trace(request_trace, common)
 
@@ -1039,15 +1041,20 @@ class TestExceptionFields:
         check_trace(
             response_trace,
             {
+                "response": GRPC_RESPONSE,  # XXX wrong
                 "response_status": "error",
                 "exception_value": "boom",
                 "exception_type": "Error",
                 "exception_path": "example_nameko.Error",
                 "exception_args": ["boom"],
-                "exception_traceback": lambda tb: 'raise Error("boom")' in tb,
+                "exception_traceback": (
+                    lambda data, key: 'raise Error("boom")' in data[key]
+                ),
                 "exception_expected": True,
             },
         )
+
+        # TODO: check format of exception_args
 
         assert len(result_stream) == 0
 
@@ -1089,7 +1096,11 @@ class TestExceptionFields:
                 "exception_type": "Error",
                 "exception_path": "example_nameko.Error",
                 "exception_args": ["boom"],
-                "exception_traceback": lambda tb: 'raise Error("boom")' in tb,
+                "exception_traceback": (
+                    lambda data, key: 'raise Error("boom")' in data[key]
+                ),
                 "exception_expected": True,
             },
         )
+
+        # TODO: check format of exception_args
