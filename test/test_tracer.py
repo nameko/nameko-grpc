@@ -857,6 +857,52 @@ class TestGrpcResponseFields:
             check_trace(trace, {"grpc_response": responses[index]})
             check_format(trace, {"grpc_response": MessageToJson(responses[index])})
 
+    def test_error_before_response(
+        self, client, protobufs, get_log_records, check_trace
+    ):
+        request = protobufs.ExampleRequest(value="A")
+        with pytest.raises(GrpcError) as error:
+            client.unary_error(request)
+        assert error.value.status == StatusCode.UNKNOWN
+        assert error.value.details == "Exception calling application: boom"
+
+        request_trace, response_trace, request_stream, result_stream = get_log_records()
+
+        check_trace(response_trace, {"grpc_response": None})
+
+        assert len(result_stream) == 0
+
+    def test_error_while_streaming_response(
+        self, client, protobufs, get_log_records, check_trace
+    ):
+
+        # NOTE it's important that the server sleeps between streaming responses
+        # otherwise it terminates the stream with an error before any parts of the
+        # response stream are put on the wire
+        request = protobufs.ExampleRequest(value="A", response_count=10, delay=10)
+        responses = []
+        with pytest.raises(GrpcError) as error:
+            for response in client.stream_error(request):
+                responses.append(response)
+
+        assert error.value.status == StatusCode.UNKNOWN
+        assert error.value.details == "Exception iterating responses: boom"
+
+        request_trace, response_trace, request_stream, result_stream = get_log_records()
+
+        check_trace(
+            response_trace, {"grpc_response": GRPC_STREAM}  # streaming response
+        )
+
+        assert len(result_stream) == 10
+
+        # check first 9 stream parts
+        for index, trace in enumerate(result_stream[:-1]):
+            check_trace(trace, {"grpc_response": responses[index]})
+
+        # check last stream part
+        check_trace(result_stream[-1], {"grpc_response": None})
+
 
 class TestGrpcContextFields:
     def test_unary_unary(self, client, protobufs, get_log_records, check_trace):
