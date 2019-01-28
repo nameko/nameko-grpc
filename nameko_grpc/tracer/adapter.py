@@ -87,10 +87,6 @@ def add_stream_age(extra):
     trace_data["stream_age"] = extra["stream_age"]
 
 
-# ^^^^^ done
-# vvvvv TODO
-
-
 def add_grpc_request(extra):
     """ Add the GRPC request message to the trace data for this record, under the
     `grpc_request` key.

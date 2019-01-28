@@ -132,13 +132,15 @@ class TestEssentialFields:
         - stage
         - stream_part (for streams)
         - stream_age (for streams)
-        - context_data  # TODO: this, plus check format
+        - context_data
 
     """
 
-    def test_unary_unary(self, client, protobufs, get_log_records, check_trace):
+    def test_unary_unary(
+        self, client, protobufs, get_log_records, check_trace, check_format
+    ):
         request = protobufs.ExampleRequest(value="A")
-        response = client.unary_unary(request)
+        response = client.unary_unary(request, metadata=[("foo", "bar")])
         assert response.message == "A"
 
         request_trace, response_trace, request_stream, result_stream = get_log_records()
@@ -152,19 +154,24 @@ class TestEssentialFields:
             "cardinality": Cardinality.UNARY_UNARY,
             "call_id": "example.unary_unary.0",
             "call_id_stack": ["example.unary_unary.0"],
+            "context_data": {"foo": "bar"},
         }
 
         check_trace(request_trace, dict(common, **{"stage": "request"}))
+        check_format(request_trace, {"context_data": '{"foo": "bar"}'})
 
         check_trace(response_trace, dict(common, **{"stage": "response"}))
+        check_format(response_trace, {"context_data": '{"foo": "bar"}'})
 
         assert len(request_stream) == 0
 
         assert len(result_stream) == 0
 
-    def test_unary_stream(self, client, protobufs, get_log_records, check_trace):
+    def test_unary_stream(
+        self, client, protobufs, get_log_records, check_trace, check_format
+    ):
         request = protobufs.ExampleRequest(value="A", response_count=2)
-        responses = list(client.unary_stream(request))
+        responses = list(client.unary_stream(request, metadata=[("foo", "bar")]))
         assert [(response.message, response.seqno) for response in responses] == [
             ("A", 1),
             ("A", 2),
@@ -181,11 +188,14 @@ class TestEssentialFields:
             "cardinality": Cardinality.UNARY_STREAM,
             "call_id": "example.unary_stream.0",
             "call_id_stack": ["example.unary_stream.0"],
+            "context_data": {"foo": "bar"},
         }
 
         check_trace(request_trace, dict(common, **{"stage": "request"}))
+        check_format(request_trace, {"context_data": '{"foo": "bar"}'})
 
         check_trace(response_trace, dict(common, **{"stage": "response"}))
+        check_format(response_trace, {"context_data": '{"foo": "bar"}'})
 
         assert len(request_stream) == 0
 
@@ -203,13 +213,15 @@ class TestEssentialFields:
                 ),
             )
 
-    def test_stream_unary(self, client, protobufs, get_log_records, check_trace):
+    def test_stream_unary(
+        self, client, protobufs, get_log_records, check_trace, check_format
+    ):
         def generate_requests():
             for value in ["A", "B"]:
                 yield protobufs.ExampleRequest(value=value)
 
         requests = list(generate_requests())
-        response = client.stream_unary(requests)
+        response = client.stream_unary(requests, metadata=[("foo", "bar")])
         assert response.message == "A,B"
 
         request_trace, response_trace, request_stream, result_stream = get_log_records()
@@ -223,11 +235,14 @@ class TestEssentialFields:
             "cardinality": Cardinality.STREAM_UNARY,
             "call_id": "example.stream_unary.0",
             "call_id_stack": ["example.stream_unary.0"],
+            "context_data": {"foo": "bar"},
         }
 
         check_trace(request_trace, dict(common, **{"stage": "request"}))
+        check_format(request_trace, {"context_data": '{"foo": "bar"}'})
 
         check_trace(response_trace, dict(common, **{"stage": "response"}))
+        check_format(response_trace, {"context_data": '{"foo": "bar"}'})
 
         assert len(request_stream) == 2
         for index, trace in enumerate(request_stream):
@@ -245,13 +260,15 @@ class TestEssentialFields:
 
         assert len(result_stream) == 0
 
-    def test_stream_stream(self, client, protobufs, get_log_records, check_trace):
+    def test_stream_stream(
+        self, client, protobufs, get_log_records, check_trace, check_format
+    ):
         def generate_requests():
             for value in ["A", "B"]:
                 yield protobufs.ExampleRequest(value=value)
 
         requests = list(generate_requests())
-        responses = list(client.stream_stream(requests))
+        responses = list(client.stream_stream(requests, metadata=[("foo", "bar")]))
         assert [(response.message, response.seqno) for response in responses] == [
             ("A", 1),
             ("B", 2),
@@ -268,11 +285,14 @@ class TestEssentialFields:
             "cardinality": Cardinality.STREAM_STREAM,
             "call_id": "example.stream_stream.0",
             "call_id_stack": ["example.stream_stream.0"],
+            "context_data": {"foo": "bar"},
         }
 
         check_trace(request_trace, dict(common, **{"stage": "request"}))
+        check_format(request_trace, {"context_data": '{"foo": "bar"}'})
 
         check_trace(response_trace, dict(common, **{"stage": "response"}))
+        check_format(response_trace, {"context_data": '{"foo": "bar"}'})
 
         assert len(request_stream) == 2
         for index, trace in enumerate(request_stream):
@@ -303,11 +323,11 @@ class TestEssentialFields:
             )
 
     def test_error_before_response(
-        self, client, protobufs, get_log_records, check_trace
+        self, client, protobufs, get_log_records, check_trace, check_format
     ):
         request = protobufs.ExampleRequest(value="A")
         with pytest.raises(GrpcError) as error:
-            client.unary_error(request)
+            client.unary_error(request, metadata=[("foo", "bar")])
         assert error.value.status == StatusCode.UNKNOWN
         assert error.value.details == "Exception calling application: boom"
 
@@ -322,18 +342,21 @@ class TestEssentialFields:
             "cardinality": Cardinality.UNARY_UNARY,
             "call_id": "example.unary_error.0",
             "call_id_stack": ["example.unary_error.0"],
+            "context_data": {"foo": "bar"},
         }
 
         check_trace(request_trace, dict(common, **{"stage": "request"}))
+        check_format(request_trace, {"context_data": '{"foo": "bar"}'})
 
         check_trace(response_trace, dict(common, **{"stage": "response"}))
+        check_format(response_trace, {"context_data": '{"foo": "bar"}'})
 
         assert len(request_stream) == 0
 
         assert len(result_stream) == 0
 
     def test_error_while_streaming_response(
-        self, client, protobufs, get_log_records, check_trace
+        self, client, protobufs, get_log_records, check_trace, check_format
     ):
 
         # NOTE it's important that the server sleeps between streaming responses
@@ -342,7 +365,7 @@ class TestEssentialFields:
         request = protobufs.ExampleRequest(value="A", response_count=10, delay=10)
         responses = []
         with pytest.raises(GrpcError) as error:
-            for response in client.stream_error(request):
+            for response in client.stream_error(request, metadata=[("foo", "bar")]):
                 responses.append(response)
 
         assert error.value.status == StatusCode.UNKNOWN
@@ -359,11 +382,14 @@ class TestEssentialFields:
             "cardinality": Cardinality.UNARY_STREAM,
             "call_id": "example.stream_error.0",
             "call_id_stack": ["example.stream_error.0"],
+            "context_data": {"foo": "bar"},
         }
 
         check_trace(request_trace, dict(common, **{"stage": "request"}))
+        check_format(request_trace, {"context_data": '{"foo": "bar"}'})
 
         check_trace(response_trace, dict(common, **{"stage": "response"}))
+        check_format(response_trace, {"context_data": '{"foo": "bar"}'})
 
         assert len(request_stream) == 0
 
