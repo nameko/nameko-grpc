@@ -930,7 +930,7 @@ class TestGrpcResponseFields:
         check_trace(result_stream[-1], {"grpc_response": None})
 
 
-class TestGrpcContextFields:
+class TestGrpcContextField:
     def test_unary_unary(self, client, protobufs, get_log_records, check_trace):
         request = protobufs.ExampleRequest(value="A")
         response = client.unary_unary(request)
@@ -1100,7 +1100,7 @@ class TestGrpcContextFields:
 
 class TestExceptionFields:
     def test_error_before_response(
-        self, client, protobufs, get_log_records, check_trace
+        self, client, protobufs, get_log_records, check_trace, check_format
     ):
         request = protobufs.ExampleRequest(value="A")
         with pytest.raises(GrpcError) as error:
@@ -1124,12 +1124,12 @@ class TestExceptionFields:
             },
         )
 
-        # TODO: check format of exception_args
+        check_format(response_trace, {"exception_args": json.dumps(["boom"])})
 
         assert len(result_stream) == 0
 
     def test_error_while_streaming_response(
-        self, client, protobufs, get_log_records, check_trace
+        self, client, protobufs, get_log_records, check_trace, check_format
     ):
 
         # NOTE it's important that the server sleeps between streaming responses
@@ -1168,5 +1168,4 @@ class TestExceptionFields:
                 "exception_expected": True,
             },
         )
-
-        # TODO: check format of exception_args
+        check_format(result_stream[-1], {"exception_args": json.dumps(["boom"])})
