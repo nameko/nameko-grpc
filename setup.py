@@ -22,6 +22,7 @@ setup(
     packages=find_packages(exclude=["test", "test.*"]),
     install_requires=["nameko", "h2>=3"],
     extras_require={
+        "tracer": ["nameko_tracer"],
         "dev": [
             "pytest",
             "grpcio",
@@ -30,7 +31,7 @@ setup(
             "pre-commit",
             "wrapt",
             "zmq",
-        ]
+        ],
     },
     zip_safe=True,
     license="Apache License, Version 2.0",

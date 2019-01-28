@@ -17,6 +17,7 @@ from nameko_grpc.exceptions import GrpcError
 from nameko_grpc.inspection import Inspector
 from nameko_grpc.streams import ReceiveStream, SendStream
 from nameko_grpc.timeout import unbucket_timeout
+from nameko_grpc.utils import Teeable
 
 
 log = getLogger(__name__)
@@ -234,6 +235,8 @@ class Grpc(Entrypoint):
 
         if self.cardinality in (Cardinality.UNARY_STREAM, Cardinality.UNARY_UNARY):
             request = next(request)
+        else:
+            request = Teeable(request)
 
         context = GrpcContext(request_stream, response_stream)
 
@@ -261,18 +264,28 @@ class Grpc(Entrypoint):
     def handle_result(self, response_stream, worker_ctx, result, exc_info):
 
         if self.cardinality in (Cardinality.STREAM_UNARY, Cardinality.UNARY_UNARY):
-            result = (result,)
+            response = (result,)
+        else:
+            result = Teeable(result)
+            response = result
 
         if exc_info is None:
-            try:
-                response_stream.populate(result)
-            except Exception as exception:
-                error = GrpcError(
-                    status=StatusCode.UNKNOWN,
-                    details="Exception iterating responses: {}".format(exception),
-                    debug_error_string="<traceback>",
-                )
-                response_stream.close(error)
+
+            def send_response():
+                try:
+                    response_stream.populate(response)
+                except Exception as exception:
+                    error = GrpcError(
+                        status=StatusCode.UNKNOWN,
+                        details="Exception iterating responses: {}".format(exception),
+                        debug_error_string="<traceback>",
+                    )
+                    response_stream.close(error)
+
+            self.container.spawn_managed_thread(
+                send_response, identifier="send_response"
+            )
+
         else:
             error = GrpcError(
                 status=StatusCode.UNKNOWN,
