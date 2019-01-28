@@ -21,7 +21,7 @@ from nameko_grpc.tracer.adapter import (
     GRPC_RESPONSE,
     GRPC_STREAM,
 )
-from nameko_grpc.tracer.formatter import GrpcFormatter
+from nameko_grpc.tracer.formatter import GrpcJsonFormatter
 
 
 @pytest.fixture
@@ -99,10 +99,10 @@ def check_trace():
 @pytest.fixture
 def check_format():
 
-    # TODO install formatter when starting service, rather than instaniating manually
-    formatter = GrpcFormatter()
+    formatter = GrpcJsonFormatter()
 
     def check(record, requires):
+
         formatted = formatter.format(record)
         data = json.loads(formatted)
         for key, value in requires.items():
@@ -158,10 +158,16 @@ class TestEssentialFields:
         }
 
         check_trace(request_trace, dict(common, **{"stage": "request"}))
-        check_format(request_trace, {"context_data": '{"foo": "bar"}'})
+        check_format(
+            request_trace,
+            {"context_data": '{"foo": "bar"}', "cardinality": "UNARY_UNARY"},
+        )
 
         check_trace(response_trace, dict(common, **{"stage": "response"}))
-        check_format(response_trace, {"context_data": '{"foo": "bar"}'})
+        check_format(
+            response_trace,
+            {"context_data": '{"foo": "bar"}', "cardinality": "UNARY_UNARY"},
+        )
 
         assert len(request_stream) == 0
 
@@ -192,10 +198,16 @@ class TestEssentialFields:
         }
 
         check_trace(request_trace, dict(common, **{"stage": "request"}))
-        check_format(request_trace, {"context_data": '{"foo": "bar"}'})
+        check_format(
+            request_trace,
+            {"context_data": '{"foo": "bar"}', "cardinality": "UNARY_STREAM"},
+        )
 
         check_trace(response_trace, dict(common, **{"stage": "response"}))
-        check_format(response_trace, {"context_data": '{"foo": "bar"}'})
+        check_format(
+            response_trace,
+            {"context_data": '{"foo": "bar"}', "cardinality": "UNARY_STREAM"},
+        )
 
         assert len(request_stream) == 0
 
@@ -239,10 +251,16 @@ class TestEssentialFields:
         }
 
         check_trace(request_trace, dict(common, **{"stage": "request"}))
-        check_format(request_trace, {"context_data": '{"foo": "bar"}'})
+        check_format(
+            request_trace,
+            {"context_data": '{"foo": "bar"}', "cardinality": "STREAM_UNARY"},
+        )
 
         check_trace(response_trace, dict(common, **{"stage": "response"}))
-        check_format(response_trace, {"context_data": '{"foo": "bar"}'})
+        check_format(
+            response_trace,
+            {"context_data": '{"foo": "bar"}', "cardinality": "STREAM_UNARY"},
+        )
 
         assert len(request_stream) == 2
         for index, trace in enumerate(request_stream):
@@ -289,10 +307,16 @@ class TestEssentialFields:
         }
 
         check_trace(request_trace, dict(common, **{"stage": "request"}))
-        check_format(request_trace, {"context_data": '{"foo": "bar"}'})
+        check_format(
+            request_trace,
+            {"context_data": '{"foo": "bar"}', "cardinality": "STREAM_STREAM"},
+        )
 
         check_trace(response_trace, dict(common, **{"stage": "response"}))
-        check_format(response_trace, {"context_data": '{"foo": "bar"}'})
+        check_format(
+            response_trace,
+            {"context_data": '{"foo": "bar"}', "cardinality": "STREAM_STREAM"},
+        )
 
         assert len(request_stream) == 2
         for index, trace in enumerate(request_stream):
@@ -346,10 +370,16 @@ class TestEssentialFields:
         }
 
         check_trace(request_trace, dict(common, **{"stage": "request"}))
-        check_format(request_trace, {"context_data": '{"foo": "bar"}'})
+        check_format(
+            request_trace,
+            {"context_data": '{"foo": "bar"}', "cardinality": "UNARY_UNARY"},
+        )
 
         check_trace(response_trace, dict(common, **{"stage": "response"}))
-        check_format(response_trace, {"context_data": '{"foo": "bar"}'})
+        check_format(
+            response_trace,
+            {"context_data": '{"foo": "bar"}', "cardinality": "UNARY_UNARY"},
+        )
 
         assert len(request_stream) == 0
 
@@ -386,10 +416,16 @@ class TestEssentialFields:
         }
 
         check_trace(request_trace, dict(common, **{"stage": "request"}))
-        check_format(request_trace, {"context_data": '{"foo": "bar"}'})
+        check_format(
+            request_trace,
+            {"context_data": '{"foo": "bar"}', "cardinality": "UNARY_STREAM"},
+        )
 
         check_trace(response_trace, dict(common, **{"stage": "response"}))
-        check_format(response_trace, {"context_data": '{"foo": "bar"}'})
+        check_format(
+            response_trace,
+            {"context_data": '{"foo": "bar"}', "cardinality": "UNARY_STREAM"},
+        )
 
         assert len(request_stream) == 0
 

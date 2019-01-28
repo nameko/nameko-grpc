@@ -5,6 +5,7 @@ from google.protobuf.json_format import MessageToJson
 from nameko_tracer import constants
 from nameko_tracer.formatters import JSONFormatter
 
+from nameko_grpc.constants import Cardinality
 from nameko_grpc.context import GrpcContext
 
 
@@ -21,6 +22,12 @@ def default(obj):
             "response_trailers": obj.response_stream.trailers.for_application,
         }
 
+    try:
+        if obj in Cardinality:
+            return obj.name
+    except TypeError:
+        pass  # https://docs.python.org/3/whatsnew/3.7.html#enum
+
     return str(obj)
 
 
@@ -28,7 +35,7 @@ def serialise(obj):
     return json.dumps(obj, default=default)
 
 
-class GrpcFormatter(JSONFormatter):
+class GrpcJsonFormatter(JSONFormatter):
 
     extra_serialise_keys = (
         constants.CONTEXT_DATA_KEY,
