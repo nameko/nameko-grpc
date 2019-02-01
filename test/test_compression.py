@@ -283,15 +283,32 @@ class TestCompress:
 
 
 class TestSelectAlgorithm:
-    def test_preferred_algorithm(self):
-        assert select_algorithm("deflate,gzip,unsupported") == "deflate"
+    @pytest.mark.parametrize("preferred", ["deflate", "gzip", "identity"])
+    def test_preferred_algorithm_available(self, preferred):
+        acceptable = "deflate,gzip,identity"
+        expected = preferred
+        assert select_algorithm(acceptable, preferred) == expected
 
-    def test_fallback_algorithm(self):
-        assert select_algorithm("unsupported,gzip,identity") == "gzip"
+    def test_preferred_algorithm_is_null(self):
+        acceptable = "deflate,gzip,identity"
+        preferred = None
+        expected = "deflate"
+        assert select_algorithm(acceptable, preferred) == expected
 
-    def test_identity(self):
-        assert select_algorithm("unsupported,identity") == "identity"
+    def test_fallback_to_supported_algorithm(self):
+        acceptable = "minify,gzip,identity"
+        preferred = "minify"
+        expected = "gzip"
+        assert select_algorithm(acceptable, preferred) == expected
 
-    def test_unsupported_algo(self):
+    def test_fallback_to_identity(self):
+        acceptable = "minify,identity"
+        preferred = "minify"
+        expected = "identity"
+        assert select_algorithm(acceptable, preferred) == expected
+
+    def test_no_supported_algo(self):
+        acceptable = "minify"
+        preferred = "minify"
         with pytest.raises(UnsupportedEncoding):
-            select_algorithm("unsupported")
+            select_algorithm(acceptable, preferred)
