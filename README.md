@@ -136,13 +136,51 @@ message ExampleReply {
 
 The example protobufs in this repo use `snake_case` for method names as per the Nameko conventions rather than `CamelCase` as per GRPC. This is not mandatory -- decorated method names simply match to the methods defined in the protobufs; similarly for service names.
 
-## More
+## Context and Metadata
 
-* Context
-* using the client; metadata etc.
-* Compression
-* Errors
-* Timeouts
+Insofar as it as implemented, the `GrpcContext` object available as the second argument to servic methods as the same API as the standard Python implementation:
+
+* `context.invocation_metadata()` returns any metadata provided by the calling client.
+* `context.send_initial_metadata()` can be used to send metadata in the response headers.
+* `context.set_trailing_metadata()` can be used  to sent metadata in the response trailers.
+
+The standalone Client and DependencyProvider both allow metadata to be provided using the `metadata` keyword argument. They accept a list of `(name, value)` tuples, just as the standard Python client. Binary values must be base64 encoded and used a header name postfixed with "-bin", again just as the standard Python client.
+
+## Compression
+
+Compression is supported in both the server and the client. The `deflate` and `gzip` algorithms are available by default and will be included in the `grpc-accept-encoding` headers on requests from the client and responses from the server.
+
+The server honours any acceptable compression that it is able to, preferring to encode the response with the same algorithm as the request.
+
+A default compression algorithm is specified when creating the client, and can be overriden per-call using the `compression` keyword argument:
+
+``` python
+client = Client(default_compression="deflate", ...)
+client.unary_unary(ExampleRequest(value="foo"), compression="gzip")  # use gzip instead
+```
+
+Compression levels are not supported.
+
+The GRPC spec allows for the server to respond using a different algorithm from the request, or not compressing at all. This is not currently supported in the standard Python GRPC implementation nor nameko-grpc.
+
+
+## Errors
+
+GRPC errors are raised by the client as instances of the `GrpcError` exception class. Similar to the `grpc.RpcError` class defined in the standard Python GRPC client, a `GrpcError` encapsulates the [status code](https://github.com/grpc/grpc/blob/master/doc/statuscodes.md), a `details` string describing the error in more detail, and `debug_error_string`, a stringified traceback of the call stack when the error was raised.
+
+
+## Timeouts
+
+The client and server both support timeouts, and will raise `DEADLINE_EXCEEDED` if an RPC has not completed within the allocated time. The clock starts ticking on the client when the request is initiated, and on the server when it is receieved.
+
+The deadline is calculated as the current time plus the timeout value.
+
+On the client, the timeout value is specified an in seconds by using the `timeout` keyword argument when invoking a method:
+
+``` python
+client = Client(...)
+client.unary_unary(ExampleRequest(value="foo"), timeout=0.1)  # 100 ms timeout
+```
 
 ## Tests
 
@@ -190,8 +228,6 @@ The GRPC Entrypoint is a normal Nameko entrypoint that executes a service method
 The standalone Client is a small wrapper around a `ClientConnectionManager`. The Client simply creates a socket connection and then hands it to the connection manager. When a method is invoked on the client, the connection manager initates an appropriate request. The headers for that request describe the method being invoked, encodings, message types etc. This logic is all encapulated into the `Method` class.
 
 The GRPC DependencyProvider is a normal Nameko DependencyProvider, which is also just a small wrapper around a `ClientConnectionManager`. It functions in exactly the same manner as the standalone Client.
-
-The Entrypoint and both clients implement timeout logic and will raise a `Deadline Exceeded` error if the call has not been completed before the deadline is reached.
 
 
 ## Equivalence tests notes
