@@ -138,21 +138,25 @@ The example protobufs in this repo use `snake_case` for method names as per the 
 
 ## Context and Metadata
 
-Insofar as it as implemented, the `GrpcContext` object available as the second argument to servic methods as the same API as the standard Python implementation:
+Insofar as it as implemented, the `context` argument to service methods has the same API as the standard Python implementation:
 
 * `context.invocation_metadata()` returns any metadata provided by the calling client.
-* `context.send_initial_metadata()` can be used to send metadata in the response headers.
-* `context.set_trailing_metadata()` can be used  to sent metadata in the response trailers.
+* `context.send_initial_metadata()` can be used to add metadata to the response headers.
+* `context.set_trailing_metadata()` can be used to add metadata to the response trailers.
 
-The standalone Client and DependencyProvider both allow metadata to be provided using the `metadata` keyword argument. They accept a list of `(name, value)` tuples, just as the standard Python client. Binary values must be base64 encoded and used a header name postfixed with "-bin", again just as the standard Python client.
+The standalone Client and DependencyProvider both allow metadata to be provided using the `metadata` keyword argument. They accept a list of `(name, value)` tuples, just as the standard Python client does. Binary values must be base64 encoded and use a header name postfixed with "-bin", as in the standard Python client.
+
+GRPC request metadata is added to the "context data" of the Nameko worker context, so is availble to other Nameko extensions.
+
+The DependencyProvider client adds Nameko worker context data as metadata to all GRPC requests. This allows the Nameko call id stack to be populated and propagate, along with any other context data.
 
 ## Compression
 
 Compression is supported in both the server and the client. The `deflate` and `gzip` algorithms are available by default and will be included in the `grpc-accept-encoding` headers on requests from the client and responses from the server.
 
-The server honours any acceptable compression that it is able to, preferring to encode the response with the same algorithm as the request.
+The server honours any acceptable compression algorithm that it is able to, preferring to encode the response with the same algorithm as the request.
 
-A default compression algorithm is specified when creating the client, and can be overriden per-call using the `compression` keyword argument:
+A default compression algorithm is specified when creating the client, and/or can specified per-call using the `compression` keyword argument:
 
 ``` python
 client = Client(default_compression="deflate", ...)
@@ -166,16 +170,16 @@ The GRPC spec allows for the server to respond using a different algorithm from 
 
 ## Errors
 
-GRPC errors are raised by the client as instances of the `GrpcError` exception class. Similar to the `grpc.RpcError` class defined in the standard Python GRPC client, a `GrpcError` encapsulates the [status code](https://github.com/grpc/grpc/blob/master/doc/statuscodes.md), a `details` string describing the error in more detail, and `debug_error_string`, a stringified traceback of the call stack when the error was raised.
+GRPC errors are raised by the client as instances of the `GrpcError` exception class. Similar to the `grpc.RpcError` class defined in the standard Python GRPC client, a `GrpcError` encapsulates the [status code](https://github.com/grpc/grpc/blob/master/doc/statuscodes.md), a `details` string describing the error, and `debug_error_string`, a stringified traceback of the call stack when the error was raised.
 
 
 ## Timeouts
 
-The client and server both support timeouts, and will raise `DEADLINE_EXCEEDED` if an RPC has not completed within the allocated time. The clock starts ticking on the client when the request is initiated, and on the server when it is receieved.
+The client and server both support timeouts, and will raise `DEADLINE_EXCEEDED` if an RPC has not completed within the requested time. The clock starts ticking on the client when the request is initiated, and on the server when it is receieved.
 
 The deadline is calculated as the current time plus the timeout value.
 
-On the client, the timeout value is specified an in seconds by using the `timeout` keyword argument when invoking a method:
+On the client, the timeout value is specified in seconds by using the `timeout` keyword argument when invoking a method:
 
 ``` python
 client = Client(...)
@@ -213,17 +217,17 @@ $ pytest test -m "not interop"
 
 ## Implementation Notes
 
-GRPC requests and responses are implemented as HTTP2 requests and responses, so nameko-grpc relies heavily on the [hyper-h2](https://python-hyper.org/projects/h2/en/stable/) library. H2 is a finite state-machine implementation of the HTTP2 protocol, and its documentation is very good. The code in nameko-grpc is much more understandable when you're familiar with h2.
+GRPC is built on HTTP2, so nameko-grpc relies heavily on the [hyper-h2](https://python-hyper.org/projects/h2/en/stable/) library. H2 is a finite state-machine implementation of the HTTP2 protocol, and its documentation is very good. The code in nameko-grpc is much more understandable when you're familiar with h2.
 
 Much of the heavy-lifting in nameko-grpc is done by either the server or client subclasses of `ConnectionManager`. A `ConnectionManager` handles a single HTTP2 connection, and implements the handlers for each HTTP2 event on that connection (e.g. `request_received` or `stream_ended`). See:
 
-* nameko_grpc/client.py::ClientConnectionManager
-* nameko_grpc/entrypoint.py::ServerConnectionManager
-* nameko_grpc/connection.py::ConnectionManager
+* `nameko_grpc/client.py::ClientConnectionManager`
+* `nameko_grpc/entrypoint.py::ServerConnectionManager`
+* `nameko_grpc/connection.py::ConnectionManager`
 
-The next most significant module is `nameko_grpc/streams.py`. This module contains the `SendStream` and `ReceiveStream` classes, which represent an HTTP2 stream that is being sent or received, respectively. `ReceiveStream`s receive data as bytes from a `ConnectionManager`, and parses them into a stream of GRPC messages. `SendStream`s do the opposite, encoding GRPC messages into bytes that can be sent across an HTTP2 connection.
+The next most significant module is `nameko_grpc/streams.py`. This module contains the `SendStream` and `ReceiveStream` classes, which represent an HTTP2 stream that is being sent or received, respectively. A `ReceiveStream` receives data as bytes from a `ConnectionManager`, and parses them into a stream of GRPC messages. A `SendStream` does the opposite, encoding GRPC messages into bytes that can be sent across an HTTP2 connection.
 
-The GRPC Entrypoint is a normal Nameko entrypoint that executes a service method when an appropriate request is made. The entrypoint deals with a `ReceiveStream` object encapulating the request, and a `SendStream` object that accepts the response. The streams are managed by a shared `GrpcServer`, which accepts incoming connections and wraps each in a `ServerConnectionManager`.
+The `@grpc` Entrypoint is a normal Nameko entrypoint that executes a service method when an appropriate request is made. The entrypoint deals with a `ReceiveStream` object encapulating the request, and a `SendStream` object that accepts the response. The streams are managed by a shared `GrpcServer`, which accepts incoming connections and wraps each in a `ServerConnectionManager`.
 
 The standalone Client is a small wrapper around a `ClientConnectionManager`. The Client simply creates a socket connection and then hands it to the connection manager. When a method is invoked on the client, the connection manager initates an appropriate request. The headers for that request describe the method being invoked, encodings, message types etc. This logic is all encapulated into the `Method` class.
 
