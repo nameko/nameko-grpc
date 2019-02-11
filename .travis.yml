@@ -28,6 +28,18 @@ matrix:
       dist: xenial
       sudo: true
       env: TOX_ENV=py37-test
+    - stage: deploy
+      script: skip
+      deploy:
+        provider: pypi
+        user: mattbennett
+        password:
+          secure: "XNqNjWiOyLcXYBEB22qgt+JAkWXEiRHXR6TEFq5ehk4IqmgqCnjqNjhtC95+fvKIRbfw56eNTgqNOl8DVnBYfHmwZLyh9+0HkOn1tczpOYT0iLzXajezvD+1GsexNQISnvKRXjin6svtJZb3HsW4jKj7+7/V9Qs0/X4Hn7btYC4QXoV+5jutYrW39xf2Wz1G/meudmGldAVOLQ+IkO1pltaK4bRRJKzBty9ZaupRqJ5eGwA/nn1SWmGLmBf6M2tFr86LaeZboXHbFoRuosEHKgG4WULI9ekU2DNJdYoWZGnDPNPgS/EynYczfkAhhnSxNQ+VH6y9NAnjWu8w9ysw3cILnXOblXbxT7KkVLjYjfshslQllJfRWek3FzxNOQKo1xYugG4lSVRF87gNOUhbPXVBQVifpZd9gk7IfhdpCkN6ZsluDFvgGU+ypyhYETqUXjwSaYT+/fCnLCsoSArXa+mM7vFlWkRLJhaP35g5VHTG5SBdiGhuHIvuRZh1L6qVoJ9bjugAbTb8vm7Otmywowt6uhbZkUNaSfJX1zC3VMsRZ8tZR6eJCohw6ppv2lwwfSXesfb1Kyo9amtfutDYhO0Kpdf8+i7QBsfNm3Sq/kXzhFUHi2akIuZtShIPmgC63D8A9mZhvHKE07f287+dwPGHyK+sKdUtnu7BRwoUyHg="
+        on:
+          tags: true
+          repo: nameko/nameko-grpc
+        distributions: "sdist bdist_wheel"
+
 
 script:
   - tox -e $TOX_ENV
