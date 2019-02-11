@@ -52,7 +52,8 @@ class ServerConnectionManager(ConnectionManager):
         request_stream.headers.set(*event.headers, from_wire=True)
 
         compression = select_algorithm(
-            request_stream.headers.get("grpc-accept-encoding")
+            request_stream.headers.get("grpc-accept-encoding"),
+            request_stream.headers.get("grpc-encoding"),
         )
 
         try:
