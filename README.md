@@ -29,6 +29,7 @@ Example Nameko service that can respond to GRPC requests:
 from example_pb2 import ExampleReply
 from example_pb2_grpc import exampleStub
 
+from nameko_grpc.entrypoint import Grpc
 
 grpc = Grpc.implementing(exampleStub)
 
@@ -73,6 +74,8 @@ from example_pb2 import ExampleReply
 from example_pb2_grpc import exampleStub
 
 from nameko.rpc import rpc
+
+from nameko_grpc.dependency_provider import GrpcProxy
 
 
 class ClientService:
@@ -138,7 +141,7 @@ The example protobufs in this repo use `snake_case` for method names as per the 
 
 ## Context and Metadata
 
-Insofar as it as implemented, the `context` argument to service methods has the same API as the standard Python implementation:
+Insofar as it is implemented, the `context` argument to service methods has the same API as the standard Python implementation:
 
 * `context.invocation_metadata()` returns any metadata provided by the calling client.
 * `context.send_initial_metadata()` can be used to add metadata to the response headers.
@@ -175,7 +178,7 @@ GRPC errors are raised by the client as instances of the `GrpcError` exception c
 
 ## Timeouts
 
-The client and server both support timeouts, and will raise `DEADLINE_EXCEEDED` if an RPC has not completed within the requested time. The clock starts ticking on the client when the request is initiated, and on the server when it is receieved.
+The client and server both support timeouts, and will raise `DEADLINE_EXCEEDED` if an RPC has not completed within the requested time. The clock starts ticking on the client when the request is initiated, and on the server when it is received.
 
 The deadline is calculated as the current time plus the timeout value.
 
@@ -186,17 +189,19 @@ client = Client(...)
 client.unary_unary(ExampleRequest(value="foo"), timeout=0.1)  # 100 ms timeout
 ```
 
+There is no default because there's no sensible value applicable to all use-cases, but it is [recommended](https://grpc.io/blog/deadlines) to always set a deadline.
+
 ## Tests
 
 Most tests are run against every permutation of GRPC server/client to Nameko server/client. This roughly demonstrates equivalence between the two implementations. These tests are marked with the "equivalence" pytest marker.
 
-Additionally, we run the interop tests from the offical GRPC repo, which are used to verify compatibility between language implementations. The Nameko GRPC implementation supports every feature that the official Python GRPC implementation does. These tests are marked with the "interop" pytest marker.
+Additionally, we run the interop tests from the official GRPC repo, which are used to verify compatibility between language implementations. The Nameko GRPC implementation supports every feature that the official Python GRPC implementation does. These tests are marked with the "interop" pytest marker.
 
 The `test/spec` directory contains the protobufs and server implementations used in the various tests.
 
 ### Running the tests
 
-Clone or download the reposistory, and ensure the development dependencies are installed:
+Clone or download the repository, and ensure the development dependencies are installed:
 
 ```
 $ pip install nameko-grpc[dev]
@@ -227,16 +232,16 @@ Much of the heavy-lifting in nameko-grpc is done by either the server or client 
 
 The next most significant module is `nameko_grpc/streams.py`. This module contains the `SendStream` and `ReceiveStream` classes, which represent an HTTP2 stream that is being sent or received, respectively. A `ReceiveStream` receives data as bytes from a `ConnectionManager`, and parses them into a stream of GRPC messages. A `SendStream` does the opposite, encoding GRPC messages into bytes that can be sent across an HTTP2 connection.
 
-The `@grpc` Entrypoint is a normal Nameko entrypoint that executes a service method when an appropriate request is made. The entrypoint deals with a `ReceiveStream` object encapulating the request, and a `SendStream` object that accepts the response. The streams are managed by a shared `GrpcServer`, which accepts incoming connections and wraps each in a `ServerConnectionManager`.
+The `@grpc` Entrypoint is a normal Nameko entrypoint that executes a service method when an appropriate request is made. The entrypoint deals with a `ReceiveStream` object encapsulating the request, and a `SendStream` object that accepts the response. The streams are managed by a shared `GrpcServer`, which accepts incoming connections and wraps each in a `ServerConnectionManager`.
 
-The standalone Client is a small wrapper around a `ClientConnectionManager`. The Client simply creates a socket connection and then hands it to the connection manager. When a method is invoked on the client, the connection manager initates an appropriate request. The headers for that request describe the method being invoked, encodings, message types etc. This logic is all encapulated into the `Method` class.
+The standalone Client is a small wrapper around a `ClientConnectionManager`. The Client simply creates a socket connection and then hands it to the connection manager. When a method is invoked on the client, the connection manager initiates an appropriate request. The headers for that request describe the method being invoked, encodings, message types etc. This logic is all encapsulated into the `Method` class.
 
 The GRPC DependencyProvider is a normal Nameko DependencyProvider, which is also just a small wrapper around a `ClientConnectionManager`. It functions in exactly the same manner as the standalone Client.
 
 
 ## Equivalence tests notes
 
-To demonstrate equivalence between the nameko-grpc implementations and the standard GRPC implementations, all tests marked with the `equivalence` marker run against every permuation of:
+To demonstrate equivalence between the nameko-grpc implementations and the standard GRPC implementations, all tests marked with the `equivalence` marker run against every permutation of:
 
 * GRPC standard server (Python implementation) or
 * Nameko server
@@ -245,7 +250,7 @@ and
 
 * GRPC standard client (Python implementation) or
 * Nameko standalone client or
-* Nameko DepdendencyProvider client
+* Nameko DependencyProvider client
 
 Nameko uses Eventlet for concurrency, which is incompatible with the standard GRPC server and client. Consequently, these must be run in a separate process and somehow communicated with in order to make assertions about the behaviour of the standard implementation.
 
