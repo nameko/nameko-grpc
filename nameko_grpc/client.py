@@ -14,7 +14,7 @@ from nameko_grpc.compression import SUPPORTED_ENCODINGS, UnsupportedEncoding
 from nameko_grpc.connection import ConnectionManager
 from nameko_grpc.constants import Cardinality
 from nameko_grpc.context import metadata_from_context_data
-from nameko_grpc.exceptions import GrpcError
+from nameko_grpc.errors import GrpcError
 from nameko_grpc.inspection import Inspector
 from nameko_grpc.streams import ReceiveStream, SendStream
 from nameko_grpc.timeout import bucket_timeout

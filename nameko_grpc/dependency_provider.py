@@ -8,7 +8,7 @@ from grpc import StatusCode
 from nameko.extensions import DependencyProvider
 
 from nameko_grpc.client import ClientConnectionManager, Method
-from nameko_grpc.exceptions import GrpcError
+from nameko_grpc.errors import GrpcError
 
 
 log = getLogger(__name__)
