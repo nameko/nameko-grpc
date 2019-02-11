@@ -1,24 +1,8 @@
 # -*- coding: utf-8 -*-
-import json
-import time
-
 from grpc._common import (
     CYGRPC_STATUS_CODE_TO_STATUS_CODE,
     STATUS_CODE_TO_CYGRPC_STATUS_CODE,
 )
-
-
-def make_error_string(status, description, file, file_line, message):
-    return json.dumps(
-        {
-            "created": "@{}".format(time.time()),
-            "description": description,
-            "file": file,
-            "file_line": file_line,
-            "grpc_message": message,
-            "grpc_status": STATUS_CODE_TO_CYGRPC_STATUS_CODE[status],
-        }
-    )
 
 
 class GrpcError(Exception):

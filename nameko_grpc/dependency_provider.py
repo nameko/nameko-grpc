@@ -68,9 +68,7 @@ class GrpcProxy(DependencyProvider):
             elapsed = time.time() - start
             if elapsed > deadline:
                 error = GrpcError(
-                    status=StatusCode.DEADLINE_EXCEEDED,
-                    details="Deadline Exceeded",
-                    debug_error_string="<traceback>",
+                    status=StatusCode.DEADLINE_EXCEEDED, details="Deadline Exceeded"
                 )
                 response_stream.close(error)
                 send_stream.close()
