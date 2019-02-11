@@ -3,7 +3,7 @@ import struct
 from queue import Empty, Queue
 
 from nameko_grpc.compression import compress, decompress
-from nameko_grpc.exceptions import GrpcError
+from nameko_grpc.errors import GrpcError
 from nameko_grpc.headers import HeaderManager
 
 

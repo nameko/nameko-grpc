@@ -13,7 +13,7 @@ from nameko_grpc.compression import SUPPORTED_ENCODINGS, select_algorithm
 from nameko_grpc.connection import ConnectionManager
 from nameko_grpc.constants import Cardinality
 from nameko_grpc.context import GrpcContext, context_data_from_metadata
-from nameko_grpc.exceptions import GrpcError
+from nameko_grpc.errors import GrpcError
 from nameko_grpc.inspection import Inspector
 from nameko_grpc.streams import ReceiveStream, SendStream
 from nameko_grpc.timeout import unbucket_timeout
@@ -107,9 +107,7 @@ class GrpcServer(SharedExtension):
                 # XXX does server actually need to do this according to the spec?
                 # perhaps we could just close the stream.
                 error = GrpcError(
-                    status=StatusCode.DEADLINE_EXCEEDED,
-                    details="Deadline Exceeded",
-                    debug_error_string="<traceback>",
+                    status=StatusCode.DEADLINE_EXCEEDED, details="Deadline Exceeded"
                 )
                 response_stream.close(error)
                 break
@@ -121,9 +119,7 @@ class GrpcServer(SharedExtension):
             entrypoint = self.entrypoints[method_path]
         except KeyError:
             raise GrpcError(
-                status=StatusCode.UNIMPLEMENTED,
-                details="Method not found!",
-                debug_error_string="<traceback>",
+                status=StatusCode.UNIMPLEMENTED, details="Method not found!"
             )
 
         encoding = request_stream.headers.get("grpc-encoding", "identity")
@@ -131,7 +127,6 @@ class GrpcServer(SharedExtension):
             raise GrpcError(
                 status=StatusCode.UNIMPLEMENTED,
                 details="Algorithm not supported: {}".format(encoding),
-                debug_error_string="<traceback>",
             )
 
         timeout = request_stream.headers.get("grpc-timeout")
@@ -254,9 +249,7 @@ class Grpc(Entrypoint):
             )
         except ContainerBeingKilled:
             raise GrpcError(
-                status=StatusCode.UNAVAILABLE,
-                details="Server shutting down",
-                debug_error_string="<traceback>",
+                status=StatusCode.UNAVAILABLE, details="Server shutting down"
             )
 
     def handle_result(self, response_stream, worker_ctx, result, exc_info):
@@ -268,17 +261,14 @@ class Grpc(Entrypoint):
             try:
                 response_stream.populate(result)
             except Exception as exception:
-                error = GrpcError(
-                    status=StatusCode.UNKNOWN,
-                    details="Exception iterating responses: {}".format(exception),
-                    debug_error_string="<traceback>",
-                )
+                message = "Exception iterating responses: {}".format(exception)
+
+                error = GrpcError(status=StatusCode.UNKNOWN, details=message)
                 response_stream.close(error)
         else:
             error = GrpcError(
                 status=StatusCode.UNKNOWN,
                 details="Exception calling application: {}".format(exc_info[1]),
-                debug_error_string="<traceback>",
             )
             response_stream.close(error)
 

@@ -11,7 +11,7 @@ import wrapt
 import zmq
 
 from nameko_grpc.constants import Cardinality
-from nameko_grpc.exceptions import GrpcError
+from nameko_grpc.errors import GrpcError
 
 
 def extract_metadata(context):

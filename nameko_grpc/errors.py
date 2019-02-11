@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-
 from grpc._common import (
     CYGRPC_STATUS_CODE_TO_STATUS_CODE,
     STATUS_CODE_TO_CYGRPC_STATUS_CODE,
@@ -7,7 +6,7 @@ from grpc._common import (
 
 
 class GrpcError(Exception):
-    def __init__(self, status, details, debug_error_string):
+    def __init__(self, status, details, debug_error_string=""):
         self.status = status
         self.details = details
         self.debug_error_string = debug_error_string
@@ -21,14 +20,12 @@ class GrpcError(Exception):
         return headers
 
     @staticmethod
-    def from_headers(headers, debug_error_string=""):
+    def from_headers(headers):
         status = int(headers.get("grpc-status"))
         message = headers.get("grpc-message")
 
         return GrpcError(
-            status=CYGRPC_STATUS_CODE_TO_STATUS_CODE[status],
-            details=message,
-            debug_error_string=debug_error_string,
+            status=CYGRPC_STATUS_CODE_TO_STATUS_CODE[status], details=message
         )
 
     def __str__(self):

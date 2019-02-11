@@ -8,7 +8,7 @@ from grpc import StatusCode
 from nameko.extensions import DependencyProvider
 
 from nameko_grpc.client import ClientConnectionManager, Method
-from nameko_grpc.exceptions import GrpcError
+from nameko_grpc.errors import GrpcError
 
 
 log = getLogger(__name__)
@@ -68,9 +68,7 @@ class GrpcProxy(DependencyProvider):
             elapsed = time.time() - start
             if elapsed > deadline:
                 error = GrpcError(
-                    status=StatusCode.DEADLINE_EXCEEDED,
-                    details="Deadline Exceeded",
-                    debug_error_string="<traceback>",
+                    status=StatusCode.DEADLINE_EXCEEDED, details="Deadline Exceeded"
                 )
                 response_stream.close(error)
                 send_stream.close()

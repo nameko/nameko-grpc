@@ -173,7 +173,7 @@ The GRPC spec allows for the server to respond using a different algorithm from 
 
 ## Errors
 
-GRPC errors are raised by the client as instances of the `GrpcError` exception class. Similar to the `grpc.RpcError` class defined in the standard Python GRPC client, a `GrpcError` encapsulates the [status code](https://github.com/grpc/grpc/blob/master/doc/statuscodes.md), a `details` string describing the error, and `debug_error_string`, a stringified traceback of the call stack when the error was raised.
+GRPC errors are raised by the client as instances of the `GrpcError` exception class. Similar to the `grpc.RpcError` class defined in the standard Python GRPC client, a `GrpcError` encapsulates the [status code](https://github.com/grpc/grpc/blob/master/doc/statuscodes.md) and a `details` string describing the error.
 
 
 ## Timeouts

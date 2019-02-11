@@ -4,7 +4,7 @@ import struct
 import pytest
 from mock import Mock, call, patch
 
-from nameko_grpc.exceptions import GrpcError
+from nameko_grpc.errors import GrpcError
 from nameko_grpc.streams import (
     STREAM_END,
     ByteBuffer,

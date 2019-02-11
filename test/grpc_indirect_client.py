@@ -8,7 +8,7 @@ import zmq
 from grpc._cython.cygrpc import CompressionAlgorithm, CompressionLevel
 
 from nameko_grpc.constants import Cardinality
-from nameko_grpc.exceptions import GrpcError
+from nameko_grpc.errors import GrpcError
 
 from helpers import Command, RemoteClientTransport
 

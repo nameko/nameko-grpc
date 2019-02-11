@@ -12,7 +12,7 @@ from nameko_grpc.compression import (
     decompress,
     select_algorithm,
 )
-from nameko_grpc.exceptions import GrpcError
+from nameko_grpc.errors import GrpcError
 
 
 @pytest.mark.equivalence
