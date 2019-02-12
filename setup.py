@@ -14,12 +14,12 @@ with open(os.path.join(here, "README.md"), "r", "utf-8") as handle:
 
 setup(
     name="nameko-grpc",
-    version="0.0.1",
+    version="1.0.0",
     description="Nameko GRPC extensions",
     long_description=readme,
     author="Matt Yule-Bennett",
     url="http://github.com/nameko/nameko-grpc",
-    packages=find_packages(exclude=["test", "test.*"]),
+    packages=find_packages(exclude=["test"]),
     install_requires=["nameko", "h2>=3"],
     extras_require={
         "dev": [

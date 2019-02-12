@@ -1,0 +1,10 @@
+include .pre-commit-config.yaml
+include Makefile
+include README.md
+include LICENSE.txt
+include tox.ini
+
+graft test
+
+global-exclude *.pyc
+global-exclude .DS_Store
