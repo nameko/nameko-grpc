@@ -20,13 +20,11 @@ setup(
     author="Matt Yule-Bennett",
     url="http://github.com/nameko/nameko-grpc",
     packages=find_packages(exclude=["test"]),
-    install_requires=["nameko", "h2>=3"],
+    install_requires=["nameko", "h2>=3", "grpcio", "googleapis-common-protos"],
     extras_require={
         "dev": [
             "pytest",
-            "grpcio",
             "grpcio-tools",
-            "googleapis-common-protos",
             "pre-commit",
             "wrapt",
             "zmq",
