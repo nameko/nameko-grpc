@@ -94,7 +94,7 @@ class ClientService:
 Example standalone client, can be used with or without Eventlet:
 
 ``` python
-from example_pb2 import ExampleReply
+from example_pb2 import ExampleRequest
 from example_pb2_grpc import exampleStub
 
 from nameko_grpc.client import Client
