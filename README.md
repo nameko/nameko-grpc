@@ -84,10 +84,29 @@ class ClientService:
     example_grpc = GrpcProxy("//127.0.0.1", exampleStub)
 
     @rpc
-    def method(self):
-        responses = self.example_grpc.unary_stream(ExampleRequest(value="A"))
+    def rpc_method(self):
+        # unary-unary
+        response = self.example_grpc.unary_unary(ExampleRequest(value="a", multiplier=5))
+        print("response:", response.message) # aaaaa
+
+        # unary-stream
+        responses = self.example_grpc.unary_stream(ExampleRequest(value="a", multiplier=5))
+        response_messages = []
         for response in responses:
-            print(response.message)
+            response_messages.append(response.message)
+        print("responses: ", " | ".join(response_messages)) # aaaaa | aaaaa
+
+    @http
+    def http_method(self):
+        # stream-unary
+        values = (
+            ExampleRequest(value="a", multiplier=5),
+            ExampleRequest(value="b", multiplier=2),
+            ExampleRequest(value="c", multiplier=8),
+        )
+        iterable = iter(values)
+        response = client.stream_unary(values)
+        print("response:", response.message) # aaaaa,bb,cccccccc
 
 ```
 
@@ -100,27 +119,6 @@ from example_pb2_grpc import exampleStub
 from nameko_grpc.client import Client
 
 with Client("//127.0.0.1", exampleStub) as client:
-    # unary-unary
-    response = client.unary_unary(ExampleRequest(value="a", multiplier=5))
-    print("response:", response.message) # aaaaa
-
-    # unary-stream
-    responses = client.unary_stream(ExampleRequest(value="a", multiplier=5))
-    response_messages = []
-    for response in responses:
-        response_messages.append(response.message)
-    print("responses: ", " | ".join(response_messages)) # aaaaa | aaaaa
-
-    # stream-unary
-    values = (
-        ExampleRequest(value="a", multiplier=5),
-        ExampleRequest(value="b", multiplier=2),
-        ExampleRequest(value="c", multiplier=8),
-    )
-    iterable = iter(values)
-    response = client.stream_unary(values)
-    print("response:", response.message) # aaaaa,bb,cccccccc
-
     # stream-stream
     values = (
         ExampleRequest(value="a", multiplier=5),
