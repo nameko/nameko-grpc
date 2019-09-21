@@ -42,6 +42,8 @@ def compress(data, encoding):  # level?
 def select_algorithm(acceptable_encodings, preferred_encoding):
     if preferred_encoding and preferred_encoding in SUPPORTED_ENCODINGS:
         return preferred_encoding
+    if not acceptable_encodings:
+        return "identity"
     for encoding in SUPPORTED_ENCODINGS:
         if encoding in acceptable_encodings:
             return encoding
