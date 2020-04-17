@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import base64
+import re
 
 
 def is_grpc_header(name):
@@ -53,11 +54,25 @@ def check_decoded(headers):
             assert not isinstance(value, bytes)
 
 
+def decode_base64(data, altchars=b'+/'):
+    """Decode base64, padding being optional.
+
+    :param data: Base64 data as an ASCII byte string
+    :returns: The decoded byte string.
+
+    """
+    data = re.sub(rb'[^a-zA-Z0-9%s]+' % altchars, b'', data)  # normalize
+    missing_padding = len(data) % 4
+    if missing_padding:
+        data += b'='* (4 - missing_padding)
+    return base64.b64decode(data, altchars)
+
+
 def decode_header(header):
     name, value = header
     name = name.decode("utf-8")
     if name.endswith("-bin"):
-        value = base64.b64decode(value)
+        value = decode_base64(value)
     else:
         value = value.decode("utf-8")
     return name, value
