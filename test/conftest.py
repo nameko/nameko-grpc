@@ -26,7 +26,6 @@ def pytest_addoption(parser):
     parser.addoption(
         "--client",
         action="store",
-        type="choice",
         choices=["nameko", "dp", "grpc", "all"],
         dest="client",
         default="all",
@@ -36,7 +35,6 @@ def pytest_addoption(parser):
     parser.addoption(
         "--server",
         action="store",
-        type="choice",
         choices=["nameko", "grpc", "all"],
         dest="server",
         default="all",
