@@ -142,7 +142,9 @@ def grpc_port():
 
 
 @pytest.fixture
-def start_grpc_server(compile_proto, spawn_process, spec_dir, grpc_port):
+def start_grpc_server(request, compile_proto, spawn_process, spec_dir, grpc_port):
+
+    secure = "secure" if request.node.get_closest_marker(name="secure") else "insecure"
 
     server_script = os.path.join(os.path.dirname(__file__), "grpc_indirect_server.py")
 
@@ -161,6 +163,7 @@ def start_grpc_server(compile_proto, spawn_process, spec_dir, grpc_port):
         spawn_process(
             server_script,
             str(grpc_port),
+            secure,
             proto_name,
             service_name,
             compression_algorithm,
@@ -182,7 +185,9 @@ def start_grpc_server(compile_proto, spawn_process, spec_dir, grpc_port):
 
 
 @pytest.fixture
-def start_grpc_client(load_stubs, spawn_process, spec_dir, grpc_port):
+def start_grpc_client(request, load_stubs, spawn_process, spec_dir, grpc_port):
+
+    secure = "secure" if request.node.get_closest_marker(name="secure") else "insecure"
 
     client_script = os.path.join(os.path.dirname(__file__), "grpc_indirect_client.py")
 
@@ -268,6 +273,7 @@ def start_grpc_client(load_stubs, spawn_process, spec_dir, grpc_port):
         spawn_process(
             client_script,
             str(grpc_port),
+            secure,
             proto_name,
             service_name,
             compression_algorithm,
@@ -288,7 +294,11 @@ def start_grpc_client(load_stubs, spawn_process, spec_dir, grpc_port):
 
 
 @pytest.fixture
-def start_nameko_server(spec_dir, container_factory, grpc_port):
+def start_nameko_server(request, spec_dir, container_factory, grpc_port):
+
+    secure = "secure" if request.node.get_closest_marker(name="secure") else "insecure"
+    print(secure)
+
     def make(
         service_name,
         proto_name=None,
@@ -322,7 +332,9 @@ def start_nameko_server(spec_dir, container_factory, grpc_port):
 
 
 @pytest.fixture
-def start_nameko_client(load_stubs, spec_dir, grpc_port):
+def start_nameko_client(request, load_stubs, spec_dir, grpc_port):
+
+    secure = "secure" if request.node.get_closest_marker(name="secure") else "insecure"
 
     clients = []
 
@@ -353,7 +365,12 @@ def start_nameko_client(load_stubs, spec_dir, grpc_port):
 
 
 @pytest.fixture
-def start_dependency_provider(load_stubs, spec_dir, grpc_port, container_factory):
+def start_dependency_provider(
+    request, load_stubs, spec_dir, grpc_port, container_factory
+):
+
+    secure = "secure" if request.node.get_closest_marker(name="secure") else "insecure"
+
     def make(
         service_name,
         proto_name=None,
