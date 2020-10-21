@@ -7,6 +7,7 @@ from collections import deque
 from logging import getLogger
 from urllib.parse import urlparse
 
+from eventlet.green.OpenSSL import SSL
 from grpc import StatusCode
 from h2.errors import ErrorCodes
 
@@ -232,12 +233,18 @@ class Client:
     sock = None
 
     def __init__(
-        self, target, stub, compression_algorithm="none", compression_level="high"
+        self,
+        target,
+        stub,
+        compression_algorithm="none",
+        compression_level="high",
+        secure=False,
     ):
         self.target = target
         self.stub = stub
         self.compression_algorithm = compression_algorithm
         self.compression_level = compression_level  # NOTE not used
+        self.secure = secure
 
     def __enter__(self):
         return self.start()
@@ -251,12 +258,23 @@ class Client:
             return self.compression_algorithm
         return "identity"
 
-    def start(self):
+    def connect(self):
         target = urlparse(self.target)
 
-        self.sock = socket.socket()
-        self.sock.connect((target.hostname, target.port or 50051))
+        if self.secure:
+            context = SSL.Context(SSL.TLSv1_2_METHOD)
+            context.set_verify(SSL.VERIFY_PEER, lambda *args: True)
+            context.load_verify_locations("test/certs/server.crt")
+            context.set_alpn_protos([b"h2"])
+            sock = SSL.Connection(context, socket.socket())
+        else:
+            sock = socket.socket()
 
+        sock.connect((target.hostname, target.port or 50051))
+        return sock
+
+    def start(self):
+        self.sock = self.connect()
         self.manager = ClientConnectionManager(self.sock)
         threading.Thread(target=self.manager.run_forever).start()
 

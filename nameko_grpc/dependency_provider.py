@@ -4,6 +4,7 @@ import time
 from logging import getLogger
 from urllib.parse import urlparse
 
+from eventlet.green.OpenSSL import SSL
 from grpc import StatusCode
 from nameko.extensions import DependencyProvider
 
@@ -34,21 +35,33 @@ class GrpcProxy(DependencyProvider):
         stub,
         compression_algorithm="none",
         compression_level="high",  # NOTE not used
+        secure=False,
         **kwargs
     ):
         self.target = target
         self.stub = stub
         self.compression_algorithm = compression_algorithm
         self.compression_level = compression_level
+        self.secure = secure
         super().__init__(**kwargs)
 
-    def start(self):
-
+    def connect(self):
         target = urlparse(self.target)
 
-        self.sock = socket.socket()
-        self.sock.connect((target.hostname, target.port or 50051))
+        if self.secure:
+            context = SSL.Context(SSL.TLSv1_2_METHOD)
+            context.set_verify(SSL.VERIFY_NONE, lambda *args: True)
+            context.load_verify_locations("test/certs/server.crt")
+            context.set_alpn_protos([b"h2"])
+            sock = SSL.Connection(context, socket.socket())
+        else:
+            sock = socket.socket()
 
+        sock.connect((target.hostname, target.port or 50051))
+        return sock
+
+    def start(self):
+        self.sock = self.connect()
         self.manager = ClientConnectionManager(self.sock)
         self.container.spawn_managed_thread(self.manager.run_forever)
 

@@ -350,10 +350,11 @@ def start_nameko_client(request, load_stubs, spec_dir, grpc_port):
         stubs = load_stubs(proto_name)
         stub_cls = getattr(stubs, "{}Stub".format(service_name))
         client = Client(
-            "//127.0.0.1:{}".format(grpc_port),
+            "//localhost:{}".format(grpc_port),
             stub_cls,
             compression_algorithm,
             compression_level,
+            secure,
         )
         clients.append(client)
         return client.start()
@@ -387,10 +388,11 @@ def start_dependency_provider(
             name = "caller"
 
             example_grpc = GrpcProxy(
-                "//127.0.0.1:{}".format(grpc_port),
+                "//localhost:{}".format(grpc_port),
                 stub_cls,
                 compression_algorithm=compression_algorithm,
                 compression_level=compression_level,
+                secure=secure,
             )
 
             @dummy

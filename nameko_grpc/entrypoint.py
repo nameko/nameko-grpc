@@ -5,6 +5,7 @@ from functools import partial
 from logging import getLogger
 
 import eventlet
+from eventlet.green.OpenSSL import SSL, crypto
 from grpc import StatusCode
 from nameko.exceptions import ContainerBeingKilled
 from nameko.extensions import Entrypoint, SharedExtension, register_entrypoint
@@ -147,7 +148,30 @@ class GrpcServer(SharedExtension):
             self.container.spawn_managed_thread(manager.run_forever)
 
     def start(self):
+        def alpn_callback(conn, protos):
+            if b"h2" in protos:
+                return b"h2"
+
+            raise RuntimeError("No acceptable protocol offered!")
+
+        options = (
+            SSL.OP_NO_COMPRESSION
+            | SSL.OP_NO_SSLv2
+            | SSL.OP_NO_SSLv3
+            | SSL.OP_NO_TLSv1
+            | SSL.OP_NO_TLSv1_1
+        )
+        context = SSL.Context(SSL.TLSv1_2_METHOD)
+        context.set_options(options)
+        context.set_verify(SSL.VERIFY_PEER, lambda *args: True)
+        context.use_privatekey_file("test/certs/server.key")
+        context.use_certificate_file("test/certs/server.crt")
+        context.set_alpn_select_callback(alpn_callback)
+        context.set_cipher_list(b"ECDHE+AESGCM")
+        context.set_tmp_ecdh(crypto.get_elliptic_curve("prime256v1"))
+
         self.server_socket = eventlet.listen(self.bind_addr)
+        self.server_socket = SSL.Connection(context, self.server_socket)
         # work around https://github.com/celery/kombu/issues/838
         self.server_socket.settimeout(None)
         self.container.spawn_managed_thread(self.run)

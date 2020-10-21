@@ -42,6 +42,9 @@ if __name__ == "__main__":
 
     def serve():
 
+        # import os
+        # os.environ["GRPC_VERBOSITY"] = "debug"
+
         server = grpc.server(
             futures.ThreadPoolExecutor(max_workers=10), options=server_options
         )
