@@ -7,6 +7,7 @@ from logging import getLogger
 import eventlet
 from eventlet.green.OpenSSL import SSL, crypto
 from grpc import StatusCode
+from nameko import config
 from nameko.exceptions import ContainerBeingKilled
 from nameko.extensions import Entrypoint, SharedExtension, register_entrypoint
 
@@ -87,12 +88,6 @@ class GrpcServer(SharedExtension):
         self.is_accepting = True
         self.entrypoints = {}
 
-    @property
-    def bind_addr(self):
-        host = self.container.config.get("GRPC_BIND_HOST", "0.0.0.0")
-        port = self.container.config.get("GRPC_BIND_PORT", 50051)
-        return host, port
-
     def register(self, entrypoint):
         self.entrypoints[entrypoint.method_path] = entrypoint
 
@@ -147,11 +142,19 @@ class GrpcServer(SharedExtension):
             manager = ServerConnectionManager(new_sock, self.handle_request)
             self.container.spawn_managed_thread(manager.run_forever)
 
-    def listen(self, secure=False):
-        sock = eventlet.listen(self.bind_addr)
+    def listen(self):
+
+        host = config.get("GRPC_BIND_HOST", "0.0.0.0")
+        port = config.get("GRPC_BIND_PORT", 50051)
+        ssl = config.get("GRPC_SSL", {})
+
+        sock = eventlet.listen((host, port))
         # work around https://github.com/celery/kombu/issues/838
         sock.settimeout(None)
-        if secure:
+
+        if ssl:
+            private_key_file = ssl.get("PRIVATE_KEY")
+            certificate_file = ssl.get("CERTIFICATE")
 
             def alpn_callback(conn, protos):
                 if b"h2" in protos:
@@ -168,9 +171,9 @@ class GrpcServer(SharedExtension):
             )
             context = SSL.Context(SSL.TLSv1_2_METHOD)
             context.set_options(options)
-            context.set_verify(SSL.VERIFY_PEER, lambda *args: True)
-            context.use_privatekey_file("test/certs/server.key")
-            context.use_certificate_file("test/certs/server.crt")
+            # context.set_verify(SSL.VERIFY_PEER, lambda *args: True)
+            context.use_privatekey_file(private_key_file)
+            context.use_certificate_file(certificate_file)
             context.set_alpn_select_callback(alpn_callback)
             context.set_cipher_list(b"ECDHE+AESGCM")
             context.set_tmp_ecdh(crypto.get_elliptic_curve("prime256v1"))

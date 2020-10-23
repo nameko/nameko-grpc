@@ -238,13 +238,13 @@ class Client:
         stub,
         compression_algorithm="none",
         compression_level="high",
-        secure=False,
+        ssl=False,
     ):
         self.target = target
         self.stub = stub
         self.compression_algorithm = compression_algorithm
         self.compression_level = compression_level  # NOTE not used
-        self.secure = secure
+        self.ssl = ssl
 
     def __enter__(self):
         return self.start()
@@ -262,10 +262,10 @@ class Client:
         target = urlparse(self.target)
         sock = socket.socket()
 
-        if self.secure:
+        if self.ssl:
             context = SSL.Context(SSL.TLSv1_2_METHOD)
-            context.set_verify(SSL.VERIFY_PEER, lambda *args: True)
-            context.load_verify_locations("test/certs/server.crt")
+            # context.set_verify(SSL.VERIFY_PEER, lambda *args: True)
+            # context.load_verify_locations("test/certs/server.crt")
             context.set_alpn_protos([b"h2"])
             sock = SSL.Connection(context, sock)
 

@@ -297,7 +297,13 @@ def start_grpc_client(request, load_stubs, spawn_process, spec_dir, grpc_port):
 @pytest.fixture
 def start_nameko_server(request, spec_dir, container_factory, grpc_port):
 
-    secure = True if request.node.get_closest_marker(name="secure") else False
+    if request.node.get_closest_marker(name="secure"):
+        ssl_config = {
+            "PRIVATE_KEY": "test/certs/server.key",
+            "CERTIFICATE": "test/certs/server.crt",
+        }
+    else:
+        ssl_config = False
 
     def make(
         service_name,
@@ -316,8 +322,8 @@ def start_nameko_server(request, spec_dir, container_factory, grpc_port):
             "GRPC_COMPRESSION_ALGORITHM": compression_algorithm,
             "GRPC_COMPRESSION_LEVEL": compression_level,
         }
-        if secure:
-            conf.update({"GRPC_SSL_CA_CERT": ""})
+        if ssl_config:
+            conf.update({"GRPC_SSL": ssl_config})
 
         config.setup(conf)
         container = container_factory(service_cls)
@@ -331,9 +337,9 @@ def start_nameko_server(request, spec_dir, container_factory, grpc_port):
 @pytest.fixture
 def start_nameko_client(request, load_stubs, spec_dir, grpc_port):
 
-    secure = True if request.node.get_closest_marker(name="secure") else False
-
     clients = []
+
+    ssl = True if request.node.get_closest_marker(name="secure") else False
 
     def make(
         service_name,
@@ -351,7 +357,7 @@ def start_nameko_client(request, load_stubs, spec_dir, grpc_port):
             stub_cls,
             compression_algorithm,
             compression_level,
-            secure,
+            ssl,
         )
         clients.append(client)
         return client.start()
@@ -367,42 +373,43 @@ def start_dependency_provider(
     request, load_stubs, spec_dir, grpc_port, container_factory
 ):
 
-    secure = True if request.node.get_closest_marker(name="secure") else False
+    ssl = True if request.node.get_closest_marker(name="secure") else False
 
-    def make(
-        service_name,
-        proto_name=None,
-        compression_algorithm="none",
-        compression_level="high",
-    ):
-        if proto_name is None:
-            proto_name = service_name
+    with config.patch({"GRPC_SSL": ssl}):
 
-        stubs = load_stubs(proto_name)
-        stub_cls = getattr(stubs, "{}Stub".format(service_name))
+        def make(
+            service_name,
+            proto_name=None,
+            compression_algorithm="none",
+            compression_level="high",
+        ):
+            if proto_name is None:
+                proto_name = service_name
 
-        class Service:
-            name = "caller"
+            stubs = load_stubs(proto_name)
+            stub_cls = getattr(stubs, "{}Stub".format(service_name))
 
-            example_grpc = GrpcProxy(
-                "//localhost:{}".format(grpc_port),
-                stub_cls,
-                compression_algorithm=compression_algorithm,
-                compression_level=compression_level,
-                secure=secure,
-            )
+            class Service:
+                name = "caller"
 
-            @dummy
-            def call(self):
-                pass
+                example_grpc = GrpcProxy(
+                    "//localhost:{}".format(grpc_port),
+                    stub_cls,
+                    compression_algorithm=compression_algorithm,
+                    compression_level=compression_level,
+                )
 
-        container = container_factory(Service, {})
-        container.start()
+                @dummy
+                def call(self):
+                    pass
 
-        grpc_proxy = get_extension(container, GrpcProxy)
-        return grpc_proxy.get_dependency(Mock(context_data={}))
+            container = container_factory(Service)
+            container.start()
 
-    yield make
+            grpc_proxy = get_extension(container, GrpcProxy)
+            return grpc_proxy.get_dependency(Mock(context_data={}))
+
+        yield make
 
 
 @pytest.fixture(params=["server|grpc", "server|nameko"])

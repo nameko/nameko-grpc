@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 
 from eventlet.green.OpenSSL import SSL
 from grpc import StatusCode
+from nameko import config
 from nameko.extensions import DependencyProvider
 
 from nameko_grpc.client import ClientConnectionManager, Method
@@ -35,23 +36,21 @@ class GrpcProxy(DependencyProvider):
         stub,
         compression_algorithm="none",
         compression_level="high",  # NOTE not used
-        secure=False,
         **kwargs
     ):
         self.target = target
         self.stub = stub
         self.compression_algorithm = compression_algorithm
         self.compression_level = compression_level
-        self.secure = secure
         super().__init__(**kwargs)
 
     def connect(self):
         target = urlparse(self.target)
 
-        if self.secure:
+        if config.get("GRPC_SSL", {}):
             context = SSL.Context(SSL.TLSv1_2_METHOD)
-            context.set_verify(SSL.VERIFY_NONE, lambda *args: True)
-            context.load_verify_locations("test/certs/server.crt")
+            # context.set_verify(SSL.VERIFY_NONE, lambda *args: True)
+            # context.load_verify_locations("test/certs/server.crt")
             context.set_alpn_protos([b"h2"])
             sock = SSL.Connection(context, socket.socket())
         else:
