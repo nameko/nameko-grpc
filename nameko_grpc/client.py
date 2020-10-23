@@ -7,7 +7,7 @@ from collections import deque
 from logging import getLogger
 from urllib.parse import urlparse
 
-from eventlet.green.OpenSSL import SSL
+from eventlet.green import ssl
 from grpc import StatusCode
 from h2.errors import ErrorCodes
 
@@ -263,11 +263,11 @@ class Client:
         sock = socket.socket()
 
         if self.ssl:
-            context = SSL.Context(SSL.TLSv1_2_METHOD)
-            # context.set_verify(SSL.VERIFY_PEER, lambda *args: True)
-            # context.load_verify_locations("test/certs/server.crt")
-            context.set_alpn_protos([b"h2"])
-            sock = SSL.Connection(context, sock)
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS)
+            context.set_alpn_protocols(["h2"])
+            sock = context.wrap_socket(
+                sock=sock, server_hostname=target.hostname, suppress_ragged_eofs=True
+            )
 
         sock.connect((target.hostname, target.port or 50051))
         return sock

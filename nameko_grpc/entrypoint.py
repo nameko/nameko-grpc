@@ -5,7 +5,7 @@ from functools import partial
 from logging import getLogger
 
 import eventlet
-from eventlet.green.OpenSSL import SSL, crypto
+from eventlet.green import ssl
 from grpc import StatusCode
 from nameko import config
 from nameko.exceptions import ContainerBeingKilled
@@ -146,38 +146,21 @@ class GrpcServer(SharedExtension):
 
         host = config.get("GRPC_BIND_HOST", "0.0.0.0")
         port = config.get("GRPC_BIND_PORT", 50051)
-        ssl = config.get("GRPC_SSL", {})
+        ssl_config = config.get("GRPC_SSL", {})
 
         sock = eventlet.listen((host, port))
         # work around https://github.com/celery/kombu/issues/838
         sock.settimeout(None)
 
-        if ssl:
-            private_key_file = ssl.get("PRIVATE_KEY")
-            certificate_file = ssl.get("CERTIFICATE")
+        if ssl_config:
+            private_key_file = ssl_config.get("PRIVATE_KEY")
+            certificate_file = ssl_config.get("CERTIFICATE")
 
-            def alpn_callback(conn, protos):
-                if b"h2" in protos:
-                    return b"h2"
-
-                raise RuntimeError("No acceptable protocol offered!")
-
-            options = (
-                SSL.OP_NO_COMPRESSION
-                | SSL.OP_NO_SSLv2
-                | SSL.OP_NO_SSLv3
-                | SSL.OP_NO_TLSv1
-                | SSL.OP_NO_TLSv1_1
-            )
-            context = SSL.Context(SSL.TLSv1_2_METHOD)
-            context.set_options(options)
-            # context.set_verify(SSL.VERIFY_PEER, lambda *args: True)
-            context.use_privatekey_file(private_key_file)
-            context.use_certificate_file(certificate_file)
-            context.set_alpn_select_callback(alpn_callback)
-            context.set_cipher_list(b"ECDHE+AESGCM")
-            context.set_tmp_ecdh(crypto.get_elliptic_curve("prime256v1"))
-            sock = SSL.Connection(context, sock)
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS)
+            context.load_cert_chain(certificate_file, private_key_file)
+            context.set_ciphers("ECDHE+AESGCM")
+            context.set_alpn_protocols(["h2"])
+            sock = context.wrap_socket(sock=sock, server_side=True)
 
         return sock
 
