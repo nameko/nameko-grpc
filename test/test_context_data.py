@@ -81,9 +81,7 @@ class TestContextData:
     def test_dependency_provider_includes_context_data_in_grpc_request_metadata(
         self, amqprpc_service, rabbit_config
     ):
-        with ServiceRpcProxy(
-            "amqp", rabbit_config, context_data={"a": "A"}
-        ) as proxy_rpc:
+        with ServiceRpcProxy("amqp", context_data={"a": "A"}) as proxy_rpc:
 
             context_data = json.loads(proxy_rpc.proxy())
 
@@ -101,7 +99,7 @@ class TestContextData:
 
             # call id stack is propagated
             assert context_data["call_id_stack"] == [
-                "standalone_rpc_proxy.call.0",
+                "standalone_rpc_client.0.0",
                 "amqp.proxy.1",
                 "advanced.unary_unary.2",
             ]
