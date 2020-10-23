@@ -11,6 +11,7 @@ from importlib import import_module
 import pytest
 from eventlet.green import zmq
 from mock import Mock
+from nameko import config
 from nameko.testing.services import dummy
 from nameko.testing.utils import find_free_port, get_extension
 
@@ -304,7 +305,6 @@ def start_nameko_server(request, spec_dir, container_factory, grpc_port):
         proto_name=None,
         compression_algorithm="none",
         compression_level="high",
-        config=None,
     ):
         if proto_name is None:
             proto_name = service_name
@@ -312,18 +312,16 @@ def start_nameko_server(request, spec_dir, container_factory, grpc_port):
         service_module = import_module("{}_nameko".format(proto_name))
         service_cls = getattr(service_module, service_name)
 
-        if config is None:
-            config = {}
+        conf = {
+            "GRPC_BIND_PORT": grpc_port,
+            "GRPC_COMPRESSION_ALGORITHM": compression_algorithm,
+            "GRPC_COMPRESSION_LEVEL": compression_level,
+        }
+        if secure:
+            conf.update({"GRPC_SSL_CA_CERT": ""})
 
-        config.update(
-            {
-                "GRPC_BIND_PORT": grpc_port,
-                "GRPC_COMPRESSION_ALGORITHM": compression_algorithm,
-                "GRPC_COMPRESSION_LEVEL": compression_level,
-            }
-        )
-
-        container = container_factory(service_cls, config)
+        config.setup(conf)
+        container = container_factory(service_cls)
         container.start()
 
         return container
