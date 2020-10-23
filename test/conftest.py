@@ -297,8 +297,7 @@ def start_grpc_client(request, load_stubs, spawn_process, spec_dir, grpc_port):
 @pytest.fixture
 def start_nameko_server(request, spec_dir, container_factory, grpc_port):
 
-    secure = "secure" if request.node.get_closest_marker(name="secure") else "insecure"
-    print(secure)
+    secure = True if request.node.get_closest_marker(name="secure") else False
 
     def make(
         service_name,
@@ -332,7 +331,7 @@ def start_nameko_server(request, spec_dir, container_factory, grpc_port):
 @pytest.fixture
 def start_nameko_client(request, load_stubs, spec_dir, grpc_port):
 
-    secure = "secure" if request.node.get_closest_marker(name="secure") else "insecure"
+    secure = True if request.node.get_closest_marker(name="secure") else False
 
     clients = []
 
@@ -368,7 +367,7 @@ def start_dependency_provider(
     request, load_stubs, spec_dir, grpc_port, container_factory
 ):
 
-    secure = "secure" if request.node.get_closest_marker(name="secure") else "insecure"
+    secure = True if request.node.get_closest_marker(name="secure") else False
 
     def make(
         service_name,

@@ -260,15 +260,14 @@ class Client:
 
     def connect(self):
         target = urlparse(self.target)
+        sock = socket.socket()
 
         if self.secure:
             context = SSL.Context(SSL.TLSv1_2_METHOD)
             context.set_verify(SSL.VERIFY_PEER, lambda *args: True)
             context.load_verify_locations("test/certs/server.crt")
             context.set_alpn_protos([b"h2"])
-            sock = SSL.Connection(context, socket.socket())
-        else:
-            sock = socket.socket()
+            sock = SSL.Connection(context, sock)
 
         sock.connect((target.hostname, target.port or 50051))
         return sock
