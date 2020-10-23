@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 import socket
+import ssl
 import time
 from logging import getLogger
 from urllib.parse import urlparse
 
-from eventlet.green import ssl
 from grpc import StatusCode
 from nameko import config
 from nameko.extensions import DependencyProvider

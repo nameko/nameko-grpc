@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
+import ssl
 import time
 import types
 from functools import partial
 from logging import getLogger
 
 import eventlet
-from eventlet.green import ssl
 from grpc import StatusCode
 from nameko import config
 from nameko.exceptions import ContainerBeingKilled

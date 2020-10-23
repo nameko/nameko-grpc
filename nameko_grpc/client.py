@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 import itertools
 import socket
+import ssl
 import threading
 import time
 from collections import deque
 from logging import getLogger
 from urllib.parse import urlparse
 
-from eventlet.green import ssl
 from grpc import StatusCode
 from h2.errors import ErrorCodes
 
@@ -263,6 +263,7 @@ class Client:
         sock = socket.socket()
 
         if self.ssl:
+            # TODO verify mode
             context = ssl.SSLContext(ssl.PROTOCOL_TLS)
             context.set_alpn_protocols(["h2"])
             sock = context.wrap_socket(
