@@ -160,7 +160,9 @@ class GrpcServer(SharedExtension):
             context.load_cert_chain(certificate_file, private_key_file)
             context.set_ciphers("ECDHE+AESGCM")
             context.set_alpn_protocols(["h2"])
-            sock = context.wrap_socket(sock=sock, server_side=True)
+            sock = context.wrap_socket(
+                sock=sock, server_side=True, suppress_ragged_eofs=True
+            )
 
         return sock
 
