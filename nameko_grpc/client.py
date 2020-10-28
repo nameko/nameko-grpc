@@ -25,6 +25,7 @@ log = getLogger(__name__)
 
 
 USER_AGENT = "grpc-python-nameko/0.0.1"
+CONTENT_TYPE = "application/grpc+proto"
 
 
 class ClientConnectionManager(ConnectionManager):
@@ -183,13 +184,15 @@ class Method:
             )
             compression = self.client.default_compression
 
+        scheme = "https" if self.client.ssl else "http"
+
         request_headers = [
             (":method", "POST"),
-            (":scheme", "http"),
+            (":scheme", scheme),
             (":authority", urlparse(self.client.target).hostname),
             (":path", "/{}/{}".format(inspector.service_name, self.name)),
             ("te", "trailers"),
-            ("content-type", "application/grpc+proto"),
+            ("content-type", CONTENT_TYPE),
             ("user-agent", USER_AGENT),
             ("grpc-encoding", compression),
             ("grpc-message-type", "{}.{}".format(service_name, input_type.__name__)),

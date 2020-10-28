@@ -42,13 +42,14 @@ class GrpcProxy(DependencyProvider):
         self.stub = stub
         self.compression_algorithm = compression_algorithm
         self.compression_level = compression_level
+        self.ssl = config.get("GRPC_SSL", {})
         super().__init__(**kwargs)
 
     def connect(self):
         target = urlparse(self.target)
 
         sock = socket.socket()
-        if config.get("GRPC_SSL", {}):
+        if self.ssl:
             context = ssl.SSLContext(ssl.PROTOCOL_TLS)
             context.set_alpn_protocols(["h2"])
             sock = context.wrap_socket(
