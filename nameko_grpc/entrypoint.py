@@ -19,7 +19,7 @@ from nameko_grpc.errors import GrpcError
 from nameko_grpc.inspection import Inspector
 from nameko_grpc.streams import ReceiveStream, SendStream
 from nameko_grpc.timeout import unbucket_timeout
-
+from nameko_grpc.ssl import SslConfig
 
 log = getLogger(__name__)
 
@@ -146,22 +146,24 @@ class GrpcServer(SharedExtension):
 
         host = config.get("GRPC_BIND_HOST", "0.0.0.0")
         port = config.get("GRPC_BIND_PORT", 50051)
-        ssl_config = config.get("GRPC_SSL", {})
+        ssl_config = SslConfig.from_dict(config.get("GRPC_SSL", {}))
 
         sock = eventlet.listen((host, port))
         # work around https://github.com/celery/kombu/issues/838
         sock.settimeout(None)
 
         if ssl_config:
-            private_key_file = ssl_config.get("PRIVATE_KEY")
-            certificate_file = ssl_config.get("CERTIFICATE")
+            # context = ssl.SSLContext(ssl.PROTOCOL_TLS)
+            # context.load_cert_chain(**ssl_config.cert_chain)
+            # context.set_ciphers("ECDHE+AESGCM")
+            # context.set_alpn_protocols(["h2"])
 
-            context = ssl.SSLContext(ssl.PROTOCOL_TLS)
-            context.load_cert_chain(certificate_file, private_key_file)
+            context = ssl_config.get_configured_context()
             context.set_ciphers("ECDHE+AESGCM")
             context.set_alpn_protocols(["h2"])
+
             sock = context.wrap_socket(
-                sock=sock, server_side=True, suppress_ragged_eofs=True
+                sock=sock, server_side=True, suppress_ragged_eofs=True,
             )
 
         return sock

@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 import itertools
 import socket
-import ssl
 import threading
 import time
 from collections import deque
@@ -17,6 +16,7 @@ from nameko_grpc.constants import Cardinality
 from nameko_grpc.context import metadata_from_context_data
 from nameko_grpc.errors import GrpcError
 from nameko_grpc.inspection import Inspector
+from nameko_grpc.ssl import SslConfig
 from nameko_grpc.streams import ReceiveStream, SendStream
 from nameko_grpc.timeout import bucket_timeout
 
@@ -204,6 +204,8 @@ class Method:
         else:
             metadata = []
 
+        # TODO: move out of here to caller (DependencyProvider/Client)
+        # so that this bit is independent of nameko internals
         metadata.extend(metadata_from_context_data(self.context_data))
 
         for key, value in metadata:
@@ -266,8 +268,7 @@ class Client:
         sock = socket.socket()
 
         if self.ssl:
-            # TODO verify mode
-            context = ssl.SSLContext(ssl.PROTOCOL_TLS)
+            context = self.ssl.get_configured_context()
             context.set_alpn_protocols(["h2"])
             sock = context.wrap_socket(
                 sock=sock, server_hostname=target.hostname, suppress_ragged_eofs=True

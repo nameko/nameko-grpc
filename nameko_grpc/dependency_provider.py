@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 import socket
-import ssl
 import time
 from logging import getLogger
 from urllib.parse import urlparse
@@ -11,7 +10,7 @@ from nameko.extensions import DependencyProvider
 
 from nameko_grpc.client import ClientConnectionManager, Method
 from nameko_grpc.errors import GrpcError
-
+from nameko_grpc.ssl import SslConfig
 
 log = getLogger(__name__)
 
@@ -42,7 +41,7 @@ class GrpcProxy(DependencyProvider):
         self.stub = stub
         self.compression_algorithm = compression_algorithm
         self.compression_level = compression_level
-        self.ssl = config.get("GRPC_SSL", {})
+        self.ssl = SslConfig.from_dict(config.get("GRPC_SSL", {}))
         super().__init__(**kwargs)
 
     def connect(self):
@@ -50,7 +49,7 @@ class GrpcProxy(DependencyProvider):
 
         sock = socket.socket()
         if self.ssl:
-            context = ssl.SSLContext(ssl.PROTOCOL_TLS)
+            context = self.ssl.get_configured_context()
             context.set_alpn_protocols(["h2"])
             sock = context.wrap_socket(
                 sock=sock, server_hostname=target.hostname, suppress_ragged_eofs=True

@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import os
 import socket
+import ssl
 import subprocess
 import sys
 import threading
@@ -18,8 +19,10 @@ from nameko.testing.utils import find_free_port, get_extension
 from nameko_grpc.client import Client
 from nameko_grpc.dependency_provider import GrpcProxy
 from nameko_grpc.inspection import Inspector
+from nameko_grpc.ssl import SslConfig
 
 from helpers import Command, RemoteClientTransport, Stash
+from unittest.mock import patch
 
 
 def pytest_addoption(parser):
@@ -299,8 +302,12 @@ def start_nameko_server(request, spec_dir, container_factory, grpc_port):
 
     if request.node.get_closest_marker(name="secure"):
         ssl_config = {
-            "PRIVATE_KEY": "test/certs/server.key",
-            "CERTIFICATE": "test/certs/server.crt",
+            "cert_chain": {
+                "keyfile": "test/certs/server.key",
+                "certfile": "test/certs/server.crt",
+            },
+            "verify_mode": "none",
+            "check_hostname": False,  # ugh
         }
     else:
         ssl_config = False
@@ -339,7 +346,10 @@ def start_nameko_client(request, load_stubs, spec_dir, grpc_port):
 
     clients = []
 
-    ssl = True if request.node.get_closest_marker(name="secure") else False
+    if request.node.get_closest_marker(name="secure"):
+        ssl_config = SslConfig(verify_mode=ssl.CERT_NONE, check_hostname=False)
+    else:
+        ssl_config = False
 
     def make(
         service_name,
@@ -357,7 +367,7 @@ def start_nameko_client(request, load_stubs, spec_dir, grpc_port):
             stub_cls,
             compression_algorithm,
             compression_level,
-            ssl,
+            ssl_config,
         )
         clients.append(client)
         return client.start()
@@ -373,9 +383,15 @@ def start_dependency_provider(
     request, load_stubs, spec_dir, grpc_port, container_factory
 ):
 
-    ssl = True if request.node.get_closest_marker(name="secure") else False
+    if request.node.get_closest_marker(name="secure"):
+        ssl_config = {"verify_mode": "none", "check_hostname": False}
+    else:
+        ssl_config = False
 
-    with config.patch({"GRPC_SSL": ssl}):
+    # TODO turn into config.module_patch?
+    patch_config = config.copy()
+    patch_config["GRPC_SSL"] = ssl_config
+    with patch("nameko_grpc.dependency_provider.config", new=patch_config):
 
         def make(
             service_name,
