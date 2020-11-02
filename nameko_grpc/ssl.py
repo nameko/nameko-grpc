@@ -32,12 +32,17 @@ class SslConfig:
 
         return SslConfig(verify_mode, check_hostname, verify_locations, cert_chain)
 
-    def get_configured_context(self):
-        context = ssl.SSLContext(ssl.PROTOCOL_TLS)
-        if self.verify_locations:
-            context.load_verify_locations(**self.verify_locations)
-        context.verify_mode = self.verify_mode
-        context.check_hostname = self.check_hostname
-        if self.cert_chain:
+    def get_configured_context(self, server_side=False):
+        verify_locations = self.verify_locations or {}
+        if server_side:
+            context = ssl.create_default_context(
+                ssl.Purpose.CLIENT_AUTH, **verify_locations
+            )
             context.load_cert_chain(**self.cert_chain)
+        else:
+            context = ssl.create_default_context(
+                ssl.Purpose.SERVER_AUTH, **verify_locations
+            )
+            context.check_hostname = self.check_hostname
+            context.verify_mode = self.verify_mode
         return context

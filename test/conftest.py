@@ -306,8 +306,8 @@ def start_nameko_server(request, spec_dir, container_factory, grpc_port):
                 "keyfile": "test/certs/server.key",
                 "certfile": "test/certs/server.crt",
             },
-            "verify_mode": "none",
-            "check_hostname": False,  # ugh
+            # "verify_mode": "none",
+            # "check_hostname": False,  # ugh
         }
     else:
         ssl_config = False

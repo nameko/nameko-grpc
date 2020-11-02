@@ -158,8 +158,7 @@ class GrpcServer(SharedExtension):
             # context.set_ciphers("ECDHE+AESGCM")
             # context.set_alpn_protocols(["h2"])
 
-            context = ssl_config.get_configured_context()
-            context.set_ciphers("ECDHE+AESGCM")
+            context = ssl_config.get_configured_context(server_side=True)
             context.set_alpn_protocols(["h2"])
 
             sock = context.wrap_socket(
