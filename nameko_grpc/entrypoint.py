@@ -153,14 +153,10 @@ class GrpcServer(SharedExtension):
         sock.settimeout(None)
 
         if ssl_config:
-            # context = ssl.SSLContext(ssl.PROTOCOL_TLS)
-            # context.load_cert_chain(**ssl_config.cert_chain)
-            # context.set_ciphers("ECDHE+AESGCM")
-            # context.set_alpn_protocols(["h2"])
-
-            context = ssl_config.get_configured_context(server_side=True)
+            context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+            if ssl_config.cert_chain:
+                context.load_cert_chain(**ssl_config.cert_chain)
             context.set_alpn_protocols(["h2"])
-
             sock = context.wrap_socket(
                 sock=sock, server_side=True, suppress_ragged_eofs=True,
             )
