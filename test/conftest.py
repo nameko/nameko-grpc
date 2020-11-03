@@ -7,6 +7,7 @@ import threading
 import time
 import uuid
 from importlib import import_module
+from unittest.mock import patch
 
 import pytest
 from eventlet.green import zmq
@@ -18,10 +19,8 @@ from nameko.testing.utils import find_free_port, get_extension
 from nameko_grpc.client import Client
 from nameko_grpc.dependency_provider import GrpcProxy
 from nameko_grpc.inspection import Inspector
-from nameko_grpc.ssl import SslConfig
 
 from helpers import Command, RemoteClientTransport, Stash
-from unittest.mock import patch
 
 
 def pytest_addoption(parser):

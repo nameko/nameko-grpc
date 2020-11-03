@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 import socket
-import ssl
 import time
 from logging import getLogger
 from urllib.parse import urlparse
@@ -12,6 +11,7 @@ from nameko.extensions import DependencyProvider
 from nameko_grpc.client import ClientConnectionManager, Method
 from nameko_grpc.errors import GrpcError
 from nameko_grpc.ssl import SslConfig
+
 
 log = getLogger(__name__)
 
