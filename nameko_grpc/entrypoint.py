@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-import ssl
 import time
 import types
 from functools import partial
@@ -146,17 +145,14 @@ class GrpcServer(SharedExtension):
 
         host = config.get("GRPC_BIND_HOST", "0.0.0.0")
         port = config.get("GRPC_BIND_PORT", 50051)
-        ssl_config = SslConfig(config.get("GRPC_SSL"))
+        ssl = SslConfig(config.get("GRPC_SSL"))
 
         sock = eventlet.listen((host, port))
         # work around https://github.com/celery/kombu/issues/838
         sock.settimeout(None)
 
-        if ssl_config:
-            context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-            if ssl_config.cert_chain:
-                context.load_cert_chain(**ssl_config.cert_chain)
-            context.set_alpn_protocols(["h2"])
+        if ssl:
+            context = ssl.server_context()
             sock = context.wrap_socket(
                 sock=sock, server_side=True, suppress_ragged_eofs=True,
             )

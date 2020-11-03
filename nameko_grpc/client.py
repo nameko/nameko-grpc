@@ -6,7 +6,6 @@ import time
 from collections import deque
 from logging import getLogger
 from urllib.parse import urlparse
-import ssl
 from grpc import StatusCode
 from h2.errors import ErrorCodes
 
@@ -268,11 +267,7 @@ class Client:
         sock = socket.create_connection((target.hostname, target.port or 50051))
 
         if self.ssl:
-            context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
-            context.check_hostname = self.ssl.check_hostname
-            context.verify_mode = self.ssl.verify_mode
-
-            context.set_alpn_protocols(["h2"])
+            context = self.ssl.client_context()
             sock = context.wrap_socket(
                 sock=sock, server_hostname=target.hostname, suppress_ragged_eofs=True
             )

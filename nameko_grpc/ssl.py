@@ -11,6 +11,24 @@ DEFAULT_SSL_CONFIG = {
 
 class SslConfig:
     def __init__(self, config):
+        """ Valid values for `config` are:
+
+            - True
+            - False
+            - A dict with the following format, all keys optional:
+
+                {
+                    "verify_mode": <"none"|"optional"|"required">,
+                    "check_hostname": <True|False>,
+                    "verify_locations": {
+                        <args for SslContext.load_verify_locations>
+                    },
+                    "cert_chain": {
+                        <args for SslContext.load_cert_chain>
+                    }
+                }
+        """
+        # TODO add schema for this config dict
         if config is True:
             config = DEFAULT_SSL_CONFIG
         self.config = config
@@ -45,3 +63,21 @@ class SslConfig:
     @property
     def cert_chain(self):
         return self.config.get("cert_chain", None)
+
+    def server_context(self):
+        """ Returns a configured context for use in a server.
+        """
+        context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+        if self.cert_chain:
+            context.load_cert_chain(**self.cert_chain)
+        context.set_alpn_protocols(["h2"])
+        return context
+
+    def client_context(self):
+        """ Returns a configured context for use in a client.
+        """
+        context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+        context.check_hostname = self.check_hostname
+        context.verify_mode = self.verify_mode
+        context.set_alpn_protocols(["h2"])
+        return context
