@@ -146,7 +146,7 @@ class GrpcServer(SharedExtension):
 
         host = config.get("GRPC_BIND_HOST", "0.0.0.0")
         port = config.get("GRPC_BIND_PORT", 50051)
-        ssl_config = SslConfig.from_dict(config.get("GRPC_SSL", {}))
+        ssl_config = SslConfig(config.get("GRPC_SSL"))
 
         sock = eventlet.listen((host, port))
         # work around https://github.com/celery/kombu/issues/838

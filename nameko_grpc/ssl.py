@@ -1,33 +1,47 @@
 import ssl
 
 
-class SslConfig:
-    def __init__(
-        self,
-        verify_mode=ssl.CERT_REQUIRED,
-        check_hostname=True,
-        verify_locations=None,
-        cert_chain=None,
-    ):
-        self.verify_mode = verify_mode
-        self.check_hostname = check_hostname
-        self.verify_locations = verify_locations
-        self.cert_chain = cert_chain
+DEFAULT_VERIFY_MODE = "required"
+DEFAULT_CHECK_HOSTNAME = True
+DEFAULT_SSL_CONFIG = {
+    "verify_mode": DEFAULT_VERIFY_MODE,
+    "check_hostname": DEFAULT_CHECK_HOSTNAME,
+}
 
-    @staticmethod
-    def from_dict(dict_config):
-        if dict_config is False:
-            return False
-        if dict_config is True:
-            dict_config = {}  # use defaults
+
+class SslConfig:
+    def __init__(self, config):
+        if config is True:
+            config = DEFAULT_SSL_CONFIG
+        self.config = config
+
+    def __bool__(self):
+        return bool(self.config)
+
+    @property
+    def verify_mode(self):
+        if not self.config:
+            return None
+
+        value = self.config.get("verify_mode", DEFAULT_VERIFY_MODE)
         verify_modes = {
             "none": ssl.CERT_NONE,
             "optional": ssl.CERT_OPTIONAL,
             "required": ssl.CERT_REQUIRED,
         }
-        verify_mode = verify_modes[dict_config.get("verify_mode", "required")]
-        check_hostname = dict_config.get("check_hostname", True)
-        verify_locations = dict_config.get("verify_locations", None)
-        cert_chain = dict_config.get("cert_chain", None)
+        return verify_modes[value]
 
-        return SslConfig(verify_mode, check_hostname, verify_locations, cert_chain)
+    @property
+    def check_hostname(self):
+        if not self.config:
+            return None
+
+        return self.config.get("check_hostname", DEFAULT_CHECK_HOSTNAME)
+
+    @property
+    def verify_locations(self):
+        return self.config.get("verify_locations", None)
+
+    @property
+    def cert_chain(self):
+        return self.config.get("cert_chain", None)

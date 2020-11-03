@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 import os
 import socket
-import ssl
 import subprocess
 import sys
 import threading
@@ -301,16 +300,14 @@ def start_grpc_client(request, load_stubs, spawn_process, spec_dir, grpc_port):
 def start_nameko_server(request, spec_dir, container_factory, grpc_port):
 
     if request.node.get_closest_marker(name="secure"):
-        ssl_config = {
+        ssl_options = {
             "cert_chain": {
                 "keyfile": "test/certs/server.key",
                 "certfile": "test/certs/server.crt",
-            },
-            # "verify_mode": "none",
-            # "check_hostname": False,  # ugh
+            }
         }
     else:
-        ssl_config = False
+        ssl_options = False
 
     def make(
         service_name,
@@ -329,8 +326,8 @@ def start_nameko_server(request, spec_dir, container_factory, grpc_port):
             "GRPC_COMPRESSION_ALGORITHM": compression_algorithm,
             "GRPC_COMPRESSION_LEVEL": compression_level,
         }
-        if ssl_config:
-            conf.update({"GRPC_SSL": ssl_config})
+        if ssl_options:
+            conf.update({"GRPC_SSL": ssl_options})
 
         config.setup(conf)
         container = container_factory(service_cls)
@@ -347,9 +344,9 @@ def start_nameko_client(request, load_stubs, spec_dir, grpc_port):
     clients = []
 
     if request.node.get_closest_marker(name="secure"):
-        ssl_config = SslConfig(verify_mode=ssl.CERT_NONE, check_hostname=False)
+        ssl_options = {"verify_mode": "none", "check_hostname": False}
     else:
-        ssl_config = False
+        ssl_options = False
 
     def make(
         service_name,
@@ -367,7 +364,7 @@ def start_nameko_client(request, load_stubs, spec_dir, grpc_port):
             stub_cls,
             compression_algorithm,
             compression_level,
-            ssl_config,
+            ssl_options,
         )
         clients.append(client)
         return client.start()

@@ -249,7 +249,7 @@ class Client:
         self.stub = stub
         self.compression_algorithm = compression_algorithm
         self.compression_level = compression_level  # NOTE not used
-        self.ssl = ssl
+        self.ssl = SslConfig(ssl)
 
     def __enter__(self):
         return self.start()
