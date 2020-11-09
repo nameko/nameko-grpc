@@ -135,7 +135,8 @@ def spawn_process():
     yield spawn
 
     for proc in procs:
-        proc.terminate()
+        # proc.terminate()
+        pass
 
 
 @pytest.fixture
