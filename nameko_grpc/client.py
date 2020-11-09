@@ -285,7 +285,7 @@ class Client:
 
     def timeout(self, send_stream, response_stream, deadline):
         start = time.time()
-        # TODO timeout thread should self-terminate if send-stream or response-stream are closed
+        # TODO timeout thread should terminate if (one or both?) streams are closed
         while True:
             elapsed = time.time() - start
             if elapsed > deadline:
