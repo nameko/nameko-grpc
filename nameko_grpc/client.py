@@ -13,7 +13,6 @@ from h2.errors import ErrorCodes
 from nameko_grpc.compression import SUPPORTED_ENCODINGS, UnsupportedEncoding
 from nameko_grpc.connection import ConnectionManager
 from nameko_grpc.constants import Cardinality
-from nameko_grpc.context import metadata_from_context_data
 from nameko_grpc.errors import GrpcError
 from nameko_grpc.inspection import Inspector
 from nameko_grpc.ssl import SslConfig
@@ -161,10 +160,10 @@ class Future:
 
 
 class Method:
-    def __init__(self, client, name, context_data=None):
+    def __init__(self, client, name, extra_metadata=None):
         self.client = client
         self.name = name
-        self.context_data = context_data or {}
+        self.extra_metadata = extra_metadata or []
 
     def __call__(self, request, **kwargs):
         return self.future(request, **kwargs).result()
@@ -204,9 +203,7 @@ class Method:
         else:
             metadata = []
 
-        # TODO: move out of here to caller (DependencyProvider/Client)
-        # so that this bit is independent of nameko internals
-        metadata.extend(metadata_from_context_data(self.context_data))
+        metadata.extend(self.extra_metadata)
 
         for key, value in metadata:
             request_headers.append((key, value))
@@ -288,6 +285,7 @@ class Client:
 
     def timeout(self, send_stream, response_stream, deadline):
         start = time.time()
+        # TODO timeout thread should self-terminate if send-stream or response-stream are closed
         while True:
             elapsed = time.time() - start
             if elapsed > deadline:

@@ -9,6 +9,7 @@ from nameko import config
 from nameko.extensions import DependencyProvider
 
 from nameko_grpc.client import ClientConnectionManager, Method
+from nameko_grpc.context import metadata_from_context_data
 from nameko_grpc.errors import GrpcError
 from nameko_grpc.ssl import SslConfig
 
@@ -22,7 +23,8 @@ class Proxy:
         self.context_data = context_data
 
     def __getattr__(self, name):
-        return Method(self.client, name, context_data=self.context_data)
+        extra_metadata = metadata_from_context_data(self.context_data)
+        return Method(self.client, name, extra_metadata)
 
 
 class GrpcProxy(DependencyProvider):
