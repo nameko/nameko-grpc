@@ -94,6 +94,8 @@ class ConnectionManager:
         self.stopped.set()
 
     def stop(self):
+        for send_stream in self.send_streams.values():
+            send_stream.close()
         self.run = False
         self.stopped.wait()
 
