@@ -424,7 +424,8 @@ def start_dependency_provider(
         yield make
 
 
-@pytest.fixture(params=["server|grpc", "server|nameko"])
+# @pytest.fixture(params=["server=grpc", "server=nameko"])
+@pytest.fixture(params=["server|grpc"])
 def server_type(request):
     return request.param[7:]
 
@@ -441,7 +442,8 @@ def start_server(request, server_type):
         return request.getfixturevalue("start_nameko_server")
 
 
-@pytest.fixture(params=["client|grpc", "client|nameko", "client|dp"])
+# @pytest.fixture(params=["client=grpc", "client=nameko", "client=dp"])
+@pytest.fixture(params=["client|nameko"])
 def client_type(request):
     return request.param[7:]
 
