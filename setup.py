@@ -17,6 +17,7 @@ setup(
     version="1.1.0",
     description="Nameko gRPC extensions",
     long_description=readme,
+    long_description_content_type="text/markdown",
     author="Matt Yule-Bennett",
     url="http://github.com/nameko/nameko-grpc",
     packages=find_packages(exclude=["test"]),
