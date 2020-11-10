@@ -36,7 +36,9 @@ matrix:
           tags: true
           repo: nameko/nameko-grpc
         distributions: "sdist bdist_wheel"
-
+        edge:
+          source: 'native-api/dpl'
+          branch: 'pip_fix_upgrade_deps'
 
 script:
   - tox -e $TOX_ENV
