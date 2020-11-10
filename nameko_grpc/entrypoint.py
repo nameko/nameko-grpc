@@ -6,6 +6,7 @@ from logging import getLogger
 
 import eventlet
 from grpc import StatusCode
+from nameko import config
 from nameko.exceptions import ContainerBeingKilled
 from nameko.extensions import Entrypoint, SharedExtension, register_entrypoint
 
@@ -15,6 +16,7 @@ from nameko_grpc.constants import Cardinality
 from nameko_grpc.context import GrpcContext, context_data_from_metadata
 from nameko_grpc.errors import GrpcError
 from nameko_grpc.inspection import Inspector
+from nameko_grpc.ssl import SslConfig
 from nameko_grpc.streams import ReceiveStream, SendStream
 from nameko_grpc.timeout import unbucket_timeout
 
@@ -86,12 +88,6 @@ class GrpcServer(SharedExtension):
         self.is_accepting = True
         self.entrypoints = {}
 
-    @property
-    def bind_addr(self):
-        host = self.container.config.get("GRPC_BIND_HOST", "0.0.0.0")
-        port = self.container.config.get("GRPC_BIND_PORT", 50051)
-        return host, port
-
     def register(self, entrypoint):
         self.entrypoints[entrypoint.method_path] = entrypoint
 
@@ -146,10 +142,26 @@ class GrpcServer(SharedExtension):
             manager = ServerConnectionManager(new_sock, self.handle_request)
             self.container.spawn_managed_thread(manager.run_forever)
 
-    def start(self):
-        self.server_socket = eventlet.listen(self.bind_addr)
+    def listen(self):
+
+        host = config.get("GRPC_BIND_HOST", "0.0.0.0")
+        port = config.get("GRPC_BIND_PORT", 50051)
+        ssl = SslConfig(config.get("GRPC_SSL"))
+
+        sock = eventlet.listen((host, port))
         # work around https://github.com/celery/kombu/issues/838
-        self.server_socket.settimeout(None)
+        sock.settimeout(None)
+
+        if ssl:
+            context = ssl.server_context()
+            sock = context.wrap_socket(
+                sock=sock, server_side=True, suppress_ragged_eofs=True,
+            )
+
+        return sock
+
+    def start(self):
+        self.server_socket = self.listen()
         self.container.spawn_managed_thread(self.run)
 
     def stop(self):

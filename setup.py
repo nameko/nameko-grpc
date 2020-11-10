@@ -20,8 +20,8 @@ setup(
     author="Matt Yule-Bennett",
     url="http://github.com/nameko/nameko-grpc",
     packages=find_packages(exclude=["test"]),
-    install_requires=["nameko", "h2>=3", "grpcio", "googleapis-common-protos"],
-    extras_require={"dev": ["pytest", "grpcio-tools", "pre-commit", "wrapt", "zmq"]},
+    install_requires=["nameko>=3.0.0-rc9", "h2>=3", "grpcio", "protobuf"],
+    extras_require={"dev": ["pytest", "grpcio-tools", "wrapt", "zmq"]},
     zip_safe=True,
     license="Apache License, Version 2.0",
     classifiers=[
@@ -29,7 +29,6 @@ setup(
         "Operating System :: MacOS :: MacOS X",
         "Operating System :: POSIX",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.4",
         "Programming Language :: Python :: 3.5",
         "Programming Language :: Python :: 3.6",
         "Programming Language :: Python :: 3.7",

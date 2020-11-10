@@ -5,10 +5,13 @@ from logging import getLogger
 from urllib.parse import urlparse
 
 from grpc import StatusCode
+from nameko import config
 from nameko.extensions import DependencyProvider
 
 from nameko_grpc.client import ClientConnectionManager, Method
+from nameko_grpc.context import metadata_from_context_data
 from nameko_grpc.errors import GrpcError
+from nameko_grpc.ssl import SslConfig
 
 
 log = getLogger(__name__)
@@ -20,7 +23,8 @@ class Proxy:
         self.context_data = context_data
 
     def __getattr__(self, name):
-        return Method(self.client, name, context_data=self.context_data)
+        extra_metadata = metadata_from_context_data(self.context_data)
+        return Method(self.client, name, extra_metadata)
 
 
 class GrpcProxy(DependencyProvider):
@@ -40,15 +44,23 @@ class GrpcProxy(DependencyProvider):
         self.stub = stub
         self.compression_algorithm = compression_algorithm
         self.compression_level = compression_level
+        self.ssl = SslConfig(config.get("GRPC_SSL"))
         super().__init__(**kwargs)
 
-    def start(self):
-
+    def connect(self):
         target = urlparse(self.target)
+        sock = socket.create_connection((target.hostname, target.port or 50051))
 
-        self.sock = socket.socket()
-        self.sock.connect((target.hostname, target.port or 50051))
+        if self.ssl:
+            context = self.ssl.client_context()
+            sock = context.wrap_socket(
+                sock=sock, server_hostname=target.hostname, suppress_ragged_eofs=True
+            )
 
+        return sock
+
+    def start(self):
+        self.sock = self.connect()
         self.manager = ClientConnectionManager(self.sock)
         self.container.spawn_managed_thread(self.manager.run_forever)
 

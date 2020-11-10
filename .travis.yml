@@ -15,9 +15,6 @@ matrix:
       python: 3.6
       env: TOX_ENV=static
     - stage: test
-      python: 3.4
-      env: TOX_ENV=py34-test
-    - stage: test
       python: 3.5
       env: TOX_ENV=py35-test
     - stage: test
@@ -25,7 +22,7 @@ matrix:
       env: TOX_ENV=py36-test
     - stage: test
       python: 3.7
-      dist: xenial
+      # dist: xenial
       sudo: true
       env: TOX_ENV=py37-test
     - stage: deploy

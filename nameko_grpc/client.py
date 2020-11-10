@@ -13,9 +13,9 @@ from h2.errors import ErrorCodes
 from nameko_grpc.compression import SUPPORTED_ENCODINGS, UnsupportedEncoding
 from nameko_grpc.connection import ConnectionManager
 from nameko_grpc.constants import Cardinality
-from nameko_grpc.context import metadata_from_context_data
 from nameko_grpc.errors import GrpcError
 from nameko_grpc.inspection import Inspector
+from nameko_grpc.ssl import SslConfig
 from nameko_grpc.streams import ReceiveStream, SendStream
 from nameko_grpc.timeout import bucket_timeout
 
@@ -24,6 +24,7 @@ log = getLogger(__name__)
 
 
 USER_AGENT = "grpc-python-nameko/0.0.1"
+CONTENT_TYPE = "application/grpc+proto"
 
 
 class ClientConnectionManager(ConnectionManager):
@@ -159,10 +160,10 @@ class Future:
 
 
 class Method:
-    def __init__(self, client, name, context_data=None):
+    def __init__(self, client, name, extra_metadata=None):
         self.client = client
         self.name = name
-        self.context_data = context_data or {}
+        self.extra_metadata = extra_metadata or []
 
     def __call__(self, request, **kwargs):
         return self.future(request, **kwargs).result()
@@ -182,13 +183,15 @@ class Method:
             )
             compression = self.client.default_compression
 
+        scheme = "https" if self.client.ssl else "http"
+
         request_headers = [
             (":method", "POST"),
-            (":scheme", "http"),
+            (":scheme", scheme),
             (":authority", urlparse(self.client.target).hostname),
             (":path", "/{}/{}".format(inspector.service_name, self.name)),
             ("te", "trailers"),
-            ("content-type", "application/grpc+proto"),
+            ("content-type", CONTENT_TYPE),
             ("user-agent", USER_AGENT),
             ("grpc-encoding", compression),
             ("grpc-message-type", "{}.{}".format(service_name, input_type.__name__)),
@@ -200,7 +203,7 @@ class Method:
         else:
             metadata = []
 
-        metadata.extend(metadata_from_context_data(self.context_data))
+        metadata.extend(self.extra_metadata)
 
         for key, value in metadata:
             request_headers.append((key, value))
@@ -232,12 +235,18 @@ class Client:
     sock = None
 
     def __init__(
-        self, target, stub, compression_algorithm="none", compression_level="high"
+        self,
+        target,
+        stub,
+        compression_algorithm="none",
+        compression_level="high",
+        ssl=False,
     ):
         self.target = target
         self.stub = stub
         self.compression_algorithm = compression_algorithm
         self.compression_level = compression_level  # NOTE not used
+        self.ssl = SslConfig(ssl)
 
     def __enter__(self):
         return self.start()
@@ -251,12 +260,19 @@ class Client:
             return self.compression_algorithm
         return "identity"
 
-    def start(self):
+    def connect(self):
         target = urlparse(self.target)
+        sock = socket.create_connection((target.hostname, target.port or 50051))
 
-        self.sock = socket.socket()
-        self.sock.connect((target.hostname, target.port or 50051))
+        if self.ssl:
+            context = self.ssl.client_context()
+            sock = context.wrap_socket(
+                sock=sock, server_hostname=target.hostname, suppress_ragged_eofs=True
+            )
+        return sock
 
+    def start(self):
+        self.sock = self.connect()
         self.manager = ClientConnectionManager(self.sock)
         threading.Thread(target=self.manager.run_forever).start()
 
@@ -269,6 +285,7 @@ class Client:
 
     def timeout(self, send_stream, response_stream, deadline):
         start = time.time()
+        # TODO timeout thread should terminate if (one or both?) streams are closed
         while True:
             elapsed = time.time() - start
             if elapsed > deadline:

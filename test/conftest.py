@@ -7,10 +7,12 @@ import threading
 import time
 import uuid
 from importlib import import_module
+from unittest.mock import patch
 
 import pytest
 from eventlet.green import zmq
 from mock import Mock
+from nameko import config
 from nameko.testing.services import dummy
 from nameko.testing.utils import find_free_port, get_extension
 
@@ -26,7 +28,6 @@ def pytest_addoption(parser):
     parser.addoption(
         "--client",
         action="store",
-        type="choice",
         choices=["nameko", "dp", "grpc", "all"],
         dest="client",
         default="all",
@@ -36,7 +37,6 @@ def pytest_addoption(parser):
     parser.addoption(
         "--server",
         action="store",
-        type="choice",
         choices=["nameko", "grpc", "all"],
         dest="server",
         default="all",
@@ -144,7 +144,9 @@ def grpc_port():
 
 
 @pytest.fixture
-def start_grpc_server(compile_proto, spawn_process, spec_dir, grpc_port):
+def start_grpc_server(request, compile_proto, spawn_process, spec_dir, grpc_port):
+
+    secure = "secure" if request.node.get_closest_marker(name="secure") else "insecure"
 
     server_script = os.path.join(os.path.dirname(__file__), "grpc_indirect_server.py")
 
@@ -163,6 +165,7 @@ def start_grpc_server(compile_proto, spawn_process, spec_dir, grpc_port):
         spawn_process(
             server_script,
             str(grpc_port),
+            secure,
             proto_name,
             service_name,
             compression_algorithm,
@@ -184,7 +187,9 @@ def start_grpc_server(compile_proto, spawn_process, spec_dir, grpc_port):
 
 
 @pytest.fixture
-def start_grpc_client(load_stubs, spawn_process, spec_dir, grpc_port):
+def start_grpc_client(request, load_stubs, spawn_process, spec_dir, grpc_port):
+
+    secure = "secure" if request.node.get_closest_marker(name="secure") else "insecure"
 
     client_script = os.path.join(os.path.dirname(__file__), "grpc_indirect_client.py")
 
@@ -270,6 +275,7 @@ def start_grpc_client(load_stubs, spawn_process, spec_dir, grpc_port):
         spawn_process(
             client_script,
             str(grpc_port),
+            secure,
             proto_name,
             service_name,
             compression_algorithm,
@@ -290,13 +296,23 @@ def start_grpc_client(load_stubs, spawn_process, spec_dir, grpc_port):
 
 
 @pytest.fixture
-def start_nameko_server(spec_dir, container_factory, grpc_port):
+def start_nameko_server(request, spec_dir, container_factory, grpc_port):
+
+    if request.node.get_closest_marker(name="secure"):
+        ssl_options = {
+            "cert_chain": {
+                "keyfile": "test/certs/server.key",
+                "certfile": "test/certs/server.crt",
+            }
+        }
+    else:
+        ssl_options = False
+
     def make(
         service_name,
         proto_name=None,
         compression_algorithm="none",
         compression_level="high",
-        config=None,
     ):
         if proto_name is None:
             proto_name = service_name
@@ -304,18 +320,16 @@ def start_nameko_server(spec_dir, container_factory, grpc_port):
         service_module = import_module("{}_nameko".format(proto_name))
         service_cls = getattr(service_module, service_name)
 
-        if config is None:
-            config = {}
+        conf = {
+            "GRPC_BIND_PORT": grpc_port,
+            "GRPC_COMPRESSION_ALGORITHM": compression_algorithm,
+            "GRPC_COMPRESSION_LEVEL": compression_level,
+        }
+        if ssl_options:
+            conf.update({"GRPC_SSL": ssl_options})
 
-        config.update(
-            {
-                "GRPC_BIND_PORT": grpc_port,
-                "GRPC_COMPRESSION_ALGORITHM": compression_algorithm,
-                "GRPC_COMPRESSION_LEVEL": compression_level,
-            }
-        )
-
-        container = container_factory(service_cls, config)
+        config.setup(conf)
+        container = container_factory(service_cls)
         container.start()
 
         return container
@@ -324,9 +338,14 @@ def start_nameko_server(spec_dir, container_factory, grpc_port):
 
 
 @pytest.fixture
-def start_nameko_client(load_stubs, spec_dir, grpc_port):
+def start_nameko_client(request, load_stubs, spec_dir, grpc_port):
 
     clients = []
+
+    if request.node.get_closest_marker(name="secure"):
+        ssl_options = {"verify_mode": "none", "check_hostname": False}
+    else:
+        ssl_options = False
 
     def make(
         service_name,
@@ -340,10 +359,11 @@ def start_nameko_client(load_stubs, spec_dir, grpc_port):
         stubs = load_stubs(proto_name)
         stub_cls = getattr(stubs, "{}Stub".format(service_name))
         client = Client(
-            "//127.0.0.1:{}".format(grpc_port),
+            "//localhost:{}".format(grpc_port),
             stub_cls,
             compression_algorithm,
             compression_level,
+            ssl_options,
         )
         clients.append(client)
         return client.start()
@@ -355,43 +375,56 @@ def start_nameko_client(load_stubs, spec_dir, grpc_port):
 
 
 @pytest.fixture
-def start_dependency_provider(load_stubs, spec_dir, grpc_port, container_factory):
-    def make(
-        service_name,
-        proto_name=None,
-        compression_algorithm="none",
-        compression_level="high",
-    ):
-        if proto_name is None:
-            proto_name = service_name
+def start_dependency_provider(
+    request, load_stubs, spec_dir, grpc_port, container_factory
+):
 
-        stubs = load_stubs(proto_name)
-        stub_cls = getattr(stubs, "{}Stub".format(service_name))
+    if request.node.get_closest_marker(name="secure"):
+        ssl_config = {"verify_mode": "none", "check_hostname": False}
+    else:
+        ssl_config = False
 
-        class Service:
-            name = "caller"
+    # TODO turn into config.module_patch?
+    patch_config = config.copy()
+    patch_config["GRPC_SSL"] = ssl_config
+    with patch("nameko_grpc.dependency_provider.config", new=patch_config):
 
-            example_grpc = GrpcProxy(
-                "//127.0.0.1:{}".format(grpc_port),
-                stub_cls,
-                compression_algorithm=compression_algorithm,
-                compression_level=compression_level,
-            )
+        def make(
+            service_name,
+            proto_name=None,
+            compression_algorithm="none",
+            compression_level="high",
+        ):
+            if proto_name is None:
+                proto_name = service_name
 
-            @dummy
-            def call(self):
-                pass
+            stubs = load_stubs(proto_name)
+            stub_cls = getattr(stubs, "{}Stub".format(service_name))
 
-        container = container_factory(Service, {})
-        container.start()
+            class Service:
+                name = "caller"
 
-        grpc_proxy = get_extension(container, GrpcProxy)
-        return grpc_proxy.get_dependency(Mock(context_data={}))
+                example_grpc = GrpcProxy(
+                    "//localhost:{}".format(grpc_port),
+                    stub_cls,
+                    compression_algorithm=compression_algorithm,
+                    compression_level=compression_level,
+                )
 
-    yield make
+                @dummy
+                def call(self):
+                    pass
+
+            container = container_factory(Service)
+            container.start()
+
+            grpc_proxy = get_extension(container, GrpcProxy)
+            return grpc_proxy.get_dependency(Mock(context_data={}))
+
+        yield make
 
 
-@pytest.fixture(params=["server|grpc", "server|nameko"])
+@pytest.fixture(params=["server=grpc", "server=nameko"])
 def server_type(request):
     return request.param[7:]
 
@@ -408,13 +441,13 @@ def start_server(request, server_type):
         return request.getfixturevalue("start_nameko_server")
 
 
-@pytest.fixture(params=["client|grpc", "client|nameko", "client|dp"])
+@pytest.fixture(params=["client=grpc", "client=nameko", "client=dp"])
 def client_type(request):
     return request.param[7:]
 
 
 @pytest.fixture
-def start_client(request, client_type):
+def start_client(request, client_type, start_server):
     if client_type == "grpc":
         if request.config.option.client not in ("grpc", "all"):
             pytest.skip("grpc client not requested")

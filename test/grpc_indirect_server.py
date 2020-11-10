@@ -15,11 +15,13 @@ if __name__ == "__main__":
 
     port = sys.argv[1]
 
-    proto_name = sys.argv[2]
-    service_name = sys.argv[3]
+    secure = sys.argv[2]
 
-    compression_algorithm = sys.argv[4]
-    compression_level = sys.argv[5]
+    proto_name = sys.argv[3]
+    service_name = sys.argv[4]
+
+    compression_algorithm = sys.argv[5]
+    compression_level = sys.argv[6]
 
     service_module = import_module("{}_grpc".format(proto_name))
     service_cls = getattr(service_module, service_name)
@@ -44,7 +46,18 @@ if __name__ == "__main__":
             futures.ThreadPoolExecutor(max_workers=10), options=server_options
         )
         add_servicer(service_cls(), server)
-        server.add_insecure_port("[::]:{}".format(port))
+        if secure == "secure":
+
+            with open("test/certs/server.key", "rb") as f:
+                private_key = f.read()
+            with open("test/certs/server.crt", "rb") as f:
+                certificate_chain = f.read()
+
+            creds = grpc.ssl_server_credentials(((private_key, certificate_chain),))
+            server.add_secure_port("[::]:{}".format(port), creds)
+        else:
+            server.add_insecure_port("[::]:{}".format(port))
+
         server.start()
         try:
             while True:
