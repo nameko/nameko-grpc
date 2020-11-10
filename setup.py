@@ -14,8 +14,8 @@ with open(os.path.join(here, "README.md"), "r", "utf-8") as handle:
 
 setup(
     name="nameko-grpc",
-    version="1.0.1",
-    description="Nameko GRPC extensions",
+    version="1.1.0",
+    description="Nameko gRPC extensions",
     long_description=readme,
     author="Matt Yule-Bennett",
     url="http://github.com/nameko/nameko-grpc",
