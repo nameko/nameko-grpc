@@ -135,8 +135,7 @@ def spawn_process():
     yield spawn
 
     for proc in procs:
-        # proc.terminate()
-        pass
+        proc.terminate()
 
 
 @pytest.fixture
@@ -425,8 +424,7 @@ def start_dependency_provider(
         yield make
 
 
-# @pytest.fixture(params=["server=grpc", "server=nameko"])
-@pytest.fixture(params=["server|grpc"])
+@pytest.fixture(params=["server=grpc", "server=nameko"])
 def server_type(request):
     return request.param[7:]
 
@@ -443,14 +441,13 @@ def start_server(request, server_type):
         return request.getfixturevalue("start_nameko_server")
 
 
-# @pytest.fixture(params=["client=grpc", "client=nameko", "client=dp"])
-@pytest.fixture(params=["client|nameko"])
+@pytest.fixture(params=["client=grpc", "client=nameko", "client=dp"])
 def client_type(request):
     return request.param[7:]
 
 
 @pytest.fixture
-def start_client(request, client_type):
+def start_client(request, client_type, start_server):
     if client_type == "grpc":
         if request.config.option.client not in ("grpc", "all"):
             pytest.skip("grpc client not requested")

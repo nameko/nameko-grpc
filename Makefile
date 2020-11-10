@@ -9,4 +9,4 @@ static:
 	pre-commit run --all-files
 
 test:
-	py.test test/test_secure.py -v -s -k "TestStandard and test_stream_unary"
+	py.test test -v
