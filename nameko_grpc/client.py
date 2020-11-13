@@ -227,9 +227,7 @@ class Proxy:
         return Method(self.client, name)
 
 
-class Client:
-    """ Standalone GRPC client that uses native threads.
-    """
+class ClientBase:
 
     manager = None
     sock = None
@@ -248,11 +246,8 @@ class Client:
         self.compression_level = compression_level  # NOTE not used
         self.ssl = SslConfig(ssl)
 
-    def __enter__(self):
-        return self.start()
-
-    def __exit__(self, *args):
-        self.stop()
+    def spawn_thread(self, target, args=(), kwargs=None, name=None):
+        raise NotImplementedError
 
     @property
     def default_compression(self):
@@ -274,9 +269,7 @@ class Client:
     def start(self):
         self.sock = self.connect()
         self.manager = ClientConnectionManager(self.sock)
-        threading.Thread(target=self.manager.run_forever).start()
-
-        return Proxy(self)
+        self.spawn_thread(target=self.manager.run_forever)
 
     def stop(self):
         if self.manager:
@@ -299,8 +292,32 @@ class Client:
     def invoke(self, request_headers, request, timeout):
         send_stream, response_stream = self.manager.send_request(request_headers)
         if timeout:
-            threading.Thread(
-                target=self.timeout, args=(send_stream, response_stream, timeout)
-            ).start()
-        threading.Thread(target=send_stream.populate, args=(request,)).start()
+            self.spawn_thread(
+                target=self.timeout,
+                args=(send_stream, response_stream, timeout),
+                name="client_timeout",
+            )
+        self.spawn_thread(
+            target=send_stream.populate, args=(request,), name="populate_request"
+        )
         return response_stream
+
+
+class Client(ClientBase):
+    """ Standalone gRPC client that uses native threads.
+    """
+
+    def __enter__(self):
+        return self.start()
+
+    def __exit__(self, *args):
+        self.stop()
+
+    def start(self):
+        super().start()
+        return Proxy(self)
+
+    def spawn_thread(self, target, args=(), kwargs=None, name=None):
+        return threading.Thread(
+            target=target, args=args, kwargs=kwargs, name=name
+        ).start()
