@@ -139,8 +139,19 @@ class GrpcServer(SharedExtension):
     def run(self):
         while self.is_accepting:
             new_sock, _ = self.server_socket.accept()
+            # TODO should this socket have some timeout?
             manager = ServerConnectionManager(new_sock, self.handle_request)
             self.container.spawn_managed_thread(manager.run_forever)
+            # XXX how to handle this thread exiting?
+            # (in http.WebServer case we don't "run forever" for each connection,
+            #  -- it only lives for the duration of the request/response cycle --
+            #  so we don't have to consider if it dies)
+
+            # in this case too, i think we can just let it die. we can't revive
+            # the underlying socket. if we are still accepting, we'll get a new
+            # socket on a new connection. the question is... with the current
+            # implementation do we gracefully handle a dead manager? the service
+            # should live on after an error if that is the case.
 
     def listen(self):
 
@@ -150,6 +161,7 @@ class GrpcServer(SharedExtension):
 
         sock = eventlet.listen((host, port))
         # work around https://github.com/celery/kombu/issues/838
+        # TODO should this socket have some timeout?
         sock.settimeout(None)
 
         if ssl:

@@ -1,8 +1,11 @@
 # -*- coding: utf-8 -*-
+import itertools
 import select
+from collections import deque
 from logging import getLogger
 from threading import Event
 
+from grpc import StatusCode
 from h2.config import H2Configuration
 from h2.connection import H2Connection
 from h2.errors import ErrorCodes
@@ -17,7 +20,11 @@ from h2.events import (
     TrailersReceived,
     WindowUpdated,
 )
-from h2.exceptions import StreamClosedError
+from h2.exceptions import ProtocolError, StreamClosedError
+
+from nameko_grpc.compression import SUPPORTED_ENCODINGS, UnsupportedEncoding
+from nameko_grpc.errors import GrpcError
+from nameko_grpc.streams import ReceiveStream, SendStream
 
 
 log = getLogger(__name__)
@@ -56,20 +63,38 @@ class ConnectionManager:
 
             self.on_iteration()
             self.sock.sendall(self.conn.data_to_send())
-
             ready = select.select([self.sock], [], [], SELECT_TIMEOUT)
             if not ready[0]:
                 continue
 
             data = self.sock.recv(65535)
             if not data:
+                print("no data, breaking")
                 break
 
             try:
                 events = self.conn.receive_data(data)
-            except StreamClosedError:
+            except StreamClosedError as error:
                 # TODO what if data was also recieved for a non-closed stream?
+                print(">>> STREAM CLOSED ERROR", error)
                 continue
+                # do we want to continue, or break?
+                # continue is fine as long as self.run is false. if this can
+                # happen spontaneously then break will allow .stopped to be
+                # set and the thread to exit. if self.run is TRUE we probably
+                # hang trying to send or recevive data.
+            except ProtocolError as error:
+                print(">>> PROTOCOL ERROR", error)
+                raise
+                # do we want it to blow up, or exit nicely?
+                # `continue` per StreamClosedError will make it exit nicely _if_
+                # we're intentionally stopping
+
+                # in the case where the connection just dies... we want to
+                # let it happen gracefully. the server should continue.
+                # the client should catch it and create a replacement
+                # (by calling connect again -- this particular connection
+                # and its underlying socket is dead)
 
             for event in events:
                 if isinstance(event, RequestReceived):
@@ -90,7 +115,11 @@ class ConnectionManager:
                     self.settings_acknowledged(event)
                 elif isinstance(event, TrailersReceived):
                     self.trailers_received(event)
+                else:
+                    print(event)
+                    # XXX is keepalive supported nameko-grpc -> nameko-grpc?
 
+        print("connectionmanager stopped")
         self.stopped.set()
 
     def stop(self):
@@ -252,3 +281,116 @@ class ConnectionManager:
                 self.conn.end_stream(stream_id)
         except StreamClosedError:
             pass
+
+
+class ClientConnectionManager(ConnectionManager):
+    """
+    An object that manages a single HTTP/2 connection on a GRPC client.
+
+    Extends the base `ConnectionManager` to make outbound GRPC requests.
+    """
+
+    def __init__(self, sock):
+        super().__init__(sock, client_side=True)
+
+        self.pending_requests = deque()
+
+        self.counter = itertools.count(start=1, step=2)
+
+    def on_iteration(self):
+        """ On each iteration of the event loop, also initiate any pending requests.
+        """
+        self.send_pending_requests()
+        super().on_iteration()
+
+    def send_request(self, request_headers):
+        """ Called by the client to invoke a GRPC method.
+
+        Establish a `SendStream` to send the request payload and `ReceiveStream`
+        for receiving the eventual response. `SendStream` and `ReceiveStream` are
+        returned to the client for providing the request payload and iterating
+        over the response.
+
+        Invocations are queued and sent on the next iteration of the event loop.
+        """
+        stream_id = next(self.counter)
+
+        request_stream = SendStream(stream_id)
+        response_stream = ReceiveStream(stream_id)
+        self.receive_streams[stream_id] = response_stream
+        self.send_streams[stream_id] = request_stream
+
+        request_stream.headers.set(*request_headers)
+
+        self.pending_requests.append(stream_id)
+
+        return request_stream, response_stream
+
+    def response_received(self, event):
+        """ Called when a response is received on a stream.
+
+        If the headers contain an error, we should raise it here.
+        """
+        super().response_received(event)
+
+        stream_id = event.stream_id
+        response_stream = self.receive_streams.get(stream_id)
+        if response_stream is None:
+            self.conn.reset_stream(stream_id, error_code=ErrorCodes.PROTOCOL_ERROR)
+            return
+
+        headers = response_stream.headers
+
+        if int(headers.get("grpc-status", 0)) > 0:
+            error = GrpcError.from_headers(headers)
+            response_stream.close(error)
+
+    def trailers_received(self, event):
+        """ Called when trailers are received on a stream.
+
+        If the trailers contain an error, we should raise it here.
+        """
+        super().trailers_received(event)
+
+        stream_id = event.stream_id
+        response_stream = self.receive_streams.get(stream_id)
+        if response_stream is None:
+            self.conn.reset_stream(stream_id, error_code=ErrorCodes.PROTOCOL_ERROR)
+            return
+
+        trailers = response_stream.trailers
+
+        if int(trailers.get("grpc-status", 0)) > 0:
+            error = GrpcError.from_headers(trailers)
+            response_stream.close(error)
+
+    def send_pending_requests(self):
+        """ Initiate requests for any pending invocations.
+
+        Sends initial headers and any request data that is ready to be sent.
+        """
+        while self.pending_requests:
+            stream_id = self.pending_requests.popleft()
+
+            log.debug("initiating request, new stream %s", stream_id)
+
+            # send headers immediately rather than waiting for data. this ensures
+            # streams are established with increasing stream ids regardless of when
+            # the request data is available
+            self.send_headers(stream_id, immediate=True)
+            self.send_data(stream_id)
+
+    def send_data(self, stream_id):
+        try:
+            super().send_data(stream_id)
+        except UnsupportedEncoding:
+
+            response_stream = self.receive_streams[stream_id]
+            request_stream = self.send_streams[stream_id]
+
+            error = GrpcError(
+                status=StatusCode.UNIMPLEMENTED,
+                details="Algorithm not supported: {}".format(request_stream.encoding),
+            )
+            response_stream.close(error)
+            request_stream.close()
