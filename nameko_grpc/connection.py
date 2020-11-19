@@ -20,9 +20,13 @@ from h2.events import (
     TrailersReceived,
     WindowUpdated,
 )
-from h2.exceptions import ProtocolError, StreamClosedError
+from h2.exceptions import StreamClosedError
 
-from nameko_grpc.compression import SUPPORTED_ENCODINGS, UnsupportedEncoding
+from nameko_grpc.compression import (
+    SUPPORTED_ENCODINGS,
+    UnsupportedEncoding,
+    select_algorithm,
+)
 from nameko_grpc.errors import GrpcError
 from nameko_grpc.streams import ReceiveStream, SendStream
 
@@ -377,3 +381,61 @@ class ClientConnectionManager(ConnectionManager):
             )
             response_stream.close(error)
             request_stream.close()
+
+
+class ServerConnectionManager(ConnectionManager):
+    """
+    An object that manages a single HTTP/2 connection on a GRPC server.
+
+    Extends the base `ConnectionManager` to handle incoming GRPC requests.
+    """
+
+    def __init__(self, sock, handle_request):
+        super().__init__(sock, client_side=False)
+        self.handle_request = handle_request
+
+    def request_received(self, event):
+        """ Receive a GRPC request and pass it to the GrpcServer to fire any
+        appropriate entrypoint.
+
+        Establish a `ReceiveStream` to receive the request payload and `SendStream`
+        for sending the eventual response.
+        """
+        super().request_received(event)
+
+        stream_id = event.stream_id
+
+        request_stream = ReceiveStream(stream_id)
+        response_stream = SendStream(stream_id)
+        self.receive_streams[stream_id] = request_stream
+        self.send_streams[stream_id] = response_stream
+
+        request_stream.headers.set(*event.headers, from_wire=True)
+
+        compression = select_algorithm(
+            request_stream.headers.get("grpc-accept-encoding"),
+            request_stream.headers.get("grpc-encoding"),
+        )
+
+        try:
+            response_stream.headers.set(
+                (":status", "200"),
+                ("content-type", "application/grpc+proto"),
+                ("grpc-accept-encoding", ",".join(SUPPORTED_ENCODINGS)),
+                # TODO support server changing compression later
+                ("grpc-encoding", compression),
+            )
+            response_stream.trailers.set(("grpc-status", "0"))
+            self.handle_request(request_stream, response_stream)
+
+        except GrpcError as error:
+            response_stream.trailers.set((":status", "200"), *error.as_headers())
+            self.end_stream(stream_id)
+
+    def send_data(self, stream_id):
+        try:
+            super().send_data(stream_id)
+        except GrpcError as error:
+            send_stream = self.send_streams.get(stream_id)
+            send_stream.trailers.set(*error.as_headers())
+            self.end_stream(stream_id)
