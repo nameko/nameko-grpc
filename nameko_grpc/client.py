@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import sys
 import threading
 import time
 from logging import getLogger
@@ -6,14 +7,14 @@ from urllib.parse import urlparse
 
 from grpc import StatusCode
 
-
-from nameko_grpc.constants import Cardinality
 from nameko_grpc.channel import ClientChannel
+from nameko_grpc.compression import SUPPORTED_ENCODINGS
+from nameko_grpc.constants import Cardinality
 from nameko_grpc.errors import GrpcError
 from nameko_grpc.inspection import Inspector
 from nameko_grpc.ssl import SslConfig
 from nameko_grpc.timeout import bucket_timeout
-from nameko_grpc.compression import SUPPORTED_ENCODINGS
+
 
 log = getLogger(__name__)
 
@@ -128,7 +129,7 @@ class ClientBase:
         self.compression_level = compression_level  # NOTE not used
         self.ssl = SslConfig(ssl)
 
-    def spawn_thread(self, target, args=(), kwargs=None, name=None):
+    def spawn_thread(self, target, args=(), kwargs=None, name=None, callback=None):
         raise NotImplementedError
 
     @property
@@ -185,7 +186,20 @@ class Client(ClientBase):
         super().start()
         return Proxy(self)
 
-    def spawn_thread(self, target, args=(), kwargs=None, name=None):
-        return threading.Thread(
-            target=target, args=args, kwargs=kwargs, name=name
-        ).start()
+    def spawn_thread(self, target, args=(), kwargs=None, name=None, callback=None):
+
+        if kwargs is None:
+            kwargs = {}
+
+        def execute():
+            try:
+                res = target(*args, **kwargs)
+            except Exception:
+                res = None
+                exc_info = sys.exc_info()
+            else:
+                exc_info = None
+            if callback:
+                callback(res, exc_info)
+
+        threading.Thread(target=execute, name=name).start()

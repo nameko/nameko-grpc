@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 from logging import getLogger
-
+import sys
 from nameko import config
 from nameko.extensions import DependencyProvider
 
@@ -26,9 +26,21 @@ class GrpcProxy(ClientBase, DependencyProvider):
         ssl = kwargs.pop("ssl", config.get("GRPC_SSL"))
         super().__init__(*args, ssl=ssl, **kwargs)
 
-    def spawn_thread(self, target, args=(), kwargs=None, name=None):
+    def spawn_thread(self, target, args=(), kwargs=None, name=None, callback=None):
         if kwargs is None:
             kwargs = {}
+
+        def execute():
+            try:
+                res = target(*args, **kwargs)
+            except Exception:
+                res = None
+                exc_info = sys.exc_info()
+            else:
+                exc_info = None
+            if callback:
+                callback(res, exc_info)
+
         self.container.spawn_managed_thread(
             lambda: target(*args, **kwargs), identifier=name,
         )

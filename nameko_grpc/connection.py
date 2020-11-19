@@ -69,32 +69,14 @@ class ConnectionManager:
 
             data = self.sock.recv(65535)
             if not data:
-                print("no data, breaking")
                 break
 
             try:
                 events = self.conn.receive_data(data)
-            except StreamClosedError as error:
+            except StreamClosedError:
                 # TODO what if data was also recieved for a non-closed stream?
-                print(">>> STREAM CLOSED ERROR", error)
+                # should this really continue, or break/raise to allow the manager to exit?
                 continue
-                # do we want to continue, or break?
-                # continue is fine as long as self.run is false. if this can
-                # happen spontaneously then break will allow .stopped to be
-                # set and the thread to exit. if self.run is TRUE we probably
-                # hang trying to send or recevive data.
-            except ProtocolError as error:
-                print(">>> PROTOCOL ERROR", error)
-                raise
-                # do we want it to blow up, or exit nicely?
-                # `continue` per StreamClosedError will make it exit nicely _if_
-                # we're intentionally stopping
-
-                # in the case where the connection just dies... we want to
-                # let it happen gracefully. the server should continue.
-                # the client should catch it and create a replacement
-                # (by calling connect again -- this particular connection
-                # and its underlying socket is dead)
 
             for event in events:
                 if isinstance(event, RequestReceived):
@@ -116,7 +98,7 @@ class ConnectionManager:
                 elif isinstance(event, TrailersReceived):
                     self.trailers_received(event)
                 else:
-                    print(event)
+                    print(">> UNHANDLED EVENT:", event)
                     # XXX is keepalive supported nameko-grpc -> nameko-grpc?
 
         print("connectionmanager stopped")
@@ -127,6 +109,7 @@ class ConnectionManager:
             send_stream.close()
         self.run = False
         self.stopped.wait()
+        self.sock.close()
 
     def on_iteration(self):
         """ Called on every iteration of the event loop.
