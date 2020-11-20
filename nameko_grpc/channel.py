@@ -25,7 +25,7 @@ class ConnectionPool:
         self.ssl = ssl
         self.spawn_thread = spawn_thread
 
-        self.connections = queue.SimpleQueue()
+        self.connections = queue.Queue()
 
     def connect(self, target):
         print(">> connecting to", target)
