@@ -17,7 +17,6 @@ from nameko_grpc.context import GrpcContext, context_data_from_metadata
 from nameko_grpc.errors import GrpcError
 from nameko_grpc.inspection import Inspector
 from nameko_grpc.ssl import SslConfig
-from nameko_grpc.streams import ReceiveStream, SendStream
 from nameko_grpc.timeout import unbucket_timeout
 
 

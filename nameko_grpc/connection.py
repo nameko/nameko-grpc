@@ -80,7 +80,7 @@ class ConnectionManager:
                 events = self.conn.receive_data(data)
             except StreamClosedError:
                 # TODO what if data was also recieved for a non-closed stream?
-                # should this really continue, or break/raise to allow the manager to exit?
+                # should this continue, or break/raise to allow the manager to exit?
                 continue
 
             for event in events:

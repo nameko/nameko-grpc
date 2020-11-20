@@ -1,11 +1,13 @@
 # -*- coding: utf-8 -*-
 from logging import getLogger
+
 from nameko import config
 from nameko.extensions import DependencyProvider
 
 from nameko_grpc.client import ClientBase, Method
 from nameko_grpc.context import metadata_from_context_data
 from nameko_grpc.threading import target_with_callback
+
 
 log = getLogger(__name__)
 

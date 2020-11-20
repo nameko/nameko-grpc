@@ -12,8 +12,8 @@ from nameko_grpc.constants import Cardinality
 from nameko_grpc.errors import GrpcError
 from nameko_grpc.inspection import Inspector
 from nameko_grpc.ssl import SslConfig
-from nameko_grpc.timeout import bucket_timeout
 from nameko_grpc.threading import target_with_callback
+from nameko_grpc.timeout import bucket_timeout
 
 
 log = getLogger(__name__)

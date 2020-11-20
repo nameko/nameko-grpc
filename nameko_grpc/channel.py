@@ -1,8 +1,11 @@
-from urllib.parse import urlparse
-import socket
-from nameko_grpc.connection import ClientConnectionManager
-from functools import partial
+# -*- coding: utf-8 -*-
 import queue
+import socket
+from functools import partial
+from urllib.parse import urlparse
+
+from nameko_grpc.connection import ClientConnectionManager
+
 
 # DNS RESOLVER
 # look up address, maybe get back multiple ips
