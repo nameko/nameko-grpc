@@ -10,6 +10,7 @@ from h2.config import H2Configuration
 from h2.connection import H2Connection
 from h2.errors import ErrorCodes
 from h2.events import (
+    ConnectionTerminated,
     DataReceived,
     RemoteSettingsChanged,
     RequestReceived,
@@ -101,9 +102,8 @@ class ConnectionManager:
                     self.settings_acknowledged(event)
                 elif isinstance(event, TrailersReceived):
                     self.trailers_received(event)
-                else:
-                    print(">> UNHANDLED EVENT:", event)
-                    # XXX is keepalive supported nameko-grpc -> nameko-grpc?
+                elif isinstance(event, ConnectionTerminated):
+                    self.connection_terminated(event)
 
         print("connectionmanager stopped")
         self.stopped.set()
@@ -204,6 +204,10 @@ class ConnectionManager:
             return
 
         receive_stream.trailers.set(*event.headers, from_wire=True)
+
+    def connection_terminated(self, event):
+        log.debug("connection terminated")
+        self.run = False
 
     def send_headers(self, stream_id, immediate=False):
         """ Attempt to send any headers on a stream.
