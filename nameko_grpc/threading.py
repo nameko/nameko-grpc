@@ -2,7 +2,7 @@
 import sys
 
 
-def target_with_callback(target, args=(), kwargs=None, name=None, callback=None):
+def target_with_callback(target, args=(), kwargs=None, callback=None):
 
     if kwargs is None:
         kwargs = {}
