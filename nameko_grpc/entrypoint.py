@@ -4,12 +4,12 @@ import types
 from functools import partial
 from logging import getLogger
 
-import eventlet
 from grpc import StatusCode
 from nameko import config
 from nameko.exceptions import ContainerBeingKilled
 from nameko.extensions import Entrypoint, SharedExtension, register_entrypoint
 
+from nameko_grpc.channel import ServerChannel
 from nameko_grpc.compression import SUPPORTED_ENCODINGS
 from nameko_grpc.connection import ServerConnectionManager
 from nameko_grpc.constants import Cardinality
@@ -18,7 +18,7 @@ from nameko_grpc.errors import GrpcError
 from nameko_grpc.inspection import Inspector
 from nameko_grpc.ssl import SslConfig
 from nameko_grpc.timeout import unbucket_timeout
-
+from nameko_grpc.threading import target_with_callback
 
 log = getLogger(__name__)
 
@@ -26,7 +26,6 @@ log = getLogger(__name__)
 class GrpcServer(SharedExtension):
     def __init__(self):
         super(GrpcServer, self).__init__()
-        self.is_accepting = True
         self.entrypoints = {}
 
     def register(self, entrypoint):
@@ -77,49 +76,22 @@ class GrpcServer(SharedExtension):
             partial(entrypoint.handle_request, request_stream, response_stream)
         )
 
-    def run(self):
-        while self.is_accepting:
-            new_sock, _ = self.server_socket.accept()
-            # TODO should this socket have some timeout?
-            manager = ServerConnectionManager(new_sock, self.handle_request)
-            self.container.spawn_managed_thread(manager.run_forever)
-            # XXX how to handle this thread exiting?
-            # (in http.WebServer case we don't "run forever" for each connection,
-            #  -- it only lives for the duration of the request/response cycle --
-            #  so we don't have to consider if it dies)
-
-            # in this case too, i think we can just let it die. we can't revive
-            # the underlying socket. if we are still accepting, we'll get a new
-            # socket on a new connection. the question is... with the current
-            # implementation do we gracefully handle a dead manager? the service
-            # should live on after an error if that is the case.
-
-    def listen(self):
-
+    def setup(self):
         host = config.get("GRPC_BIND_HOST", "0.0.0.0")
         port = config.get("GRPC_BIND_PORT", 50051)
         ssl = SslConfig(config.get("GRPC_SSL"))
 
-        sock = eventlet.listen((host, port))
-        # work around https://github.com/celery/kombu/issues/838
-        # TODO should this socket have some timeout?
-        sock.settimeout(None)
+        def spawn_thread(target, args=(), kwargs=None, name=None, callback=None):
+            execute = target_with_callback(target, args, kwargs, callback)
+            self.container.spawn_managed_thread(execute, identifier=name)
 
-        if ssl:
-            context = ssl.server_context()
-            sock = context.wrap_socket(
-                sock=sock, server_side=True, suppress_ragged_eofs=True,
-            )
-
-        return sock
+        self.channel = ServerChannel(host, port, ssl, spawn_thread, self.handle_request)
 
     def start(self):
-        self.server_socket = self.listen()
-        self.container.spawn_managed_thread(self.run)
+        self.channel.start()
 
     def stop(self):
-        self.is_accepting = False
-        self.server_socket.close()
+        self.channel.stop()
         super(GrpcServer, self).stop()
 
     def kill(self):

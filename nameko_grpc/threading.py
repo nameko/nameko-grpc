@@ -13,6 +13,7 @@ def target_with_callback(target, args=(), kwargs=None, callback=None):
         except Exception:
             res = None
             exc_info = sys.exc_info()
+            # print traceback?
         else:
             exc_info = None
         if callback:

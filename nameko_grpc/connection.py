@@ -103,6 +103,7 @@ class ConnectionManager:
                 elif isinstance(event, TrailersReceived):
                     self.trailers_received(event)
                 elif isinstance(event, ConnectionTerminated):
+                    print("connection terminated")
                     self.connection_terminated(event)
 
         print("connectionmanager stopped")

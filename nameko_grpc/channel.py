@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
 import queue
 import socket
+import eventlet
 from functools import partial
 from urllib.parse import urlparse
 
-from nameko_grpc.connection import ClientConnectionManager
+from nameko_grpc.connection import ClientConnectionManager, ServerConnectionManager
 
 
 class ConnectionPool:
@@ -73,3 +74,45 @@ class ClientChannel:
     def send_request(self, request_headers):
         connection = self.connection_pool.get()
         return connection.send_request(request_headers)
+
+
+class ServerChannel:
+    """ Simple server channel encapsulating incoming connection management.
+    """
+
+    def __init__(self, host, port, ssl, spawn_thread, handle_request):
+        self.host = host
+        self.port = port
+        self.ssl = ssl
+        self.spawn_thread = spawn_thread
+        self.handle_request = handle_request
+
+    def listen(self):
+
+        sock = eventlet.listen((self.host, self.port))
+        sock.settimeout(None)
+
+        if self.ssl:
+            context = self.ssl.server_context()
+            sock = context.wrap_socket(
+                sock=sock, server_side=True, suppress_ragged_eofs=True,
+            )
+
+        return sock
+
+    def run(self):
+        while self.is_accepting:
+            sock, _ = self.listening_socket.accept()
+            manager = ServerConnectionManager(sock, self.handle_request)
+            # XXX add callback to notify of thread exits?
+            self.spawn_thread(manager.run_forever)
+
+    def start(self):
+        self.listening_socket = self.listen()
+        self.is_accepting = True
+        self.spawn_thread(self.run)
+
+    def stop(self):
+        self.is_accepting = False
+        self.listening_socket.close()
+        # XXX wait for all running threads to exit?
