@@ -23,8 +23,8 @@ class ClientConnectionPool:
 
     target:
        hostname: for ssl verification
-       ip_address: 
-       port: 
+       ip_address:
+       port:
        service config?
     """
 
