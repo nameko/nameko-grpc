@@ -11,7 +11,6 @@ from nameko.extensions import Entrypoint, SharedExtension, register_entrypoint
 
 from nameko_grpc.channel import ServerChannel
 from nameko_grpc.compression import SUPPORTED_ENCODINGS
-from nameko_grpc.connection import ServerConnectionManager
 from nameko_grpc.constants import Cardinality
 from nameko_grpc.context import GrpcContext, context_data_from_metadata
 from nameko_grpc.errors import GrpcError
