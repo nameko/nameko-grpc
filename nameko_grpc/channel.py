@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 import queue
 import socket
-import eventlet
 from functools import partial
 from urllib.parse import urlparse
+
+import eventlet
 
 from nameko_grpc.connection import ClientConnectionManager, ServerConnectionManager
 
