@@ -2,6 +2,7 @@
 import itertools
 import select
 from collections import deque
+from contextlib import contextmanager
 from logging import getLogger
 from threading import Event
 
@@ -38,6 +39,14 @@ log = getLogger(__name__)
 SELECT_TIMEOUT = 0.01
 
 
+@contextmanager
+def set_on_exit(event):
+    try:
+        yield
+    finally:
+        event.set()
+
+
 class ConnectionManager:
     """
     Base class for managing a single GRPC HTTP/2 connection.
@@ -59,55 +68,58 @@ class ConnectionManager:
         self.run = True
         self.stopped = Event()
 
+    @property
+    def alive(self):
+        return not self.stopped.is_set()
+
     def run_forever(self):
         """ Event loop.
         """
         self.conn.initiate_connection()
 
-        while self.run:
+        with set_on_exit(self.stopped):
 
-            self.on_iteration()
-            self.sock.sendall(self.conn.data_to_send())
-            ready = select.select([self.sock], [], [], SELECT_TIMEOUT)
-            if not ready[0]:
-                continue
+            while self.run:
 
-            data = self.sock.recv(65535)
-            if not data:
-                break
+                self.on_iteration()
 
-            try:
-                events = self.conn.receive_data(data)
-            except StreamClosedError:
-                # TODO what if data was also recieved for a non-closed stream?
-                # should this continue, or break/raise to allow the manager to exit?
-                continue
+                self.sock.sendall(self.conn.data_to_send())
+                ready = select.select([self.sock], [], [], SELECT_TIMEOUT)
+                if not ready[0]:
+                    continue
 
-            for event in events:
-                if isinstance(event, RequestReceived):
-                    self.request_received(event)
-                elif isinstance(event, ResponseReceived):
-                    self.response_received(event)
-                elif isinstance(event, DataReceived):
-                    self.data_received(event)
-                elif isinstance(event, StreamEnded):
-                    self.stream_ended(event)
-                elif isinstance(event, StreamReset):
-                    self.stream_reset(event)
-                elif isinstance(event, WindowUpdated):
-                    self.window_updated(event)
-                elif isinstance(event, RemoteSettingsChanged):
-                    self.settings_changed(event)
-                elif isinstance(event, SettingsAcknowledged):
-                    self.settings_acknowledged(event)
-                elif isinstance(event, TrailersReceived):
-                    self.trailers_received(event)
-                elif isinstance(event, ConnectionTerminated):
-                    print("connection terminated")
-                    self.connection_terminated(event)
+                data = self.sock.recv(65535)
+                if not data:
+                    break
 
-        print("connectionmanager stopped")
-        self.stopped.set()
+                try:
+                    events = self.conn.receive_data(data)
+                except StreamClosedError:
+                    # TODO what if data was also recieved for a non-closed stream?
+                    # should this continue, or break/raise to allow the manager to exit?
+                    continue
+
+                for event in events:
+                    if isinstance(event, RequestReceived):
+                        self.request_received(event)
+                    elif isinstance(event, ResponseReceived):
+                        self.response_received(event)
+                    elif isinstance(event, DataReceived):
+                        self.data_received(event)
+                    elif isinstance(event, StreamEnded):
+                        self.stream_ended(event)
+                    elif isinstance(event, StreamReset):
+                        self.stream_reset(event)
+                    elif isinstance(event, WindowUpdated):
+                        self.window_updated(event)
+                    elif isinstance(event, RemoteSettingsChanged):
+                        self.settings_changed(event)
+                    elif isinstance(event, SettingsAcknowledged):
+                        self.settings_acknowledged(event)
+                    elif isinstance(event, TrailersReceived):
+                        self.trailers_received(event)
+                    elif isinstance(event, ConnectionTerminated):
+                        self.connection_terminated(event)
 
     def stop(self):
         for send_stream in self.send_streams.values():

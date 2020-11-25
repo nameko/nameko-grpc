@@ -88,6 +88,7 @@ class GrpcServer(SharedExtension):
         self.channel = ServerChannel(host, port, ssl, spawn_thread, self.handle_request)
 
     def start(self):
+        print("start server channel")
         self.channel.start()
 
     def stop(self):

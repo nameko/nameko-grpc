@@ -9,7 +9,25 @@ import eventlet
 from nameko_grpc.connection import ClientConnectionManager, ServerConnectionManager
 
 
-class ConnectionPool:
+CONNECT_TIMEOUT = 5
+
+
+class ClientConnectionPool:
+    """ Simple connection pool for clients.
+
+    Accepts a list of targets and will maintain a connection to each of them,
+    round-robining requests between them.
+
+    Currently expects each target to be a valid argument to `urllib.parse.urlparse`.
+    TODO should be accepting something more strict, something like:
+
+    target:
+       hostname: for ssl verification
+       ip_address: 
+       port: 
+       service config?
+    """
+
     def __init__(self, targets, ssl, spawn_thread):
         self.targets = targets
         self.ssl = ssl
@@ -18,7 +36,9 @@ class ConnectionPool:
         self.connections = queue.Queue()
 
     def connect(self, target):
-        sock = socket.create_connection((target.hostname, target.port or 50051))
+        sock = socket.create_connection(
+            (target.hostname, target.port or 50051), timeout=CONNECT_TIMEOUT
+        )
 
         if self.ssl:
             context = self.ssl.client_context()
@@ -26,6 +46,7 @@ class ConnectionPool:
                 sock=sock, server_hostname=target.hostname, suppress_ragged_eofs=True
             )
 
+        sock.settimeout(60)  # XXX needed and/or correct value?
         connection = ClientConnectionManager(sock)
         self.connections.put(connection)
 
@@ -33,14 +54,13 @@ class ConnectionPool:
         self.spawn_thread(target=connection.run_forever, callback=cb)
 
     def handle_connection_termination(self, connection, target, res, exc_info):
-        connection.dead = True
         if self.run:
             self.connect(target)
 
     def get(self):
         while True:
             conn = self.connections.get()
-            if not getattr(conn, "dead", False):
+            if conn.alive:
                 self.connections.put(conn)
                 return conn
 
@@ -56,29 +76,28 @@ class ConnectionPool:
 
 
 class ClientChannel:
-    """ Simple client channel using DNS resolution and round robin balancing.
+    """ Simple client channel.
 
     Channels could eventually suppport pluggable resolvers and load-balancing.
     """
 
     def __init__(self, target, ssl, spawn_thread):
-        self.target = target
-        self.ssl = ssl
-        self.connection_pool = ConnectionPool([self.target], self.ssl, spawn_thread)
+        self.conn_pool = ClientConnectionPool([target], ssl, spawn_thread)
 
     def start(self):
-        self.connection_pool.start()
+        self.conn_pool.start()
 
     def stop(self):
-        self.connection_pool.stop()
+        self.conn_pool.stop()
 
     def send_request(self, request_headers):
-        connection = self.connection_pool.get()
-        return connection.send_request(request_headers)
+        return self.conn_pool.get().send_request(request_headers)
 
 
-class ServerChannel:
-    """ Simple server channel encapsulating incoming connection management.
+class ServerConnectionPool:
+    """ Simple connection pool for servers.
+
+    Just accepts new connections and allows them to run until close.
     """
 
     def __init__(self, host, port, ssl, spawn_thread, handle_request):
@@ -88,8 +107,9 @@ class ServerChannel:
         self.spawn_thread = spawn_thread
         self.handle_request = handle_request
 
-    def listen(self):
+        self.connections = queue.Queue()
 
+    def listen(self):
         sock = eventlet.listen((self.host, self.port))
         sock.settimeout(None)
 
@@ -104,9 +124,16 @@ class ServerChannel:
     def run(self):
         while self.is_accepting:
             sock, _ = self.listening_socket.accept()
-            manager = ServerConnectionManager(sock, self.handle_request)
-            # XXX add callback to notify of thread exits?
-            self.spawn_thread(manager.run_forever)
+            sock.settimeout(60)  # XXX needed and/or correct value?
+
+            connection = ServerConnectionManager(sock, self.handle_request)
+            self.connections.put(connection)
+
+            cb = partial(self.handle_connection_termination, connection)
+            self.spawn_thread(connection.run_forever, callback=cb)
+
+    def handle_connection_termination(self, connection, res, exc_info):
+        pass
 
     def start(self):
         self.listening_socket = self.listen()
@@ -115,5 +142,22 @@ class ServerChannel:
 
     def stop(self):
         self.is_accepting = False
+        while not self.connections.empty():
+            self.connections.get().stop()
         self.listening_socket.close()
-        # XXX wait for all running threads to exit?
+
+
+class ServerChannel:
+    """ Simple server channel encapsulating incoming connection management.
+    """
+
+    def __init__(self, host, port, ssl, spawn_thread, handle_request):
+        self.conn_pool = ServerConnectionPool(
+            host, port, ssl, spawn_thread, handle_request
+        )
+
+    def start(self):
+        self.conn_pool.start()
+
+    def stop(self):
+        self.conn_pool.stop()
