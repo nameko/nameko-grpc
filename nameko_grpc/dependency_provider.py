@@ -6,7 +6,6 @@ from nameko.extensions import DependencyProvider
 
 from nameko_grpc.client import ClientBase, Method
 from nameko_grpc.context import metadata_from_context_data
-from nameko_grpc.threading import target_with_callback
 
 
 log = getLogger(__name__)
@@ -27,9 +26,10 @@ class GrpcProxy(ClientBase, DependencyProvider):
         ssl = kwargs.pop("ssl", config.get("GRPC_SSL"))
         super().__init__(*args, ssl=ssl, **kwargs)
 
-    def spawn_thread(self, target, args=(), kwargs=None, name=None, callback=None):
-        execute = target_with_callback(target, args, kwargs, callback)
-        self.container.spawn_managed_thread(execute, identifier=name)
+    def spawn_thread(self, target, args=(), kwargs=None, name=None):
+        self.container.spawn_managed_thread(
+            lambda: target(*args, **kwargs or {}), identifier=name
+        )
 
     def get_dependency(self, worker_ctx):
         return Proxy(self, worker_ctx.context_data)

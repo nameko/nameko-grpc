@@ -50,10 +50,17 @@ class ClientConnectionPool:
         connection = ClientConnectionManager(sock)
         self.connections.put(connection)
 
-        cb = partial(self.handle_connection_termination, connection, target)
-        self.spawn_thread(target=connection.run_forever, callback=cb)
+        def run_forever_with_exit_handler():
+            try:
+                connection.run_forever()
+            except Exception:
+                pass  # warning?
+            finally:
+                self.handle_connection_termination(connection, target)
 
-    def handle_connection_termination(self, connection, target, res, exc_info):
+        self.spawn_thread(target=run_forever_with_exit_handler)
+
+    def handle_connection_termination(self, connection, target):
         if self.run:
             self.connect(target)
 
@@ -129,10 +136,17 @@ class ServerConnectionPool:
             connection = ServerConnectionManager(sock, self.handle_request)
             self.connections.put(connection)
 
-            cb = partial(self.handle_connection_termination, connection)
-            self.spawn_thread(connection.run_forever, callback=cb)
+            def run_forever_with_exit_handler():
+                try:
+                    connection.run_forever()
+                except Exception:
+                    pass  # warning?
+                finally:
+                    self.handle_connection_termination(connection)
 
-    def handle_connection_termination(self, connection, res, exc_info):
+            self.spawn_thread(connection.run_forever)
+
+    def handle_connection_termination(self, connection):
         pass
 
     def start(self):

@@ -16,7 +16,6 @@ from nameko_grpc.context import GrpcContext, context_data_from_metadata
 from nameko_grpc.errors import GrpcError
 from nameko_grpc.inspection import Inspector
 from nameko_grpc.ssl import SslConfig
-from nameko_grpc.threading import target_with_callback
 from nameko_grpc.timeout import unbucket_timeout
 
 
@@ -81,14 +80,14 @@ class GrpcServer(SharedExtension):
         port = config.get("GRPC_BIND_PORT", 50051)
         ssl = SslConfig(config.get("GRPC_SSL"))
 
-        def spawn_thread(target, args=(), kwargs=None, name=None, callback=None):
-            execute = target_with_callback(target, args, kwargs, callback)
-            self.container.spawn_managed_thread(execute, identifier=name)
+        def spawn_thread(target, args=(), kwargs=None, name=None):
+            self.container.spawn_managed_thread(
+                lambda: target(*args, **kwargs or {}), identifier=name
+            )
 
         self.channel = ServerChannel(host, port, ssl, spawn_thread, self.handle_request)
 
     def start(self):
-        print("start server channel")
         self.channel.start()
 
     def stop(self):
