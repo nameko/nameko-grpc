@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
 import queue
 import socket
-from functools import partial
-from urllib.parse import urlparse
 from logging import getLogger
+from urllib.parse import urlparse
 
 import eventlet
 

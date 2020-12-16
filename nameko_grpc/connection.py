@@ -22,7 +22,7 @@ from h2.events import (
     TrailersReceived,
     WindowUpdated,
 )
-from h2.exceptions import StreamClosedError, ProtocolError
+from h2.exceptions import ProtocolError, StreamClosedError
 
 from nameko_grpc.compression import (
     SUPPORTED_ENCODINGS,
@@ -96,7 +96,8 @@ class ConnectionManager:
                     events = self.conn.receive_data(data)
                 except StreamClosedError:
                     # TODO what if data was also recieved for a non-closed stream?
-                    # should this continue, or break/raise to allow the manager to exit immediately?
+                    # should this continue, or break to allow the manager to exit
+                    # immediately?
                     continue
                 except ProtocolError:
                     # handle https://github.com/python-hyper/hyper-h2/issues/1199
