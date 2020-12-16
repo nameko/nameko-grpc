@@ -3,11 +3,14 @@ import queue
 import socket
 from functools import partial
 from urllib.parse import urlparse
+from logging import getLogger
 
 import eventlet
 
 from nameko_grpc.connection import ClientConnectionManager, ServerConnectionManager
 
+
+log = getLogger(__name__)
 
 CONNECT_TIMEOUT = 5
 
@@ -54,7 +57,7 @@ class ClientConnectionPool:
             try:
                 connection.run_forever()
             except Exception:
-                pass  # warning?
+                log.info("Client connection terminated with error:", exc_info=True)
             finally:
                 self.handle_connection_termination(connection, target)
 
@@ -140,11 +143,13 @@ class ServerConnectionPool:
                 try:
                     connection.run_forever()
                 except Exception:
-                    pass  # warning?
+                    log.info(
+                        "Server connection terminated with error:", exc_info=True,
+                    )
                 finally:
                     self.handle_connection_termination(connection)
 
-            self.spawn_thread(connection.run_forever)
+            self.spawn_thread(run_forever_with_exit_handler)
 
     def handle_connection_termination(self, connection):
         pass
