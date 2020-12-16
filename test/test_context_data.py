@@ -19,11 +19,14 @@ def protobufs(load_protobufs):
 
 
 class TestContextData:
+    @pytest.fixture(params=["server=nameko"])
+    def server_type(self, request):
+        # only nameko server supports the features in this test
+        return request.param[7:]
+
     @pytest.fixture
-    def grpc_server(self, start_nameko_server, server_type):
-        if server_type != "nameko":
-            pytest.skip("only nameko server supports the features in this test")
-        start_nameko_server("advanced")
+    def grpc_server(self, start_server):
+        start_server("advanced")
 
     @pytest.fixture
     def grpc_client(self, start_client, grpc_server):
