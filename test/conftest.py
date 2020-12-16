@@ -379,6 +379,8 @@ def start_dependency_provider(
     request, load_stubs, spec_dir, grpc_port, container_factory
 ):
 
+    clients = []
+
     if request.node.get_closest_marker(name="secure"):
         ssl_config = {"verify_mode": "none", "check_hostname": False}
     else:
@@ -419,9 +421,13 @@ def start_dependency_provider(
             container.start()
 
             grpc_proxy = get_extension(container, GrpcProxy)
+            clients.append(grpc_proxy)
             return grpc_proxy.get_dependency(Mock(context_data={}))
 
         yield make
+
+    for client in clients:
+        client.stop()
 
 
 @pytest.fixture(params=["server=grpc", "server=nameko"])
