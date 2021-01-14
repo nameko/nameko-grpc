@@ -15,9 +15,6 @@ matrix:
       python: 3.6
       env: TOX_ENV=static
     - stage: test
-      python: 3.5
-      env: TOX_ENV=py35-test
-    - stage: test
       python: 3.6
       env: TOX_ENV=py36-test
     - stage: test
