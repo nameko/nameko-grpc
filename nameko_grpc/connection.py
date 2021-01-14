@@ -355,6 +355,7 @@ class ClientConnectionManager(ConnectionManager):
         if int(headers.get("grpc-status", 0)) > 0:
             error = GrpcError.from_headers(headers)
             response_stream.close(error)
+            del self.receive_streams[stream_id]
 
     def trailers_received(self, event):
         """ Called when trailers are received on a stream.
@@ -374,6 +375,7 @@ class ClientConnectionManager(ConnectionManager):
         if int(trailers.get("grpc-status", 0)) > 0:
             error = GrpcError.from_headers(trailers)
             response_stream.close(error)
+            del self.receive_streams[stream_id]
 
     def send_pending_requests(self):
         """ Initiate requests for any pending invocations.
@@ -405,6 +407,9 @@ class ClientConnectionManager(ConnectionManager):
             )
             response_stream.close(error)
             request_stream.close()
+
+            del self.receive_streams[stream_id]
+            del self.send_streams[stream_id]
 
 
 class ServerConnectionManager(ConnectionManager):
