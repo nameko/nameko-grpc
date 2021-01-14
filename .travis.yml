@@ -19,9 +19,13 @@ matrix:
       env: TOX_ENV=py36-test
     - stage: test
       python: 3.7
-      # dist: xenial
-      sudo: true
       env: TOX_ENV=py37-test
+    - stage: test
+      python: 3.8
+      env: TOX_ENV=py38-test
+    - stage: test
+      python: 3.9
+      env: TOX_ENV=py39-test
     - stage: deploy
       script: skip
       deploy:
