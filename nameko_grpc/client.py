@@ -146,8 +146,9 @@ class ClientBase:
 
     def timeout(self, send_stream, response_stream, deadline):
         start = time.time()
-        # TODO timeout thread should terminate if (one or both?) streams are closed
         while True:
+            if send_stream.closed and response_stream.closed:
+                break
             elapsed = time.time() - start
             if elapsed > deadline:
                 error = GrpcError(
