@@ -52,19 +52,14 @@ class ClientConnectionPool:
         connection = ClientConnectionManager(sock)
         self.connections.put(connection)
 
-        def run_forever_with_exit_handler():
-            try:
-                connection.run_forever()
-            except Exception:
-                log.info("Client connection terminated with error:", exc_info=True)
-            finally:
-                self.handle_connection_termination(connection, target)
+        def run_with_reconnect():
+            connection.run_forever()
+            if self.run:
+                self.connect(target)
 
-        self.spawn_thread(target=run_forever_with_exit_handler)
-
-    def handle_connection_termination(self, connection, target):
-        if self.run:
-            self.connect(target)
+        self.spawn_thread(
+            target=run_with_reconnect, name=f"grpc client connection [{target}]"
+        )
 
     def get(self):
         while True:
@@ -137,26 +132,16 @@ class ServerConnectionPool:
 
             connection = ServerConnectionManager(sock, self.handle_request)
             self.connections.put(connection)
-
-            def run_forever_with_exit_handler():
-                try:
-                    connection.run_forever()
-                except Exception:
-                    log.info(
-                        "Server connection terminated with error:", exc_info=True,
-                    )
-                finally:
-                    self.handle_connection_termination(connection)
-
-            self.spawn_thread(run_forever_with_exit_handler)
-
-    def handle_connection_termination(self, connection):
-        pass
+            self.spawn_thread(
+                target=connection.run_forever, name=f"grpc server connection [{sock}]"
+            )
 
     def start(self):
         self.listening_socket = self.listen()
         self.is_accepting = True
-        self.spawn_thread(self.run)
+        self.spawn_thread(
+            target=self.run, name=f"grpc server accept [{self.listening_socket}]"
+        )
 
     def stop(self):
         self.is_accepting = False

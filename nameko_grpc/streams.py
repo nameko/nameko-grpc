@@ -65,7 +65,15 @@ class StreamBase:
 
         If closed with an error, the error will be raised when reading
         or consuming from this stream.
+
+        This method may be called after a stream is already closed. This happens
+        in race conditions between timeout threads, connection teardown, and the
+        natural termination of streams.
+
         """
+        if self.closed:
+            return
+
         if error:
             assert isinstance(error, GrpcError)
 

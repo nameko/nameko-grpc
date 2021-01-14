@@ -39,14 +39,6 @@ log = getLogger(__name__)
 SELECT_TIMEOUT = 0.01
 
 
-@contextmanager
-def set_on_exit(event):
-    try:
-        yield
-    finally:
-        event.set()
-
-
 class ConnectionManager:
     """
     Base class for managing a single GRPC HTTP/2 connection.
@@ -72,12 +64,39 @@ class ConnectionManager:
     def alive(self):
         return not self.stopped.is_set()
 
+    @contextmanager
+    def cleanup_on_exit(self):
+        error = None
+        try:
+            yield
+        except Exception as exc:
+            log.info(
+                "ConnectionManager shutting down with error. Traceback:", exc_info=True,
+            )
+            error = GrpcError(status=StatusCode.UNAVAILABLE, details=str(exc))
+        finally:
+            for send_stream in self.send_streams.values():
+                if send_stream.closed:
+                    continue  # stream.close() is idemponent but we want to avoid the log
+                log.info(
+                    f"Terminating send stream {send_stream}{f' with error {error}' if error else ''}."
+                )
+                send_stream.close(error)
+            for receive_stream in self.receive_streams.values():
+                if receive_stream.closed:
+                    continue  # stream.close() is idemponent but we want to avoid the log
+                log.info(
+                    f"Terminating receive stream {receive_stream}{f' with error {error}' if error else ''}."
+                )
+                receive_stream.close(error)
+            self.stopped.set()
+
     def run_forever(self):
         """ Event loop.
         """
         self.conn.initiate_connection()
 
-        with set_on_exit(self.stopped):
+        with self.cleanup_on_exit():
 
             while self.run:
 
@@ -92,19 +111,7 @@ class ConnectionManager:
                 if not data:
                     break
 
-                try:
-                    events = self.conn.receive_data(data)
-                except StreamClosedError:
-                    # TODO what if data was also recieved for a non-closed stream?
-                    # should this continue, or break to allow the manager to exit
-                    # immediately?
-                    continue
-                except ProtocolError:
-                    # handle https://github.com/python-hyper/hyper-h2/issues/1199
-                    # by gracefully terminating the connection. the exception would
-                    # be caught by the Client/ServerConnectionPool but catching it here
-                    # removes some noise from the logs.
-                    break
+                events = self.conn.receive_data(data)
 
                 for event in events:
                     if isinstance(event, RequestReceived):
@@ -129,8 +136,6 @@ class ConnectionManager:
                         self.connection_terminated(event)
 
     def stop(self):
-        for send_stream in self.send_streams.values():
-            send_stream.close()
         self.run = False
         self.stopped.wait()
         self.sock.close()
