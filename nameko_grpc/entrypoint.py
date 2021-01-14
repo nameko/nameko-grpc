@@ -36,11 +36,11 @@ class GrpcServer(SharedExtension):
     def timeout(self, request_stream, response_stream, deadline):
         start = time.time()
         while True:
+            if request_stream.closed and response_stream.closed:
+                break
             elapsed = time.time() - start
             if elapsed > deadline:
                 request_stream.close()
-                # XXX does server actually need to do this according to the spec?
-                # perhaps we could just close the stream.
                 error = GrpcError(
                     status=StatusCode.DEADLINE_EXCEEDED, details="Deadline Exceeded"
                 )
