@@ -4,7 +4,7 @@ branch = 0
 source =
     nameko_grpc
     test
-omit = 
+omit =
     test/grpc_indirect*.py
 [report]
 show_missing = true
