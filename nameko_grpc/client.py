@@ -155,6 +155,7 @@ class ClientBase:
                 )
                 response_stream.close(error)
                 send_stream.close()
+                break
             time.sleep(0.001)
 
     def invoke(self, request_headers, request, timeout):
