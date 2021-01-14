@@ -165,10 +165,12 @@ class ClientBase:
             self.spawn_thread(
                 target=self.timeout,
                 args=(send_stream, response_stream, timeout),
-                name="client_timeout",
+                name=f"client timeout [{request}]",
             )
         self.spawn_thread(
-            target=send_stream.populate, args=(request,), name="populate_request"
+            target=send_stream.populate,
+            args=(request,),
+            name=f"populate request [{request}]",
         )
         return response_stream
 
