@@ -22,7 +22,7 @@ from h2.events import (
     TrailersReceived,
     WindowUpdated,
 )
-from h2.exceptions import ProtocolError, StreamClosedError
+from h2.exceptions import StreamClosedError
 
 from nameko_grpc.compression import (
     SUPPORTED_ENCODINGS,
@@ -77,16 +77,18 @@ class ConnectionManager:
         finally:
             for send_stream in self.send_streams.values():
                 if send_stream.closed:
-                    continue  # stream.close() is idemponent but we want to avoid the log
+                    continue  # stream.close() is idemponent but this prevents the log
                 log.info(
-                    f"Terminating send stream {send_stream}{f' with error {error}' if error else ''}."
+                    f"Terminating send stream {send_stream}"
+                    f"{f' with error {error}' if error else ''}."
                 )
                 send_stream.close(error)
             for receive_stream in self.receive_streams.values():
                 if receive_stream.closed:
-                    continue  # stream.close() is idemponent but we want to avoid the log
+                    continue  # stream.close() is idemponent but this prevents the log
                 log.info(
-                    f"Terminating receive stream {receive_stream}{f' with error {error}' if error else ''}."
+                    f"Terminating receive stream {receive_stream}"
+                    f"{f' with error {error}' if error else ''}."
                 )
                 receive_stream.close(error)
             self.stopped.set()
