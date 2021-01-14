@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import itertools
 import struct
 
 import pytest
@@ -352,10 +353,11 @@ class TestSendStreamFlushQueueToBuffer:
 
     def test_error_on_queue(self, generate_messages):
         stream = SendStream(1)
-        stream.populate(generate_messages(count=2, length=20))
 
         error = GrpcError("boom", "details", "error string")
-        stream.close(error)
+        messages = itertools.chain(generate_messages(count=2, length=20), [error])
+
+        stream.populate(messages)
 
         with pytest.raises(GrpcError):
             stream.flush_queue_to_buffer()
