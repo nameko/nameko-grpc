@@ -29,7 +29,7 @@ class ClientConnectionPool:
            port: ...
            hostname: ... (for ssl verification)
            service config: ... (maybe)
-    
+
     """
 
     def __init__(self, targets, ssl, spawn_thread):
