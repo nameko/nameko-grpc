@@ -21,13 +21,15 @@ class ClientConnectionPool:
     round-robining requests between them.
 
     Currently expects each target to be a valid argument to `urllib.parse.urlparse`.
-    TODO should be accepting something more strict, something like:
+    If the ClientChannel becomes more complex to support pluggable resolvers and
+    load-balancing, `targets` will need more structure. Something like:
 
-    target:
-       hostname: for ssl verification
-       ip_address:
-       port:
-       service config?
+        target:
+           ip_address: ...
+           port: ...
+           hostname: ... (for ssl verification)
+           service config: ... (maybe)
+    
     """
 
     def __init__(self, targets, ssl, spawn_thread):
