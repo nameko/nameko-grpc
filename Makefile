@@ -10,3 +10,7 @@ static:
 
 test:
 	py.test test -v
+
+coverage:
+	coverage run -m pytest test -v
+	coverage report

@@ -65,7 +65,19 @@ class StreamBase:
 
         If closed with an error, the error will be raised when reading
         or consuming from this stream.
+
+        This method may be called after a stream is already closed. This happens
+        in race conditions between timeout threads, connection teardown, and the
+        natural termination of streams.
+
+        SendStreams have an additional race condition beteen the end of the iterator
+        and the StreamEnded event received from the remote side.
+
+        An error is only raised if the first invocation happened due to an error.
         """
+        if self.closed:
+            return
+
         if error:
             assert isinstance(error, GrpcError)
 

@@ -4,88 +4,27 @@ import types
 from functools import partial
 from logging import getLogger
 
-import eventlet
 from grpc import StatusCode
 from nameko import config
 from nameko.exceptions import ContainerBeingKilled
 from nameko.extensions import Entrypoint, SharedExtension, register_entrypoint
 
-from nameko_grpc.compression import SUPPORTED_ENCODINGS, select_algorithm
-from nameko_grpc.connection import ConnectionManager
+from nameko_grpc.channel import ServerChannel
+from nameko_grpc.compression import SUPPORTED_ENCODINGS
 from nameko_grpc.constants import Cardinality
 from nameko_grpc.context import GrpcContext, context_data_from_metadata
 from nameko_grpc.errors import GrpcError
 from nameko_grpc.inspection import Inspector
 from nameko_grpc.ssl import SslConfig
-from nameko_grpc.streams import ReceiveStream, SendStream
 from nameko_grpc.timeout import unbucket_timeout
 
 
 log = getLogger(__name__)
 
 
-class ServerConnectionManager(ConnectionManager):
-    """
-    An object that manages a single HTTP/2 connection on a GRPC server.
-
-    Extends the base `ConnectionManager` to handle incoming GRPC requests.
-    """
-
-    def __init__(self, sock, handle_request):
-        super().__init__(sock, client_side=False)
-        self.handle_request = handle_request
-
-    def request_received(self, event):
-        """ Receive a GRPC request and pass it to the GrpcServer to fire any
-        appropriate entrypoint.
-
-        Establish a `ReceiveStream` to receive the request payload and `SendStream`
-        for sending the eventual response.
-        """
-        super().request_received(event)
-
-        stream_id = event.stream_id
-
-        request_stream = ReceiveStream(stream_id)
-        response_stream = SendStream(stream_id)
-        self.receive_streams[stream_id] = request_stream
-        self.send_streams[stream_id] = response_stream
-
-        request_stream.headers.set(*event.headers, from_wire=True)
-
-        compression = select_algorithm(
-            request_stream.headers.get("grpc-accept-encoding"),
-            request_stream.headers.get("grpc-encoding"),
-        )
-
-        try:
-            response_stream.headers.set(
-                (":status", "200"),
-                ("content-type", "application/grpc+proto"),
-                ("grpc-accept-encoding", ",".join(SUPPORTED_ENCODINGS)),
-                # TODO support server changing compression later
-                ("grpc-encoding", compression),
-            )
-            response_stream.trailers.set(("grpc-status", "0"))
-            self.handle_request(request_stream, response_stream)
-
-        except GrpcError as error:
-            response_stream.trailers.set((":status", "200"), *error.as_headers())
-            self.end_stream(stream_id)
-
-    def send_data(self, stream_id):
-        try:
-            super().send_data(stream_id)
-        except GrpcError as error:
-            send_stream = self.send_streams.get(stream_id)
-            send_stream.trailers.set(*error.as_headers())
-            self.end_stream(stream_id)
-
-
 class GrpcServer(SharedExtension):
     def __init__(self):
         super(GrpcServer, self).__init__()
-        self.is_accepting = True
         self.entrypoints = {}
 
     def register(self, entrypoint):
@@ -97,11 +36,11 @@ class GrpcServer(SharedExtension):
     def timeout(self, request_stream, response_stream, deadline):
         start = time.time()
         while True:
+            if request_stream.closed and response_stream.closed:
+                break
             elapsed = time.time() - start
             if elapsed > deadline:
                 request_stream.close()
-                # XXX does server actually need to do this according to the spec?
-                # perhaps we could just close the stream.
                 error = GrpcError(
                     status=StatusCode.DEADLINE_EXCEEDED, details="Deadline Exceeded"
                 )
@@ -136,37 +75,23 @@ class GrpcServer(SharedExtension):
             partial(entrypoint.handle_request, request_stream, response_stream)
         )
 
-    def run(self):
-        while self.is_accepting:
-            new_sock, _ = self.server_socket.accept()
-            manager = ServerConnectionManager(new_sock, self.handle_request)
-            self.container.spawn_managed_thread(manager.run_forever)
-
-    def listen(self):
-
+    def setup(self):
         host = config.get("GRPC_BIND_HOST", "0.0.0.0")
         port = config.get("GRPC_BIND_PORT", 50051)
         ssl = SslConfig(config.get("GRPC_SSL"))
 
-        sock = eventlet.listen((host, port))
-        # work around https://github.com/celery/kombu/issues/838
-        sock.settimeout(None)
-
-        if ssl:
-            context = ssl.server_context()
-            sock = context.wrap_socket(
-                sock=sock, server_side=True, suppress_ragged_eofs=True,
+        def spawn_thread(target, args=(), kwargs=None, name=None):
+            self.container.spawn_managed_thread(
+                lambda: target(*args, **kwargs or {}), identifier=name
             )
 
-        return sock
+        self.channel = ServerChannel(host, port, ssl, spawn_thread, self.handle_request)
 
     def start(self):
-        self.server_socket = self.listen()
-        self.container.spawn_managed_thread(self.run)
+        self.channel.start()
 
     def stop(self):
-        self.is_accepting = False
-        self.server_socket.close()
+        self.channel.stop()
         super(GrpcServer, self).stop()
 
     def kill(self):
