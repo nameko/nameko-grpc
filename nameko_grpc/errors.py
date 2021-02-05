@@ -1,13 +1,16 @@
 # -*- coding: utf-8 -*-
+import traceback
+
+from grpc import StatusCode
 from grpc._common import (
     CYGRPC_STATUS_CODE_TO_STATUS_CODE,
     STATUS_CODE_TO_CYGRPC_STATUS_CODE,
 )
-from grpc import StatusCode
+
 from google.protobuf.any_pb2 import Any
 from google.rpc.error_details_pb2 import DebugInfo
 from google.rpc.status_pb2 import Status
-import traceback
+
 
 registry = {}
 
@@ -57,7 +60,7 @@ class GrpcError(Exception):
         This can be overridden by registering a new callable against a given exception
         type. See `register`.
         """
-        exc, exc_type, tb = exc_info
+        exc_type, exc, tb = exc_info
 
         error_from_exception = registry.get(exc_type, default_error_from_exception)
         return error_from_exception(exc_info, status, message)
@@ -94,7 +97,7 @@ def default_error_from_exception(exc_info, status=None, message=None):
     A `google.rpc.Status` message will be generated capturing the debug info of the
     underyling traceback.
     """
-    exc, exc_type, tb = exc_info
+    exc_type, exc, tb = exc_info
 
     detail = Any()
     detail.Pack(
