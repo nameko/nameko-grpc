@@ -33,7 +33,7 @@ class TestMethodNotFound:
         with pytest.raises(GrpcError) as error:
             client.not_found(protobufs.ExampleRequest(value="hello"))
         assert error.value.status == StatusCode.UNIMPLEMENTED
-        assert error.value.details == "Method not found!"
+        assert error.value.message == "Method not found!"
 
 
 @pytest.mark.equivalence
@@ -50,7 +50,7 @@ class TestDeadlineExceededAtClient:
                 timeout=0.05,  # XXX fails when too fast; need protection
             )
         assert error.value.status == StatusCode.DEADLINE_EXCEEDED
-        assert error.value.details == "Deadline Exceeded"
+        assert error.value.message == "Deadline Exceeded"
 
     def test_timeout_while_streaming_request(self, client, protobufs):
         def generate_requests(values):
@@ -61,7 +61,7 @@ class TestDeadlineExceededAtClient:
         with pytest.raises(GrpcError) as error:
             client.stream_unary(generate_requests(string.ascii_uppercase), timeout=0.05)
         assert error.value.status == StatusCode.DEADLINE_EXCEEDED
-        assert error.value.details == "Deadline Exceeded"
+        assert error.value.message == "Deadline Exceeded"
 
     def test_timeout_while_streaming_result(self, client, protobufs):
 
@@ -73,7 +73,7 @@ class TestDeadlineExceededAtClient:
             list(res)
 
         assert error.value.status == StatusCode.DEADLINE_EXCEEDED
-        assert error.value.details == "Deadline Exceeded"
+        assert error.value.message == "Deadline Exceeded"
 
 
 @pytest.mark.equivalence
@@ -99,7 +99,7 @@ class TestDeadlineExceededAtServer:
                 metadata=[("stash", stash_metadata)],
             )
         assert error.value.status == StatusCode.DEADLINE_EXCEEDED
-        assert error.value.details == "Deadline Exceeded"
+        assert error.value.message == "Deadline Exceeded"
 
         # server should not have recieved all the requests
         captured_requests = list(instrumented.requests())
@@ -121,7 +121,7 @@ class TestDeadlineExceededAtServer:
         with pytest.raises(GrpcError) as error:
             list(res)  # client will throw
         assert error.value.status == StatusCode.DEADLINE_EXCEEDED
-        assert error.value.details == "Deadline Exceeded"
+        assert error.value.message == "Deadline Exceeded"
 
         time.sleep(0.5)
 
@@ -139,7 +139,7 @@ class TestMethodException:
         with pytest.raises(GrpcError) as error:
             client.unary_error(protobufs.ExampleRequest(value="A"))
         assert error.value.status == StatusCode.UNKNOWN
-        assert error.value.details == "Exception calling application: boom"
+        assert error.value.message == "Exception calling application: boom"
 
     def test_error_while_streaming_response(self, client, protobufs):
         res = client.stream_error(
@@ -149,4 +149,23 @@ class TestMethodException:
             list(res)
 
         assert error.value.status == StatusCode.UNKNOWN
-        assert error.value.details == "Exception iterating responses: boom"
+        assert error.value.message == "Exception iterating responses: boom"
+
+
+# GOALS:
+
+# make nameko-grpc honour this proposal https://github.com/grpc/proposal/blob/master/L44-python-rich-status.md
+# and return rich errors (by default? as an option?)
+
+# allow easy mapping of a particular exception to how it should be returned, including
+# status code, message, and rich response
+
+# e.g. Unauthorized
+# status should be UNAUTHORIZED
+# message can be something readable
+# rich status: maybe not required. maybe list of missing permissions?
+
+# e.g. ValidationError
+# status should be ?
+# message can be generic
+# rich status: BadRequest with FieldViolation (from error_details.proto)

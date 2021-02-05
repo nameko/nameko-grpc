@@ -5,7 +5,7 @@ from collections import deque
 from contextlib import contextmanager
 from logging import getLogger
 from threading import Event
-
+import sys
 from grpc import StatusCode
 from h2.config import H2Configuration
 from h2.connection import H2Connection
@@ -69,11 +69,13 @@ class ConnectionManager:
         error = None
         try:
             yield
-        except Exception as exc:
+        except Exception:
             log.info(
                 "ConnectionManager shutting down with error. Traceback:", exc_info=True,
             )
-            error = GrpcError(status=StatusCode.UNAVAILABLE, details=str(exc))
+            error = GrpcError.from_exception(
+                sys.exc_info(), status=StatusCode.UNAVAILABLE
+            )
         finally:
             for send_stream in self.send_streams.values():
                 if send_stream.closed:
@@ -410,7 +412,7 @@ class ClientConnectionManager(ConnectionManager):
 
             error = GrpcError(
                 status=StatusCode.UNIMPLEMENTED,
-                details="Algorithm not supported: {}".format(request_stream.encoding),
+                message="Algorithm not supported: {}".format(request_stream.encoding),
             )
             response_stream.close(error)
             request_stream.close()
