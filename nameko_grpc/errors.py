@@ -18,41 +18,41 @@ GRPC_DETAILS_METADATA_KEY = "grpc-status-details-bin"
 
 
 class GrpcError(Exception):
-    def __init__(self, status, message, details=None):
-        self.status = status
+    def __init__(self, code, message, status=None):
+        self.code = code
         self.message = message
-        self.details = details
+        self.status = status
 
     def as_headers(self):
         """ Dehydrate this instance to headers to be sent as trailing metadata.
         """
         headers = {
             # ("content-length", "0"),
-            "grpc-status": str(STATUS_CODE_TO_CYGRPC_STATUS_CODE[self.status]),
+            "grpc-status": str(STATUS_CODE_TO_CYGRPC_STATUS_CODE[self.code]),
             "grpc-message": self.message,
         }
-        if self.details:
-            headers[GRPC_DETAILS_METADATA_KEY] = self.details.SerializeToString()
+        if self.status:
+            headers[GRPC_DETAILS_METADATA_KEY] = self.status.SerializeToString()
         return list(headers.items())
 
     @staticmethod
     def from_headers(headers):
         """ Rehydrate a new instance from headers received as trailing metadata.
         """
-        status = int(headers.get("grpc-status"))
+        code = int(headers.get("grpc-status"))
         message = headers.get("grpc-message")
-        details = headers.get(GRPC_DETAILS_METADATA_KEY)
+        status = headers.get(GRPC_DETAILS_METADATA_KEY)
 
         return GrpcError(
-            status=CYGRPC_STATUS_CODE_TO_STATUS_CODE[status],
+            code=CYGRPC_STATUS_CODE_TO_STATUS_CODE[code],
             message=message,
-            details=Status.FromString(details) if details else None,
+            status=Status.FromString(status) if status else None,
         )
 
     @staticmethod
-    def from_exception(exc_info, status=None, message=None):
+    def from_exception(exc_info, code=None, message=None):
         """ Create a new GrpcError instance representing an underlying exception.
-        The `status` and `message` can be passed to this function.
+        The `code` and `message` can be passed to this function.
 
         By default, a `google.rpc.Status` message will be generated capturing the
         debug info of the underyling traceback. See `default_error_from_exception`.
@@ -63,15 +63,15 @@ class GrpcError(Exception):
         exc_type, exc, tb = exc_info
 
         error_from_exception = registry.get(exc_type, default_error_from_exception)
-        return error_from_exception(exc_info, status, message)
+        return error_from_exception(exc_info, code, message)
 
     def __str__(self):
         return (
             "<RPC terminated with:\n"
-            "\tstatus = {}\n"
+            "\tcode = {}\n"
             '\tmessage = "{}"\n'
-            '\tdetails = "{}"\n'
-            ">".format(self.status, self.message, self.details)
+            '\tstatus = "{}"\n'
+            ">".format(self.code, self.message, self.status)
         )
 
 
@@ -90,9 +90,9 @@ def unregister(exc_type):
     registry.pop(exc_type, None)
 
 
-def default_error_from_exception(exc_info, status=None, message=None):
+def default_error_from_exception(exc_info, code=None, message=None):
     """ Create a new GrpcError instance representing an underlying exception.
-    The `status` and `message` can be passed to this function.
+    The `code` and `message` can be passed to this function.
 
     A `google.rpc.Status` message will be generated capturing the debug info of the
     underyling traceback.
@@ -103,13 +103,11 @@ def default_error_from_exception(exc_info, status=None, message=None):
     detail.Pack(
         DebugInfo(stack_entries=traceback.format_exception(*exc_info), detail=str(exc),)
     )
-    status = status or StatusCode.UNKNOWN
+    code = code or StatusCode.UNKNOWN
     message = message or str(exc)
 
-    rpc_status = Status(
-        code=STATUS_CODE_TO_CYGRPC_STATUS_CODE[status],
-        message=message,
-        details=[detail],
+    status = Status(
+        code=STATUS_CODE_TO_CYGRPC_STATUS_CODE[code], message=message, details=[detail],
     )
 
-    return GrpcError(status=status, message=message, details=rpc_status)
+    return GrpcError(code=code, message=message, status=status)

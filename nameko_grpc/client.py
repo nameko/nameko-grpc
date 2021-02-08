@@ -152,7 +152,7 @@ class ClientBase:
             elapsed = time.time() - start
             if elapsed > deadline:
                 error = GrpcError(
-                    status=StatusCode.DEADLINE_EXCEEDED, message="Deadline Exceeded"
+                    code=StatusCode.DEADLINE_EXCEEDED, message="Deadline Exceeded"
                 )
                 response_stream.close(error)
                 send_stream.close()

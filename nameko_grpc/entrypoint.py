@@ -42,7 +42,7 @@ class GrpcServer(SharedExtension):
             if elapsed > deadline:
                 request_stream.close()
                 error = GrpcError(
-                    status=StatusCode.DEADLINE_EXCEEDED, message="Deadline Exceeded"
+                    code=StatusCode.DEADLINE_EXCEEDED, message="Deadline Exceeded"
                 )
                 response_stream.close(error)
                 break
@@ -53,14 +53,12 @@ class GrpcServer(SharedExtension):
             method_path = request_stream.headers.get(":path")
             entrypoint = self.entrypoints[method_path]
         except KeyError:
-            raise GrpcError(
-                status=StatusCode.UNIMPLEMENTED, message="Method not found!"
-            )
+            raise GrpcError(code=StatusCode.UNIMPLEMENTED, message="Method not found!")
 
         encoding = request_stream.headers.get("grpc-encoding", "identity")
         if encoding not in SUPPORTED_ENCODINGS:
             raise GrpcError(
-                status=StatusCode.UNIMPLEMENTED,
+                code=StatusCode.UNIMPLEMENTED,
                 message="Algorithm not supported: {}".format(encoding),
             )
 

@@ -183,7 +183,7 @@ class TestCompression:
             client.unary_unary(
                 protobufs.ExampleRequest(value="A" * 1000), compression="gzip"
             )
-        assert error.value.status == StatusCode.UNIMPLEMENTED
+        assert error.value.code == StatusCode.UNIMPLEMENTED
         assert error.value.message == "Algorithm not supported: gzip"
 
         res = client.unary_stream(
@@ -192,7 +192,7 @@ class TestCompression:
         )
         with pytest.raises(GrpcError) as error:
             list(res)
-        assert error.value.status == StatusCode.UNIMPLEMENTED
+        assert error.value.code == StatusCode.UNIMPLEMENTED
         assert error.value.message == "Algorithm not supported: gzip"
 
         def generate_requests():
@@ -201,7 +201,7 @@ class TestCompression:
 
         with pytest.raises(GrpcError) as error:
             client.stream_unary(generate_requests(), compression="gzip")
-        assert error.value.status == StatusCode.UNIMPLEMENTED
+        assert error.value.code == StatusCode.UNIMPLEMENTED
         assert error.value.message == "Algorithm not supported: gzip"
 
         def generate_requests():
@@ -211,7 +211,7 @@ class TestCompression:
         res = client.stream_stream(generate_requests(), compression="gzip")
         with pytest.raises(GrpcError) as error:
             next(res)
-        assert error.value.status == StatusCode.UNIMPLEMENTED
+        assert error.value.code == StatusCode.UNIMPLEMENTED
         assert error.value.message == "Algorithm not supported: gzip"
 
     def test_compression_not_required_at_client(self):

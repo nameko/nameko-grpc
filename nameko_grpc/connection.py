@@ -74,7 +74,7 @@ class ConnectionManager:
                 "ConnectionManager shutting down with error. Traceback:", exc_info=True,
             )
             error = GrpcError.from_exception(
-                sys.exc_info(), status=StatusCode.UNAVAILABLE
+                sys.exc_info(), code=StatusCode.UNAVAILABLE
             )
         finally:
             for send_stream in self.send_streams.values():
@@ -411,7 +411,7 @@ class ClientConnectionManager(ConnectionManager):
             request_stream = self.send_streams[stream_id]
 
             error = GrpcError(
-                status=StatusCode.UNIMPLEMENTED,
+                code=StatusCode.UNIMPLEMENTED,
                 message="Algorithm not supported: {}".format(request_stream.encoding),
             )
             response_stream.close(error)
