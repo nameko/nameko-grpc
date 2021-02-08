@@ -6,9 +6,16 @@ import time
 
 import pytest
 from grpc import StatusCode
-
+from grpc._common import (
+    CYGRPC_STATUS_CODE_TO_STATUS_CODE,
+    STATUS_CODE_TO_CYGRPC_STATUS_CODE,
+)
+from google.rpc.status_pb2 import Status
 from nameko_grpc.constants import Cardinality
 from nameko_grpc.errors import GrpcError
+from google.protobuf.any_pb2 import Any
+from google.rpc.error_details_pb2 import DebugInfo
+from nameko_grpc.errors import register
 
 
 @pytest.mark.equivalence
@@ -152,20 +159,108 @@ class TestMethodException:
         assert error.value.message == "Exception iterating responses: boom"
 
 
-# GOALS:
+class TestErrorDetails:
+    @pytest.fixture(params=["client=nameko", "client=dp"])
+    def client_type(self, request):
+        return request.param[7:]
 
-# make nameko-grpc honour this proposal https://github.com/grpc/proposal/blob/master/L44-python-rich-status.md
-# and return rich errors (by default? as an option?)
+    @pytest.fixture(params=["server=nameko"])
+    def server_type(self, request):
+        return request.param[7:]
 
-# allow easy mapping of a particular exception to how it should be returned, including
-# status code, message, and rich response
+    def unpack_debug_info(self, detail):
+        any_ = Any()
+        any_.CopyFrom(detail)
+        debug_info = DebugInfo()
+        any_.Unpack(debug_info)
+        return debug_info
 
-# e.g. Unauthorized
-# status should be UNAUTHORIZED
-# message can be something readable
-# rich status: maybe not required. maybe list of missing permissions?
+    def test_error_before_response(self, client, protobufs):
+        with pytest.raises(GrpcError) as error:
+            client.unary_error(protobufs.ExampleRequest(value="A"))
+        assert error.value.status == StatusCode.UNKNOWN
+        assert error.value.message == "Exception calling application: boom"
 
-# e.g. ValidationError
-# status should be ?
-# message can be generic
-# rich status: BadRequest with FieldViolation (from error_details.proto)
+        rpc_status = error.value.details
+        debug_info = self.unpack_debug_info(rpc_status.details[0])
+
+        assert rpc_status.code == StatusCode.UNKNOWN.value[0]
+        assert rpc_status.message == "Exception calling application: boom"
+        assert debug_info.stack_entries[0] == "Traceback (most recent call last):\n"
+        assert debug_info.detail == "boom"
+
+    def test_error_while_streaming_response(self, client, protobufs):
+        res = client.stream_error(
+            protobufs.ExampleRequest(value="A", response_count=10)
+        )
+        with pytest.raises(GrpcError) as error:
+            list(res)
+
+        assert error.value.status == StatusCode.UNKNOWN
+        assert error.value.message == "Exception iterating responses: boom"
+
+        rpc_status = error.value.details
+        debug_info = self.unpack_debug_info(rpc_status.details[0])
+
+        assert rpc_status.code == StatusCode.UNKNOWN.value[0]
+        assert rpc_status.message == "Exception iterating responses: boom"
+        assert debug_info.stack_entries[0] == "Traceback (most recent call last):\n"
+        assert debug_info.detail == "boom"
+
+
+class TestCustomErrorFromException:
+    @pytest.fixture(params=["client=nameko", "client=dp"])
+    def client_type(self, request):
+        return request.param[7:]
+
+    @pytest.fixture(params=["server=nameko"])
+    def server_type(self, request):
+        return request.param[7:]
+
+    @pytest.fixture(autouse=True)
+    def register_exception_handler(self):
+        from example_nameko import Error
+
+        def handler(exc_info, status=None, message=None):
+            exc_type, exc, tb = exc_info
+
+            status = status or StatusCode.PERMISSION_DENIED
+            message = "Not allowed!"
+
+            rpc_status = Status(
+                code=STATUS_CODE_TO_CYGRPC_STATUS_CODE[status],
+                message=message,
+                details=[],  # don't include traceback
+            )
+
+            return GrpcError(status=status, message=message, details=rpc_status)
+
+        register(Error, handler)
+
+    def test_error_before_response(self, client, protobufs):
+        with pytest.raises(GrpcError) as error:
+            client.unary_error(protobufs.ExampleRequest(value="A"))
+        assert error.value.status == StatusCode.PERMISSION_DENIED
+        assert error.value.message == "Not allowed!"
+
+        rpc_status = error.value.details
+
+        assert rpc_status.code == StatusCode.PERMISSION_DENIED.value[0]
+        assert rpc_status.message == "Not allowed!"
+        assert not rpc_status.details
+
+    def test_error_while_streaming_response(self, client, protobufs):
+        res = client.stream_error(
+            protobufs.ExampleRequest(value="A", response_count=10)
+        )
+        with pytest.raises(GrpcError) as error:
+            list(res)
+
+        assert error.value.status == StatusCode.PERMISSION_DENIED
+        assert error.value.message == "Not allowed!"
+
+        rpc_status = error.value.details
+
+        assert rpc_status.code == StatusCode.PERMISSION_DENIED.value[0]
+        assert rpc_status.message == "Not allowed!"
+        assert not rpc_status.details
