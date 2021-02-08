@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import json
 
+from grpc._common import STATUS_CODE_TO_CYGRPC_STATUS_CODE
 
 METADATA_PREFIX = "x-nameko-"
 
@@ -63,7 +64,9 @@ class GrpcContext:
         self.response_stream = response_stream
 
     def set_code(self, code):
-        self.response_stream.trailers.set(("grpc-status", str(code)))
+        self.response_stream.trailers.set(
+            ("grpc-status", str(STATUS_CODE_TO_CYGRPC_STATUS_CODE[code]))
+        )
 
     def set_message(self, message):
         self.response_stream.trailers.set(("grpc-message", message))

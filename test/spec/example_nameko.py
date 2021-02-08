@@ -70,7 +70,7 @@ class example:
     @grpc
     @instrumented
     def unary_error_via_context(self, request, context):
-        context.set_code(StatusCode.UNAUTHENTICATED.value[0])
+        context.set_code(StatusCode.UNAUTHENTICATED)
         context.set_message("Not allowed!")
 
     @grpc(expected_exceptions=Error)
@@ -94,7 +94,7 @@ class example:
             maybe_sleep(request)
             # break on the last message
             if i == request.response_count - 1:
-                context.set_code(StatusCode.RESOURCE_EXHAUSTED.value[0])
+                context.set_code(StatusCode.RESOURCE_EXHAUSTED)
                 context.set_message("Out of tokens!")
                 break
             yield ExampleReply(message=message, seqno=i + 1)
