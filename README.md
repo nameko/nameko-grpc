@@ -1,6 +1,6 @@
 # nameko-grpc
 
-This is a prototype implementation of a GRPC server and client for use in [nameko](https://nameko.io) microservices.
+This is a prototype implementation of a gRPC server and client for use in [nameko](https://nameko.io) microservices.
 
 All four of the request-response patterns are implemented and tested:
 
@@ -23,7 +23,7 @@ $ pip install nameko-grpc
 
 ### Server
 
-Example Nameko service that can respond to GRPC requests:
+Example Nameko service that can respond to gRPC requests:
 
 ``` python
 from example_pb2 import ExampleReply
@@ -67,7 +67,7 @@ class ExampleService:
 
 ### Client
 
-Example Nameko service that can make GRPC requests:
+Example Nameko service that can make gRPC requests:
 
 ``` python
 from example_pb2 import ExampleReply
@@ -137,7 +137,7 @@ message ExampleReply {
 
 ## Style
 
-The example protobufs in this repo use `snake_case` for method names as per the Nameko conventions rather than `CamelCase` as per GRPC. This is not mandatory -- decorated method names simply match to the methods defined in the protobufs; similarly for service names.
+The example protobufs in this repo use `snake_case` for method names as per the Nameko conventions rather than `CamelCase` as per gRPC. This is not mandatory -- decorated method names simply match to the methods defined in the protobufs; similarly for service names.
 
 ## Context and Metadata
 
@@ -149,9 +149,9 @@ Insofar as it is implemented, the `context` argument to service methods has the 
 
 The standalone Client and DependencyProvider both allow metadata to be provided using the `metadata` keyword argument. They accept a list of `(name, value)` tuples, just as the standard Python client does. Binary values must be base64 encoded and use a header name postfixed with "-bin", as in the standard Python client.
 
-GRPC request metadata is added to the "context data" of the Nameko worker context, so is availble to other Nameko extensions.
+gRPC request metadata is added to the "context data" of the Nameko worker context, so is availble to other Nameko extensions.
 
-The DependencyProvider client adds Nameko worker context data as metadata to all GRPC requests. This allows the Nameko call id stack to be populated and propagate, along with any other context data.
+The DependencyProvider client adds Nameko worker context data as metadata to all gRPC requests. This allows the Nameko call id stack to be populated and propagate, along with any other context data.
 
 ## Compression
 
@@ -168,12 +168,12 @@ client.unary_unary(ExampleRequest(value="foo"), compression="gzip")  # use gzip 
 
 Compression levels are not supported.
 
-The GRPC spec allows for the server to respond using a different algorithm from the request, or not compressing at all. This is not currently supported in the standard Python GRPC implementation nor nameko-grpc.
+The gRPC spec allows for the server to respond using a different algorithm from the request, or not compressing at all. This is not currently supported in the standard Python gRPC implementation nor nameko-grpc.
 
 
 ## Errors
 
-GRPC errors are raised by the client as instances of the `GrpcError` exception class. Similar to the `grpc.RpcError` class defined in the standard Python GRPC client, a `GrpcError` encapsulates the [status code](https://github.com/grpc/grpc/blob/master/doc/statuscodes.md) and a `details` string describing the error.
+gRPC errors are raised by the client as instances of the `GrpcError` exception class. Similar to the `grpc.RpcError` class defined in the standard Python gRPC client, a `GrpcError` encapsulates the [status code](https://github.com/grpc/grpc/blob/master/doc/statuscodes.md) and a `details` string describing the error.
 
 
 ## Timeouts
@@ -193,9 +193,9 @@ There is no default because there's no sensible value applicable to all use-case
 
 ## Tests
 
-Most tests are run against every permutation of GRPC server/client to Nameko server/client. This roughly demonstrates equivalence between the two implementations. These tests are marked with the "equivalence" pytest marker.
+Most tests are run against every permutation of gRPC server/client to Nameko server/client. This roughly demonstrates equivalence between the two implementations. These tests are marked with the "equivalence" pytest marker.
 
-Additionally, we run the interop tests from the official GRPC repo, which are used to verify compatibility between language implementations. The Nameko GRPC implementation supports every feature that the official Python GRPC implementation does. These tests are marked with the "interop" pytest marker.
+Additionally, we run the interop tests from the official gRPC repo, which are used to verify compatibility between language implementations. The Nameko gRPC implementation supports every feature that the official Python gRPC implementation does. These tests are marked with the "interop" pytest marker.
 
 The `test/spec` directory contains the protobufs and server implementations used in the various tests.
 
@@ -222,7 +222,7 @@ $ pytest test -m "not interop"
 
 ## Implementation Notes
 
-GRPC is built on HTTP2, so nameko-grpc relies heavily on the [hyper-h2](https://python-hyper.org/projects/h2/en/stable/) library. H2 is a finite state-machine implementation of the HTTP2 protocol, and its documentation is very good. The code in nameko-grpc is much more understandable when you're familiar with h2.
+gRPC is built on HTTP2, so nameko-grpc relies heavily on the [hyper-h2](https://python-hyper.org/projects/h2/en/stable/) library. H2 is a finite state-machine implementation of the HTTP2 protocol, and its documentation is very good. The code in nameko-grpc is much more understandable when you're familiar with h2.
 
 Much of the heavy-lifting in nameko-grpc is done by either the server or client subclasses of `ConnectionManager`. A `ConnectionManager` handles a single HTTP2 connection, and implements the handlers for each HTTP2 event on that connection (e.g. `request_received` or `stream_ended`). See:
 
@@ -230,32 +230,32 @@ Much of the heavy-lifting in nameko-grpc is done by either the server or client 
 * `nameko_grpc/entrypoint.py::ServerConnectionManager`
 * `nameko_grpc/connection.py::ConnectionManager`
 
-The next most significant module is `nameko_grpc/streams.py`. This module contains the `SendStream` and `ReceiveStream` classes, which represent an HTTP2 stream that is being sent or received, respectively. A `ReceiveStream` receives data as bytes from a `ConnectionManager`, and parses them into a stream of GRPC messages. A `SendStream` does the opposite, encoding GRPC messages into bytes that can be sent across an HTTP2 connection.
+The next most significant module is `nameko_grpc/streams.py`. This module contains the `SendStream` and `ReceiveStream` classes, which represent an HTTP2 stream that is being sent or received, respectively. A `ReceiveStream` receives data as bytes from a `ConnectionManager`, and parses them into a stream of gRPC messages. A `SendStream` does the opposite, encoding gRPC messages into bytes that can be sent across an HTTP2 connection.
 
 The `@grpc` Entrypoint is a normal Nameko entrypoint that executes a service method when an appropriate request is made. The entrypoint deals with a `ReceiveStream` object encapsulating the request, and a `SendStream` object that accepts the response. The streams are managed by a shared `GrpcServer`, which accepts incoming connections and wraps each in a `ServerConnectionManager`.
 
 The standalone Client is a small wrapper around a `ClientConnectionManager`. The Client simply creates a socket connection and then hands it to the connection manager. When a method is invoked on the client, the connection manager initiates an appropriate request. The headers for that request describe the method being invoked, encodings, message types etc. This logic is all encapsulated into the `Method` class.
 
-The GRPC DependencyProvider is a normal Nameko DependencyProvider, which is also just a small wrapper around a `ClientConnectionManager`. It functions in exactly the same manner as the standalone Client.
+The gRPC DependencyProvider is a normal Nameko DependencyProvider, which is also just a small wrapper around a `ClientConnectionManager`. It functions in exactly the same manner as the standalone Client.
 
 
 ## Equivalence tests notes
 
-To demonstrate equivalence between the nameko-grpc implementations and the standard GRPC implementations, all tests marked with the `equivalence` marker run against every permutation of:
+To demonstrate equivalence between the nameko-grpc implementations and the standard gRPC implementations, all tests marked with the `equivalence` marker run against every permutation of:
 
-* GRPC standard server (Python implementation) or
+* gRPC standard server (Python implementation) or
 * Nameko server
 
 and
 
-* GRPC standard client (Python implementation) or
+* gRPC standard client (Python implementation) or
 * Nameko standalone client or
 * Nameko DependencyProvider client
 
-Nameko uses Eventlet for concurrency, which is incompatible with the standard GRPC server and client. Consequently, these must be run in a separate process and somehow communicated with in order to make assertions about the behaviour of the standard implementation.
+Nameko uses Eventlet for concurrency, which is incompatible with the standard gRPC server and client. Consequently, these must be run in a separate process and somehow communicated with in order to make assertions about the behaviour of the standard implementation.
 
 The scripts which run the out-of-process client and server can be found in `test/grpc_indirect_client.py` and `test/grpc_indirect_server.py`
 
 The communication is done with ZeroMQ. The logic for this is contained within the  `RemoteClientTransport` and `Command` classes within `test/helpers.py`, and the `start_grpc_client` and `start_grpc_server` fixtures in `test/conftest.py`.
 
-In the future this arrangement would allow us to run equivalence tests against a different (more feature-complete) standard GRPC implementation.
+In the future this arrangement would allow us to run equivalence tests against a different (more feature-complete) standard gRPC implementation.
