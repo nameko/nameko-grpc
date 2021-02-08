@@ -159,6 +159,29 @@ class TestMethodException:
         assert error.value.message == "Exception iterating responses: boom"
 
 
+@pytest.mark.equivalence
+class TestErrorViaContext:
+    def test_error_before_response(self, client, protobufs):
+        with pytest.raises(GrpcError) as error:
+            client.unary_error_via_context(protobufs.ExampleRequest(value="A"))
+        assert error.value.code == StatusCode.UNAUTHENTICATED
+        assert error.value.message == "Not allowed!"
+
+    def test_error_while_streaming_response(self, client, protobufs):
+        res = client.stream_error_via_context(
+            protobufs.ExampleRequest(value="A", response_count=10)
+        )
+        recvd = []
+        with pytest.raises(GrpcError) as error:
+            for item in res:
+                recvd.append(item)
+
+        assert len(recvd) == 9
+
+        assert error.value.code == StatusCode.RESOURCE_EXHAUSTED
+        assert error.value.message == "Out of tokens!"
+
+
 class TestErrorDetails:
     @pytest.fixture(params=["client=nameko", "client=dp"])
     def client_type(self, request):

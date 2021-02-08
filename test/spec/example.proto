@@ -10,6 +10,8 @@ service example {
   rpc not_found (ExampleRequest) returns (ExampleReply) {}
   rpc unary_error (ExampleRequest) returns (ExampleReply) {}
   rpc stream_error (ExampleRequest) returns (stream ExampleReply) {}
+  rpc unary_error_via_context (ExampleRequest) returns (ExampleReply) {}
+  rpc stream_error_via_context (ExampleRequest) returns (stream ExampleReply) {}
 }
 
 

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 from helpers import extract_metadata, instrumented, maybe_echo_metadata, maybe_sleep
-
+from grpc import StatusCode
 import example_pb2_grpc
 from example_pb2 import ExampleReply
 
@@ -55,6 +55,12 @@ class example(example_pb2_grpc.exampleServicer):
         raise Error("boom")
 
     @instrumented
+    def unary_error_via_context(self, request, context):
+        context.set_code(StatusCode.UNAUTHENTICATED)
+        context.set_details("Not allowed!")
+        context.abort()
+
+    @instrumented
     def stream_error(self, request, context):
         metadata = extract_metadata(context)
         maybe_echo_metadata(context)
@@ -65,3 +71,15 @@ class example(example_pb2_grpc.exampleServicer):
             if i == request.response_count - 1:
                 raise Error("boom")
             yield ExampleReply(message=message, seqno=i + 1, metadata=metadata)
+
+    @instrumented
+    def stream_error_via_context(self, request, context):
+        message = request.value * (request.multiplier or 1)
+        for i in range(request.response_count):
+            maybe_sleep(request)
+            # raise on the last message
+            if i == request.response_count - 1:
+                context.set_code(StatusCode.RESOURCE_EXHAUSTED)
+                context.set_details("Out of tokens!")
+                context.abort()
+            yield ExampleReply(message=message, seqno=i + 1)

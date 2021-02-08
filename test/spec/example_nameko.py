@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 from nameko_grpc.entrypoint import Grpc
+from grpc import StatusCode
 
 from helpers import extract_metadata, instrumented, maybe_echo_metadata, maybe_sleep
 
@@ -66,6 +67,12 @@ class example:
         maybe_sleep(request)
         raise Error("boom")
 
+    @grpc
+    @instrumented
+    def unary_error_via_context(self, request, context):
+        context.set_code(StatusCode.UNAUTHENTICATED.value[0])
+        context.set_message("Not allowed!")
+
     @grpc(expected_exceptions=Error)
     @instrumented
     def stream_error(self, request, context):
@@ -78,3 +85,16 @@ class example:
             if i == request.response_count - 1:
                 raise Error("boom")
             yield ExampleReply(message=message, seqno=i + 1, metadata=metadata)
+
+    @grpc
+    @instrumented
+    def stream_error_via_context(self, request, context):
+        message = request.value * (request.multiplier or 1)
+        for i in range(request.response_count):
+            maybe_sleep(request)
+            # break on the last message
+            if i == request.response_count - 1:
+                context.set_code(StatusCode.RESOURCE_EXHAUSTED.value[0])
+                context.set_message("Out of tokens!")
+                break
+            yield ExampleReply(message=message, seqno=i + 1)
