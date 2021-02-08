@@ -152,8 +152,15 @@ class TestMethodException:
         res = client.stream_error(
             protobufs.ExampleRequest(value="A", response_count=10)
         )
+        recvd = []
         with pytest.raises(GrpcError) as error:
-            list(res)
+            for item in res:
+                recvd.append(item)
+
+        # the entrypoint raises after 9 yields, but in the nameko server the exception
+        # will abort the stream while some previously read messages are still in
+        # the buffer waiting to be sent.
+        assert len(recvd) < 10
 
         assert error.value.code == StatusCode.UNKNOWN
         assert error.value.message == "Exception iterating responses: boom"
@@ -176,6 +183,9 @@ class TestErrorViaContext:
             for item in res:
                 recvd.append(item)
 
+        # there is no exception raised in the entrypoint here, in contrast to
+        # TestMethodException.test_error_while_streaming_response above, so we
+        # are guaranteed to receive all 9 messages
         assert len(recvd) == 9
 
         assert error.value.code == StatusCode.RESOURCE_EXHAUSTED
