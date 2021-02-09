@@ -116,6 +116,7 @@ class HeaderManager:
         Overwrites any existing header with the same name. Optionally decodes
         the headers first.
         """
+        # XXX why isn't this clobbered?
         if from_wire:
             headers = self.decode(headers)
         check_decoded(headers)

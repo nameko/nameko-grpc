@@ -2,19 +2,17 @@
 import traceback
 
 from grpc import StatusCode
-from grpc._common import (
-    CYGRPC_STATUS_CODE_TO_STATUS_CODE,
-    STATUS_CODE_TO_CYGRPC_STATUS_CODE,
-)
 
 from google.protobuf.any_pb2 import Any
 from google.rpc.error_details_pb2 import DebugInfo
 from google.rpc.status_pb2 import Status
 
-
-registry = {}
+STATUS_CODE_INT_TO_ENUM_MAP = {item.value[0]: item for item in StatusCode}
+STATUS_CODE_ENUM_TO_INT_MAP = {item: item.value[0] for item in StatusCode}
 
 GRPC_DETAILS_METADATA_KEY = "grpc-status-details-bin"
+
+registry = {}
 
 
 class GrpcError(Exception):
@@ -28,7 +26,7 @@ class GrpcError(Exception):
         """
         headers = {
             # ("content-length", "0"),
-            "grpc-status": str(STATUS_CODE_TO_CYGRPC_STATUS_CODE[self.code]),
+            "grpc-status": str(STATUS_CODE_ENUM_TO_INT_MAP[self.code]),
             "grpc-message": self.message,
         }
         if self.status:
@@ -44,7 +42,7 @@ class GrpcError(Exception):
         status = headers.get(GRPC_DETAILS_METADATA_KEY)
 
         return GrpcError(
-            code=CYGRPC_STATUS_CODE_TO_STATUS_CODE[code],
+            code=STATUS_CODE_INT_TO_ENUM_MAP[code],
             message=message,
             status=Status.FromString(status) if status else None,
         )
@@ -107,7 +105,7 @@ def default_error_from_exception(exc_info, code=None, message=None):
     message = message or str(exc)
 
     status = Status(
-        code=STATUS_CODE_TO_CYGRPC_STATUS_CODE[code], message=message, details=[detail],
+        code=STATUS_CODE_ENUM_TO_INT_MAP[code], message=message, details=[detail],
     )
 
     return GrpcError(code=code, message=message, status=status)

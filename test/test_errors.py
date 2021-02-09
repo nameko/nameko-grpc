@@ -6,9 +6,9 @@ import time
 
 import pytest
 from grpc import StatusCode
-from grpc._common import (
-    CYGRPC_STATUS_CODE_TO_STATUS_CODE,
-    STATUS_CODE_TO_CYGRPC_STATUS_CODE,
+from nameko_grpc.errors import (
+    STATUS_CODE_INT_TO_ENUM_MAP,
+    STATUS_CODE_ENUM_TO_INT_MAP,
 )
 from google.rpc.status_pb2 import Status
 from nameko_grpc.constants import Cardinality
@@ -261,7 +261,7 @@ class TestCustomErrorFromException:
             message = "Not allowed!"
 
             status = Status(
-                code=STATUS_CODE_TO_CYGRPC_STATUS_CODE[code],
+                code=STATUS_CODE_ENUM_TO_INT_MAP[code],
                 message=message,
                 details=[],  # don't include traceback
             )
