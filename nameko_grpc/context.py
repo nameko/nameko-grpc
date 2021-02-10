@@ -3,6 +3,7 @@ import json
 
 from nameko_grpc.errors import STATUS_CODE_ENUM_TO_INT_MAP
 
+
 METADATA_PREFIX = "x-nameko-"
 
 

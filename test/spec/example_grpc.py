@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
-from helpers import extract_metadata, instrumented, maybe_echo_metadata, maybe_sleep
 from grpc import StatusCode
+
+from helpers import extract_metadata, instrumented, maybe_echo_metadata, maybe_sleep
+
 import example_pb2_grpc
 from example_pb2 import ExampleReply
 

@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 import itertools
 import select
+import sys
 from collections import deque
 from contextlib import contextmanager
 from logging import getLogger
 from threading import Event
-import sys
+
 from grpc import StatusCode
 from h2.config import H2Configuration
 from h2.connection import H2Connection

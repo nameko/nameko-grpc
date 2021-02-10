@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
+from grpc import StatusCode
+
 from nameko_grpc.entrypoint import Grpc
 from nameko_grpc.errors import GrpcError
-
-from grpc import StatusCode
 
 from helpers import extract_metadata, instrumented, maybe_echo_metadata, maybe_sleep
 

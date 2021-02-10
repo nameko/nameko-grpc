@@ -6,16 +6,13 @@ import time
 
 import pytest
 from grpc import StatusCode
-from nameko_grpc.errors import (
-    STATUS_CODE_INT_TO_ENUM_MAP,
-    STATUS_CODE_ENUM_TO_INT_MAP,
-)
-from google.rpc.status_pb2 import Status
+
 from nameko_grpc.constants import Cardinality
-from nameko_grpc.errors import GrpcError
+from nameko_grpc.errors import STATUS_CODE_ENUM_TO_INT_MAP, GrpcError, register
+
 from google.protobuf.any_pb2 import Any
 from google.rpc.error_details_pb2 import DebugInfo
-from nameko_grpc.errors import register
+from google.rpc.status_pb2 import Status
 
 
 @pytest.mark.equivalence

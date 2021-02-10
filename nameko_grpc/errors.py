@@ -7,6 +7,7 @@ from google.protobuf.any_pb2 import Any
 from google.rpc.error_details_pb2 import DebugInfo
 from google.rpc.status_pb2 import Status
 
+
 STATUS_CODE_INT_TO_ENUM_MAP = {item.value[0]: item for item in StatusCode}
 STATUS_CODE_ENUM_TO_INT_MAP = {item: item.value[0] for item in StatusCode}
 

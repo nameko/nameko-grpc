@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
+import sys
 import time
 import types
 from functools import partial
 from logging import getLogger
-import sys
+
 from grpc import StatusCode
 from nameko import config
 from nameko.exceptions import ContainerBeingKilled
