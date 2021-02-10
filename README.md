@@ -173,7 +173,102 @@ The gRPC spec allows for the server to respond using a different algorithm from 
 
 ## Errors
 
-gRPC errors are raised by the client as instances of the `GrpcError` exception class. Similar to the `grpc.RpcError` class defined in the standard Python gRPC client, a `GrpcError` encapsulates the [status code](https://github.com/grpc/grpc/blob/master/doc/statuscodes.md) and a `details` string describing the error.
+### Client side
+
+gRPC errors are raised by the client as instances of the `GrpcError` exception class. A `GrpcError` encapsulates the status [`code`](https://github.com/grpc/grpc/blob/master/doc/statuscodes.md) and a `message` string describing the error. These are transmitted as the `grpc-status` and `grpc-message` headers defined by the gRPC spec.
+
+Additionally, `GrpcError` has a `status` attribute that can hold a `google.rpc.status.Status` protobuf message for holding additional information about the error. This is similar to the [`grpc_status` package](https://grpc.github.io/grpc/python/grpc_status.html) that is part of the official Python gRPC library, and indeed that package is compatible with the nameko-grpc client. (TODO test)
+
+The `google.rpc.status.Status` message received in the `grpc-status-details-bin` trailing header.
+
+### Server side
+
+If a service method raises an exception, the error that is generated has the following attributes by default:
+
+    * `code`: grpc.StatusCode.UNKNOWN
+    * `message`: "Exception calling application: <stringified exception>"
+    * `status`: `google.rpc.Status` protobuf message
+
+The `google.rpc.Status` message encapsulates the `code` and `message` again, along with a `details` attribute containing the exception traceback as a `google.rpc.error_details.DebugInfo` message.
+
+You can customise the errors returned by the server in two ways:
+
+1. Explictly set the code, message, and trailing headers using the `context` object. This is essentially how the official Python gRPC library does it:
+
+
+``` python
+class Service:
+
+    ...
+
+    @grpc
+    def stream_error_via_context(self, request, context):
+        for index, item in enumerate(...):
+            if index > MAX_TOKENS:
+                context.set_code(StatusCode.RESOURCE_EXHAUSTED)
+                context.set_message("Out of tokens!")
+                context.set_trailing_metadata([
+                    ("grpc-status-details-bin", make_grpc_status(...))
+                ])
+                break
+            yield Reply(...)
+```
+
+2. Return a `GrpcError` directly:
+
+``` python
+from nameko_grpc.errors import GrpcError
+
+
+class Service:
+
+    ...
+
+    @grpc
+    def stream_grpc_error(self, request, context):
+        for index, item in enumerate(...):
+            if index > MAX_TOKENS:
+                raise GrpcError(
+                    code=StatusCode.RESOURCE_EXHAUSTED,
+                    message="Out of tokens!",
+                    status=make_grpc_status(...)
+                )
+            yield Reply(...)
+```
+
+3. Register an error handler mapping a given exception type to a function that generates a `GrpcError` instance from the raised exception:
+
+``` python
+from nameko_grpc.errors import register
+
+
+class NoMoreTokens(Exception):
+    pass
+
+
+def handle_no_more_tokens(exc, code=None, message=None):
+    return GrpcError(
+        code=StatusCode.RESOURCE_EXHAUSTED,
+        message=str(exc),
+        details=make_grpc_status(...)
+    )
+
+
+register(NoMoreTokens, handle_no_more_tokens)
+
+class Service:
+
+    ...
+
+    @grpc
+    def stream_error(self, request, context):
+        for index, item in enumerate(...):
+            if index > MAX_TOKENS:
+                raise NoMoreTokens("Out of tokens!")
+            yield Reply(...)
+```
+
+The final approach is useful when you want to map an exception without wrapping it in a try/except in the service method, or when there is no opportunity to do so -- for example when an exception is raised by a decorator on the service method.
 
 
 ## Timeouts
