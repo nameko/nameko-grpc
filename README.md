@@ -261,7 +261,7 @@ class Service:
     ...
 
     @grpc
-    def stream_error(self, request, context):
+    def grpc_error_from_exception(self, request, context):
         for index, item in enumerate(...):
             if index > MAX_TOKENS:
                 raise NoMoreTokens("Out of tokens!")

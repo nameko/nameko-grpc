@@ -57,7 +57,9 @@ def decode_header(header):
     name, value = header
     name = name.decode("utf-8")
     if name.endswith("-bin"):
-        value = base64.b64decode(value)
+        value = base64.b64decode(
+            value + b"=="
+        )  # add padding, per https://stackoverflow.com/a/49459036/128749
     else:
         value = value.decode("utf-8")
     return name, value

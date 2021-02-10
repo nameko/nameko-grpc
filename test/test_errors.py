@@ -8,7 +8,11 @@ import pytest
 from grpc import StatusCode
 
 from nameko_grpc.constants import Cardinality
-from nameko_grpc.errors import STATUS_CODE_ENUM_TO_INT_MAP, GrpcError, register
+from nameko_grpc.errors import (
+    STATUS_CODE_ENUM_TO_INT_MAP,
+    GrpcError,
+    register_exception_handler,
+)
 
 from google.protobuf.any_pb2 import Any
 from google.rpc.error_details_pb2 import DebugInfo
@@ -294,7 +298,7 @@ class TestCustomErrorFromException:
 
             return GrpcError(code=code, message=message, status=status)
 
-        register(Error, handler)
+        register_exception_handler(Error, handler)
 
     def test_error_before_response(self, client, protobufs):
         with pytest.raises(GrpcError) as error:

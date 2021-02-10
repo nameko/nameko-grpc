@@ -48,14 +48,14 @@ class GrpcError(Exception):
 
     @staticmethod
     def from_exception(exc_info, code=None, message=None):
-        """ Create a new GrpcError instance representing an underlying exception.
-        The `code` and `message` can be passed to this function.
+        """ Utility method to create a new GrpcError instance representing an
+        underlying exception. Useful in try/except clauses.
 
         By default, a `google.rpc.Status` message will be generated capturing the
         debug info of the underyling traceback. See `default_error_from_exception`.
 
         This can be overridden by registering a new callable against a given exception
-        type. See `register`.
+        type. See `register_exception_handler`.
         """
         exc_type, exc, tb = exc_info
 
@@ -72,7 +72,7 @@ class GrpcError(Exception):
         )
 
 
-def register(exc_type, custom_error_from_exception):
+def register_exception_handler(exc_type, custom_error_from_exception):
     """ Register a custom implementation to generate a GrpcError from an underlying
     exception, by exception type.
 
@@ -81,7 +81,7 @@ def register(exc_type, custom_error_from_exception):
     registry[exc_type] = custom_error_from_exception
 
 
-def unregister(exc_type):
+def unregister_expection_handler(exc_type):
     """ Unregister a custom implementation.
     """
     registry.pop(exc_type, None)
@@ -96,7 +96,6 @@ def default_error_from_exception(exc_info, code=None, message=None):
     """
     exc_type, exc, tb = exc_info
 
-    # XXX why accept code and mesage here?
     detail = Any()
     detail.Pack(
         DebugInfo(stack_entries=traceback.format_exception(*exc_info), detail=str(exc),)
@@ -111,9 +110,9 @@ def default_error_from_exception(exc_info, code=None, message=None):
     return GrpcError(code=code, message=message, status=status)
 
 
-def grpc_error_passthrough(exc_info, code, message):
+def grpc_error_passthrough_exception_handler(exc_info, code, message):
     exc_type, exc, tb = exc_info
     return exc
 
 
-registry = {GrpcError: grpc_error_passthrough}
+registry = {GrpcError: grpc_error_passthrough_exception_handler}
