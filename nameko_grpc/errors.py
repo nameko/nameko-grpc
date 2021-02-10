@@ -12,8 +12,6 @@ STATUS_CODE_ENUM_TO_INT_MAP = {item: item.value[0] for item in StatusCode}
 
 GRPC_DETAILS_METADATA_KEY = "grpc-status-details-bin"
 
-registry = {}
-
 
 class GrpcError(Exception):
     def __init__(self, code, message, status=None):
@@ -97,6 +95,7 @@ def default_error_from_exception(exc_info, code=None, message=None):
     """
     exc_type, exc, tb = exc_info
 
+    # XXX why accept code and mesage here?
     detail = Any()
     detail.Pack(
         DebugInfo(stack_entries=traceback.format_exception(*exc_info), detail=str(exc),)
@@ -109,3 +108,11 @@ def default_error_from_exception(exc_info, code=None, message=None):
     )
 
     return GrpcError(code=code, message=message, status=status)
+
+
+def grpc_error_passthrough(exc_info, code, message):
+    exc_type, exc, tb = exc_info
+    return exc
+
+
+registry = {GrpcError: grpc_error_passthrough}

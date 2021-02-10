@@ -166,6 +166,35 @@ class TestMethodException:
         assert error.value.message == "Exception iterating responses: boom"
 
 
+class TestRaiseGrpcError:
+    @pytest.fixture(params=["server=nameko"])
+    def server_type(self, request):
+        return request.param[7:]
+
+    def test_error_before_response(self, client, protobufs):
+        with pytest.raises(GrpcError) as error:
+            client.unary_grpc_error(protobufs.ExampleRequest(value="A"))
+        assert error.value.code == StatusCode.UNAUTHENTICATED
+        assert error.value.message == "Not allowed!"
+
+    def test_error_while_streaming_response(self, client, protobufs):
+        res = client.stream_grpc_error(
+            protobufs.ExampleRequest(value="A", response_count=10)
+        )
+        recvd = []
+        with pytest.raises(GrpcError) as error:
+            for item in res:
+                recvd.append(item)
+
+        # the entrypoint raises after 9 yields, but in the nameko server the exception
+        # will abort the stream while some previously read messages are still in
+        # the buffer waiting to be sent.
+        assert len(recvd) < 10
+
+        assert error.value.code == StatusCode.RESOURCE_EXHAUSTED
+        assert error.value.message == "Out of tokens!"
+
+
 @pytest.mark.equivalence
 class TestErrorViaContext:
     def test_error_before_response(self, client, protobufs):
