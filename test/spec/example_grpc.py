@@ -1,17 +1,17 @@
 # -*- coding: utf-8 -*-
 from grpc import StatusCode
+from grpc_status import rpc_status
 
 from helpers import (
-    make_status,
     extract_metadata,
     instrumented,
+    make_status,
     maybe_echo_metadata,
     maybe_sleep,
 )
 
 import example_pb2_grpc
 from example_pb2 import ExampleReply
-from grpc_status import rpc_status
 
 
 class Error(Exception):

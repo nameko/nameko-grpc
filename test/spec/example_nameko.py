@@ -2,11 +2,12 @@
 from grpc import StatusCode
 
 from nameko_grpc.entrypoint import Grpc
-from nameko_grpc.errors import GrpcError, GRPC_DETAILS_METADATA_KEY
+from nameko_grpc.errors import GRPC_DETAILS_METADATA_KEY, GrpcError
+
 from helpers import (
-    make_status,
     extract_metadata,
     instrumented,
+    make_status,
     maybe_echo_metadata,
     maybe_sleep,
 )

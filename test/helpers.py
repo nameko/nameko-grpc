@@ -5,14 +5,16 @@ import os
 import pickle
 import threading
 import time
-from google.rpc.status_pb2 import Status
+
 import grpc
 import wrapt
 import zmq
+from google.rpc import status_pb2
 
 from nameko_grpc.constants import Cardinality
-from nameko_grpc.errors import GrpcError, GRPC_DETAILS_METADATA_KEY
-from google.rpc import status_pb2
+from nameko_grpc.errors import GRPC_DETAILS_METADATA_KEY, GrpcError
+
+from google.rpc.status_pb2 import Status
 
 
 def make_status(code, message, details=None):

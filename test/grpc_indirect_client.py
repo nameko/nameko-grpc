@@ -10,7 +10,6 @@ from grpc._cython.cygrpc import CompressionAlgorithm, CompressionLevel
 from nameko_grpc.constants import Cardinality
 from nameko_grpc.errors import GrpcError
 
-
 from helpers import Command, RemoteClientTransport, status_from_metadata
 
 
