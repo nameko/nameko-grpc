@@ -10,7 +10,8 @@ from grpc._cython.cygrpc import CompressionAlgorithm, CompressionLevel
 from nameko_grpc.constants import Cardinality
 from nameko_grpc.errors import GrpcError
 
-from helpers import Command, RemoteClientTransport
+
+from helpers import Command, RemoteClientTransport, status_from_metadata
 
 
 def execute(command, stub):
@@ -45,7 +46,10 @@ def execute(command, stub):
         state = exc._state
         response_metadata["code"] = state.code
         response_metadata["details"] = state.details
-        response = GrpcError(state.code, state.details, state.debug_error_string)
+
+        response = GrpcError(
+            state.code, state.details, status_from_metadata(state.trailing_metadata)
+        )
 
     command.send_response(response)
     command.send_metadata(response_metadata)

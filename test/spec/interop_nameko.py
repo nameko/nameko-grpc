@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 from nameko_grpc.entrypoint import Grpc
+from nameko_grpc.errors import STATUS_CODE_INT_TO_ENUM_MAP
 
 import empty_pb2
 import interop_pb2_grpc
@@ -33,8 +34,9 @@ def _maybe_echo_metadata(servicer_context):
 def _maybe_echo_status_and_message(request, servicer_context):
     """Sets the response context code and details if the request asks for them"""
     if request.HasField("response_status"):
-        servicer_context.set_code(request.response_status.code)
-        servicer_context.set_details(request.response_status.message)
+        code = STATUS_CODE_INT_TO_ENUM_MAP[request.response_status.code]
+        servicer_context.set_code(code)
+        servicer_context.set_message(request.response_status.message)
 
 
 class TestService:

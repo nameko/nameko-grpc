@@ -2,9 +2,14 @@
 from grpc import StatusCode
 
 from nameko_grpc.entrypoint import Grpc
-from nameko_grpc.errors import GrpcError
-
-from helpers import extract_metadata, instrumented, maybe_echo_metadata, maybe_sleep
+from nameko_grpc.errors import GrpcError, GRPC_DETAILS_METADATA_KEY
+from helpers import (
+    make_status,
+    extract_metadata,
+    instrumented,
+    maybe_echo_metadata,
+    maybe_sleep,
+)
 
 import example_pb2_grpc
 from example_pb2 import ExampleReply
@@ -72,15 +77,30 @@ class example:
     @grpc
     @instrumented
     def unary_error_via_context(self, request, context):
-        context.set_code(StatusCode.UNAUTHENTICATED)
-        context.set_message("Not allowed!")
+        code = StatusCode.UNAUTHENTICATED
+        message = "Not allowed!"
+
+        context.set_code(code)
+        context.set_message(message)
+        context.set_trailing_metadata(
+            [
+                (
+                    GRPC_DETAILS_METADATA_KEY,
+                    make_status(code, message).SerializeToString(),
+                )
+            ]
+        )
 
     @grpc(expected_exceptions=Error)
     @instrumented
     def unary_grpc_error(self, request, context):
         maybe_echo_metadata(context)
         maybe_sleep(request)
-        raise GrpcError(code=StatusCode.UNAUTHENTICATED, message="Not allowed!")
+
+        code = StatusCode.UNAUTHENTICATED
+        message = "Not allowed!"
+
+        raise GrpcError(code=code, message=message, status=make_status(code, message))
 
     @grpc(expected_exceptions=Error)
     @instrumented
@@ -103,8 +123,20 @@ class example:
             maybe_sleep(request)
             # break on the last message
             if i == request.response_count - 1:
-                context.set_code(StatusCode.RESOURCE_EXHAUSTED)
-                context.set_message("Out of tokens!")
+
+                code = StatusCode.RESOURCE_EXHAUSTED
+                message = "Out of tokens!"
+
+                context.set_code(code)
+                context.set_message(message)
+                context.set_trailing_metadata(
+                    [
+                        (
+                            GRPC_DETAILS_METADATA_KEY,
+                            make_status(code, message).SerializeToString(),
+                        )
+                    ]
+                )
                 break
             yield ExampleReply(message=message, seqno=i + 1)
 
@@ -118,7 +150,11 @@ class example:
             maybe_sleep(request)
             # raise on the last message
             if i == request.response_count - 1:
+
+                code = StatusCode.RESOURCE_EXHAUSTED
+                message = "Out of tokens!"
+
                 raise GrpcError(
-                    code=StatusCode.RESOURCE_EXHAUSTED, message="Out of tokens!"
+                    code=code, message=message, status=make_status(code, message),
                 )
             yield ExampleReply(message=message, seqno=i + 1, metadata=metadata)

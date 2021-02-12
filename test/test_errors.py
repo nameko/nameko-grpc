@@ -177,6 +177,7 @@ class TestRaiseGrpcError:
             client.unary_grpc_error(protobufs.ExampleRequest(value="A"))
         assert error.value.code == StatusCode.UNAUTHENTICATED
         assert error.value.message == "Not allowed!"
+        assert isinstance(error.value.status, Status)
 
     def test_error_while_streaming_response(self, client, protobufs):
         res = client.stream_grpc_error(
@@ -194,6 +195,7 @@ class TestRaiseGrpcError:
 
         assert error.value.code == StatusCode.RESOURCE_EXHAUSTED
         assert error.value.message == "Out of tokens!"
+        assert isinstance(error.value.status, Status)
 
 
 @pytest.mark.equivalence
@@ -203,8 +205,10 @@ class TestErrorViaContext:
             client.unary_error_via_context(protobufs.ExampleRequest(value="A"))
         assert error.value.code == StatusCode.UNAUTHENTICATED
         assert error.value.message == "Not allowed!"
+        assert isinstance(error.value.status, Status)
 
     def test_error_while_streaming_response(self, client, protobufs):
+
         res = client.stream_error_via_context(
             protobufs.ExampleRequest(value="A", response_count=10)
         )
@@ -220,6 +224,7 @@ class TestErrorViaContext:
 
         assert error.value.code == StatusCode.RESOURCE_EXHAUSTED
         assert error.value.message == "Out of tokens!"
+        assert isinstance(error.value.status, Status)
 
 
 class TestErrorDetails:
@@ -272,10 +277,6 @@ class TestErrorDetails:
 
 
 class TestCustomErrorFromException:
-    @pytest.fixture(params=["client=nameko", "client=dp"])
-    def client_type(self, request):
-        return request.param[7:]
-
     @pytest.fixture(params=["server=nameko"])
     def server_type(self, request):
         return request.param[7:]

@@ -22,7 +22,17 @@ setup(
     url="http://github.com/nameko/nameko-grpc",
     packages=find_packages(exclude=["test"]),
     install_requires=["nameko>=3.0.0-rc9", "h2>=3", "grpcio", "protobuf"],
-    extras_require={"dev": ["coverage", "pytest", "grpcio-tools", "wrapt", "zmq"]},
+    extras_require={
+        "dev": [
+            "coverage",
+            "pytest",
+            "grpcio-tools",
+            "grpcio-status",
+            "googleapis-common-protos",
+            "wrapt",
+            "zmq",
+        ]
+    },
     zip_safe=True,
     license="Apache License, Version 2.0",
     classifiers=[

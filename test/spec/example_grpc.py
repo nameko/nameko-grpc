@@ -1,10 +1,17 @@
 # -*- coding: utf-8 -*-
 from grpc import StatusCode
 
-from helpers import extract_metadata, instrumented, maybe_echo_metadata, maybe_sleep
+from helpers import (
+    make_status,
+    extract_metadata,
+    instrumented,
+    maybe_echo_metadata,
+    maybe_sleep,
+)
 
 import example_pb2_grpc
 from example_pb2 import ExampleReply
+from grpc_status import rpc_status
 
 
 class Error(Exception):
@@ -58,9 +65,10 @@ class example(example_pb2_grpc.exampleServicer):
 
     @instrumented
     def unary_error_via_context(self, request, context):
-        context.set_code(StatusCode.UNAUTHENTICATED)
-        context.set_details("Not allowed!")
-        context.abort()
+        # using rich status to test compatibility with
+        # https://grpc.github.io/grpc/python/grpc_status.html
+        status = make_status(code=StatusCode.UNAUTHENTICATED, message="Not allowed!",)
+        context.abort_with_status(rpc_status.to_status(status))
 
     @instrumented
     def stream_error(self, request, context):
@@ -81,7 +89,11 @@ class example(example_pb2_grpc.exampleServicer):
             maybe_sleep(request)
             # raise on the last message
             if i == request.response_count - 1:
-                context.set_code(StatusCode.RESOURCE_EXHAUSTED)
-                context.set_details("Out of tokens!")
-                context.abort()
+                # using rich status to test compatibility with
+                # https://grpc.github.io/grpc/python/grpc_status.html
+                status = make_status(
+                    code=StatusCode.RESOURCE_EXHAUSTED, message="Out of tokens!"
+                )
+                context.abort_with_status(rpc_status.to_status(status))
+
             yield ExampleReply(message=message, seqno=i + 1)

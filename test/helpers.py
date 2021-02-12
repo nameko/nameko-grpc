@@ -5,13 +5,24 @@ import os
 import pickle
 import threading
 import time
-
+from google.rpc.status_pb2 import Status
 import grpc
 import wrapt
 import zmq
 
 from nameko_grpc.constants import Cardinality
-from nameko_grpc.errors import GrpcError
+from nameko_grpc.errors import GrpcError, GRPC_DETAILS_METADATA_KEY
+from google.rpc import status_pb2
+
+
+def make_status(code, message, details=None):
+    return Status(code=code.value[0], message=message, details=details or [])
+
+
+def status_from_metadata(metadata):
+    for key, value in metadata:
+        if key == GRPC_DETAILS_METADATA_KEY:
+            return status_pb2.Status.FromString(value)
 
 
 def extract_metadata(context):
@@ -120,7 +131,9 @@ class RemoteClientTransport:
                 self.send(item)
         except grpc.RpcError as exc:
             state = exc._state
-            error = GrpcError(state.code, state.details, state.debug_error_string)
+            error = GrpcError(
+                state.code, state.details, status_from_metadata(state.trailing_metadata)
+            )
             self.send(error)
         self.send(self.ENDSTREAM, close=True)
 
