@@ -7,6 +7,7 @@ import time
 import pytest
 from grpc import StatusCode
 
+from nameko import config
 from nameko_grpc.constants import Cardinality
 from nameko_grpc.errors import (
     STATUS_CODE_ENUM_TO_INT_MAP,
@@ -236,6 +237,11 @@ class TestErrorDetails:
     def server_type(self, request):
         return request.param[7:]
 
+    @pytest.fixture(params=[True, False])
+    def debug_mode(self, request):
+        with config.patch({"DEBUG": request.param}):
+            yield request.param
+
     def unpack_debug_info(self, detail):
         any_ = Any()
         any_.CopyFrom(detail)
@@ -243,21 +249,25 @@ class TestErrorDetails:
         any_.Unpack(debug_info)
         return debug_info
 
-    def test_error_before_response(self, client, protobufs):
+    def test_error_before_response(self, client, protobufs, debug_mode):
         with pytest.raises(GrpcError) as error:
             client.unary_error(protobufs.ExampleRequest(value="A"))
         assert error.value.code == StatusCode.UNKNOWN
         assert error.value.message == "Exception calling application: boom"
 
         status = error.value.status
-        debug_info = self.unpack_debug_info(status.details[0])
 
         assert status.code == StatusCode.UNKNOWN.value[0]
         assert status.message == "Exception calling application: boom"
-        assert debug_info.stack_entries[0] == "Traceback (most recent call last):\n"
-        assert debug_info.detail == "boom"
 
-    def test_error_while_streaming_response(self, client, protobufs):
+        if debug_mode:
+            debug_info = self.unpack_debug_info(status.details[0])
+            assert debug_info.stack_entries[0] == "Traceback (most recent call last):\n"
+            assert debug_info.detail == "boom"
+        else:
+            assert not status.details
+
+    def test_error_while_streaming_response(self, client, protobufs, debug_mode):
         res = client.stream_error(
             protobufs.ExampleRequest(value="A", response_count=10)
         )
@@ -268,12 +278,16 @@ class TestErrorDetails:
         assert error.value.message == "Exception iterating responses: boom"
 
         status = error.value.status
-        debug_info = self.unpack_debug_info(status.details[0])
 
         assert status.code == StatusCode.UNKNOWN.value[0]
         assert status.message == "Exception iterating responses: boom"
-        assert debug_info.stack_entries[0] == "Traceback (most recent call last):\n"
-        assert debug_info.detail == "boom"
+
+        if debug_mode:
+            debug_info = self.unpack_debug_info(status.details[0])
+            assert debug_info.stack_entries[0] == "Traceback (most recent call last):\n"
+            assert debug_info.detail == "boom"
+        else:
+            assert not status.details
 
 
 class TestCustomErrorFromException:

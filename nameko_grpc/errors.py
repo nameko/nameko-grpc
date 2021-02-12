@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import traceback
 
+from nameko import config
 from grpc import StatusCode
 
 from google.protobuf.any_pb2 import Any
@@ -89,23 +90,25 @@ def unregister_expection_handler(exc_type):
 
 def default_error_from_exception(exc_info, code=None, message=None):
     """ Create a new GrpcError instance representing an underlying exception.
-    The `code` and `message` can be passed to this function.
 
-    A `google.rpc.Status` message will be generated capturing the debug info of the
-    underyling traceback.
+    If the `DEBUG` key is set in the Nameko config, the `status` message will capture
+    the underyling traceback in a `google.rpc.error_details.DebugInfo` message.
     """
     exc_type, exc, tb = exc_info
 
-    detail = Any()
-    detail.Pack(
-        DebugInfo(stack_entries=traceback.format_exception(*exc_info), detail=str(exc),)
-    )
     code = code or StatusCode.UNKNOWN
     message = message or str(exc)
 
-    status = Status(
-        code=STATUS_CODE_ENUM_TO_INT_MAP[code], message=message, details=[detail],
-    )
+    status = Status(code=STATUS_CODE_ENUM_TO_INT_MAP[code], message=message)
+
+    if config.get("DEBUG"):
+        debug_info = Any()
+        debug_info.Pack(
+            DebugInfo(
+                stack_entries=traceback.format_exception(*exc_info), detail=str(exc),
+            )
+        )
+        status.details.append(debug_info)
 
     return GrpcError(code=code, message=message, status=status)
 
