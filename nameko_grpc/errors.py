@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 import traceback
 
-from nameko import config
 from grpc import StatusCode
+from nameko import config
 
 from google.protobuf.any_pb2 import Any
 from google.rpc.error_details_pb2 import DebugInfo

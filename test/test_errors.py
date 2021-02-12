@@ -6,8 +6,8 @@ import time
 
 import pytest
 from grpc import StatusCode
-
 from nameko import config
+
 from nameko_grpc.constants import Cardinality
 from nameko_grpc.errors import (
     STATUS_CODE_ENUM_TO_INT_MAP,
