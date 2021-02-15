@@ -7,12 +7,7 @@ from nameko_grpc.errors import (
     make_status,
 )
 
-from helpers import (
-    extract_metadata,
-    instrumented,
-    maybe_echo_metadata,
-    maybe_sleep,
-)
+from helpers import extract_metadata, instrumented, maybe_echo_metadata, maybe_sleep
 
 import example_pb2_grpc
 from example_pb2 import ExampleReply
