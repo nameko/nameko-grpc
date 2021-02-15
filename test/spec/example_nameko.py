@@ -1,13 +1,15 @@
 # -*- coding: utf-8 -*-
-from grpc import StatusCode
-
 from nameko_grpc.entrypoint import Grpc
-from nameko_grpc.errors import GRPC_DETAILS_METADATA_KEY, GrpcError
+from nameko_grpc.errors import (
+    GRPC_DETAILS_METADATA_KEY,
+    GrpcError,
+    StatusCode,
+    make_status,
+)
 
 from helpers import (
     extract_metadata,
     instrumented,
-    make_status,
     maybe_echo_metadata,
     maybe_sleep,
 )

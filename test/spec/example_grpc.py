@@ -1,11 +1,10 @@
 # -*- coding: utf-8 -*-
-from grpc import StatusCode
 from grpc_status import rpc_status
+from nameko_grpc.errors import make_status, StatusCode
 
 from helpers import (
     extract_metadata,
     instrumented,
-    make_status,
     maybe_echo_metadata,
     maybe_sleep,
 )

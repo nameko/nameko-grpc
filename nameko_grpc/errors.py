@@ -81,6 +81,10 @@ class GrpcError(Exception):
         )
 
 
+def make_status(code, message, details=None):
+    return Status(code=code.value[0], message=message, details=details or [])
+
+
 def register_exception_handler(exc_type, custom_error_from_exception):
     """ Register a custom implementation to generate a GrpcError from an underlying
     exception, by exception type.

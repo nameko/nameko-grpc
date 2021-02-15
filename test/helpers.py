@@ -17,10 +17,6 @@ from nameko_grpc.errors import GRPC_DETAILS_METADATA_KEY, GrpcError
 from google.rpc.status_pb2 import Status
 
 
-def make_status(code, message, details=None):
-    return Status(code=code.value[0], message=message, details=details or [])
-
-
 def status_from_metadata(metadata):
     for key, value in metadata:
         if key == GRPC_DETAILS_METADATA_KEY:
