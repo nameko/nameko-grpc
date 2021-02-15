@@ -48,6 +48,14 @@ class GrpcError(Exception):
         )
 
     @staticmethod
+    def from_status(status):
+        return GrpcError(
+            code=STATUS_CODE_INT_TO_ENUM_MAP[status.code],
+            message=status.message,
+            status=status,
+        )
+
+    @staticmethod
     def from_exception(exc_info, code=None, message=None):
         """ Utility method to create a new GrpcError instance representing an
         underlying exception. Useful in try/except clauses.
