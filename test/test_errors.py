@@ -239,7 +239,7 @@ class TestErrorDetails:
 
     @pytest.fixture(params=[True, False])
     def debug_mode(self, request):
-        with config.patch({"DEBUG": request.param}):
+        with config.patch({"GRPC_DEBUG": request.param}):
             yield request.param
 
     def unpack_debug_info(self, detail):

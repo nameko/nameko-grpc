@@ -103,8 +103,8 @@ def unregister_expection_handler(exc_type):
 def default_error_from_exception(exc_info, code=None, message=None):
     """ Create a new GrpcError instance representing an underlying exception.
 
-    If the `DEBUG` key is set in the Nameko config, the `status` message will capture
-    the underyling traceback in a `google.rpc.error_details.DebugInfo` message.
+    If the `GRPC_DEBUG` key is set in the Nameko config, the `status` message will
+    capture the underyling traceback in a `google.rpc.error_details.DebugInfo` message.
     """
     exc_type, exc, tb = exc_info
 
@@ -113,7 +113,7 @@ def default_error_from_exception(exc_info, code=None, message=None):
 
     status = Status(code=STATUS_CODE_ENUM_TO_INT_MAP[code], message=message)
 
-    if config.get("DEBUG"):
+    if config.get("GRPC_DEBUG"):
         debug_info = Any()
         debug_info.Pack(
             DebugInfo(
