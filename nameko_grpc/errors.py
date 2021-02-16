@@ -33,23 +33,23 @@ class GrpcError(Exception):
             headers[GRPC_DETAILS_METADATA_KEY] = self.status.SerializeToString()
         return list(headers.items())
 
-    @staticmethod
-    def from_headers(headers):
+    @classmethod
+    def from_headers(cls, headers):
         """ Rehydrate a new instance from headers received as trailing metadata.
         """
         code = int(headers.get("grpc-status"))
         message = headers.get("grpc-message")
         status = headers.get(GRPC_DETAILS_METADATA_KEY)
 
-        return GrpcError(
+        return cls(
             code=STATUS_CODE_INT_TO_ENUM_MAP[code],
             message=message,
             status=Status.FromString(status) if status else None,
         )
 
-    @staticmethod
-    def from_status(status):
-        return GrpcError(
+    @classmethod
+    def from_status(cls, status):
+        return cls(
             code=STATUS_CODE_INT_TO_ENUM_MAP[status.code],
             message=status.message,
             status=status,
