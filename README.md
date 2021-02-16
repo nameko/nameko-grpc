@@ -217,7 +217,7 @@ class Service:
 2. Return a `GrpcError` directly:
 
 ``` python
-from nameko_grpc.errors import GrpcError
+from nameko_grpc.errors import GrpcError, StatusCode
 
 
 class Service:
@@ -239,7 +239,7 @@ class Service:
 3. Register an error handler mapping a given exception type to a function that generates a `GrpcError` instance from the raised exception:
 
 ``` python
-from nameko_grpc.errors import register
+from nameko_grpc.errors import register_handler, GrpcError, StatusCode
 
 
 class NoMoreTokens(Exception):
@@ -254,7 +254,7 @@ def handle_no_more_tokens(exc, code=None, message=None):
     )
 
 
-register(NoMoreTokens, handle_no_more_tokens)
+register_handler(NoMoreTokens, handle_no_more_tokens)
 
 class Service:
 
