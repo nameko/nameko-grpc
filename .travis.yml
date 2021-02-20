@@ -1,31 +1,31 @@
 sudo: false
 language: python
-services:
-  - docker
+# services:
+#   - docker
 
-before_install:
-  - docker run -d --hostname rabbitmq --name rabbitmq -p 15672:15672 -p 5672:5672 -e RABBITMQ_DEFAULT_USER=guest -e RABBITMQ_DEFAULT_PASS=guest rabbitmq:3-management
+# before_install:
+#   - docker run -d --hostname rabbitmq --name rabbitmq -p 15672:15672 -p 5672:5672 -e RABBITMQ_DEFAULT_USER=guest -e RABBITMQ_DEFAULT_PASS=guest rabbitmq:3-management
 
-install:
-  - pip install tox
+# install:
+#   - pip install tox
 
 matrix:
   include:
-    - stage: static
-      python: 3.6
-      env: TOX_ENV=static
-    - stage: test
-      python: 3.6
-      env: TOX_ENV=py36-test
-    - stage: test
-      python: 3.7
-      env: TOX_ENV=py37-test
-    - stage: test
-      python: 3.8
-      env: TOX_ENV=py38-test
-    - stage: test
-      python: 3.9
-      env: TOX_ENV=py39-test
+    # - stage: static
+    #   python: 3.6
+    #   env: TOX_ENV=static
+    # - stage: test
+    #   python: 3.6
+    #   env: TOX_ENV=py36-test
+    # - stage: test
+    #   python: 3.7
+    #   env: TOX_ENV=py37-test
+    # - stage: test
+    #   python: 3.8
+    #   env: TOX_ENV=py38-test
+    # - stage: test
+    #   python: 3.9
+    #   env: TOX_ENV=py39-test
     - stage: deploy
       script: skip
       deploy:
