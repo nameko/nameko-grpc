@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import itertools
 import select
+import sys
 from collections import deque
 from contextlib import contextmanager
 from logging import getLogger
@@ -69,11 +70,13 @@ class ConnectionManager:
         error = None
         try:
             yield
-        except Exception as exc:
+        except Exception:
             log.info(
                 "ConnectionManager shutting down with error. Traceback:", exc_info=True,
             )
-            error = GrpcError(status=StatusCode.UNAVAILABLE, details=str(exc))
+            error = GrpcError.from_exception(
+                sys.exc_info(), code=StatusCode.UNAVAILABLE
+            )
         finally:
             for send_stream in self.send_streams.values():
                 if send_stream.closed:
@@ -409,8 +412,8 @@ class ClientConnectionManager(ConnectionManager):
             request_stream = self.send_streams[stream_id]
 
             error = GrpcError(
-                status=StatusCode.UNIMPLEMENTED,
-                details="Algorithm not supported: {}".format(request_stream.encoding),
+                code=StatusCode.UNIMPLEMENTED,
+                message="Algorithm not supported: {}".format(request_stream.encoding),
             )
             response_stream.close(error)
             request_stream.close()

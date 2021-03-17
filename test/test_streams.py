@@ -113,7 +113,7 @@ class TestStreamBase:
 
     def test_close_with_error(self):
         stream = StreamBase(1)
-        error = GrpcError("boom", "details", "error string")
+        error = GrpcError("boom", "details")
         stream.close(error)
 
         assert stream.closed
@@ -169,7 +169,7 @@ class TestReceiveStream:
 
     def test_consume_grpc_error(self):
         stream = ReceiveStream(1)
-        error = GrpcError("boom", "details", "message")
+        error = GrpcError("boom", "details")
         stream.queue.put(error)
 
         message_type = Mock()
@@ -354,7 +354,7 @@ class TestSendStreamFlushQueueToBuffer:
     def test_error_on_queue(self, generate_messages):
         stream = SendStream(1)
 
-        error = GrpcError("boom", "details", "error string")
+        error = GrpcError("boom", "details")
         messages = itertools.chain(generate_messages(count=2, length=20), [error])
 
         stream.populate(messages)
@@ -435,7 +435,7 @@ class TestSendStreamRead:
     def test_stream_closed_with_error(self):
         stream = SendStream(1)
 
-        error = GrpcError("boom", "details", "error string")
+        error = GrpcError("boom", "details")
         stream.close(error)
 
         max_bytes = 10

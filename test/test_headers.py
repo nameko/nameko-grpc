@@ -33,6 +33,13 @@ class TestDecodeHeader:
             b"123",
         )
 
+    def test_binary_with_truncated_padding(self):
+        padded_value = base64.b64encode(b"1234")
+        assert padded_value.endswith(b"=")
+
+        trimmed_value = padded_value[:-2]
+        assert decode_header((b"foo-bin", trimmed_value)) == ("foo-bin", b"1234",)
+
     def test_string_value(self):
         assert decode_header((b"foo", b"123")) == ("foo", "123")
 

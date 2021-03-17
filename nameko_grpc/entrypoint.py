@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import sys
 import time
 import types
 from functools import partial
@@ -42,7 +43,7 @@ class GrpcServer(SharedExtension):
             if elapsed > deadline:
                 request_stream.close()
                 error = GrpcError(
-                    status=StatusCode.DEADLINE_EXCEEDED, details="Deadline Exceeded"
+                    code=StatusCode.DEADLINE_EXCEEDED, message="Deadline Exceeded"
                 )
                 response_stream.close(error)
                 break
@@ -53,15 +54,13 @@ class GrpcServer(SharedExtension):
             method_path = request_stream.headers.get(":path")
             entrypoint = self.entrypoints[method_path]
         except KeyError:
-            raise GrpcError(
-                status=StatusCode.UNIMPLEMENTED, details="Method not found!"
-            )
+            raise GrpcError(code=StatusCode.UNIMPLEMENTED, message="Method not found!")
 
         encoding = request_stream.headers.get("grpc-encoding", "identity")
         if encoding not in SUPPORTED_ENCODINGS:
             raise GrpcError(
-                status=StatusCode.UNIMPLEMENTED,
-                details="Algorithm not supported: {}".format(encoding),
+                code=StatusCode.UNIMPLEMENTED,
+                message="Algorithm not supported: {}".format(encoding),
             )
 
         timeout = request_stream.headers.get("grpc-timeout")
@@ -186,7 +185,7 @@ class Grpc(Entrypoint):
             )
         except ContainerBeingKilled:
             raise GrpcError(
-                status=StatusCode.UNAVAILABLE, details="Server shutting down"
+                status=StatusCode.UNAVAILABLE, message="Server shutting down"
             )
 
     def handle_result(self, response_stream, worker_ctx, result, exc_info):
@@ -199,14 +198,13 @@ class Grpc(Entrypoint):
                 response_stream.populate(result)
             except Exception as exception:
                 message = "Exception iterating responses: {}".format(exception)
+                error = GrpcError.from_exception(sys.exc_info(), message=message)
 
-                error = GrpcError(status=StatusCode.UNKNOWN, details=message)
                 response_stream.close(error)
         else:
-            error = GrpcError(
-                status=StatusCode.UNKNOWN,
-                details="Exception calling application: {}".format(exc_info[1]),
-            )
+            message = "Exception calling application: {}".format(exc_info[1])
+            error = GrpcError.from_exception(exc_info, message=message)
+
             response_stream.close(error)
 
         return result, exc_info

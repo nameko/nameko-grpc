@@ -57,7 +57,9 @@ def decode_header(header):
     name, value = header
     name = name.decode("utf-8")
     if name.endswith("-bin"):
-        value = base64.b64decode(value)
+        value = base64.b64decode(
+            value + b"=="
+        )  # add padding, per https://stackoverflow.com/a/49459036/128749
     else:
         value = value.decode("utf-8")
     return name, value
@@ -116,6 +118,7 @@ class HeaderManager:
         Overwrites any existing header with the same name. Optionally decodes
         the headers first.
         """
+        # XXX why isn't this clobbered?
         if from_wire:
             headers = self.decode(headers)
         check_decoded(headers)

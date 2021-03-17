@@ -6,9 +6,18 @@ import time
 
 import pytest
 from grpc import StatusCode
+from nameko import config
 
 from nameko_grpc.constants import Cardinality
-from nameko_grpc.errors import GrpcError
+from nameko_grpc.errors import (
+    STATUS_CODE_ENUM_TO_INT_MAP,
+    GrpcError,
+    register_exception_handler,
+)
+
+from google.protobuf.any_pb2 import Any
+from google.rpc.error_details_pb2 import DebugInfo
+from google.rpc.status_pb2 import Status
 
 
 @pytest.mark.equivalence
@@ -32,8 +41,8 @@ class TestMethodNotFound:
     def test_method_not_found(self, client, protobufs):
         with pytest.raises(GrpcError) as error:
             client.not_found(protobufs.ExampleRequest(value="hello"))
-        assert error.value.status == StatusCode.UNIMPLEMENTED
-        assert error.value.details == "Method not found!"
+        assert error.value.code == StatusCode.UNIMPLEMENTED
+        assert error.value.message == "Method not found!"
 
 
 @pytest.mark.equivalence
@@ -49,8 +58,8 @@ class TestDeadlineExceededAtClient:
                 protobufs.ExampleRequest(value="A", delay=1000),
                 timeout=0.05,  # XXX fails when too fast; need protection
             )
-        assert error.value.status == StatusCode.DEADLINE_EXCEEDED
-        assert error.value.details == "Deadline Exceeded"
+        assert error.value.code == StatusCode.DEADLINE_EXCEEDED
+        assert error.value.message == "Deadline Exceeded"
 
     def test_timeout_while_streaming_request(self, client, protobufs):
         def generate_requests(values):
@@ -60,8 +69,8 @@ class TestDeadlineExceededAtClient:
 
         with pytest.raises(GrpcError) as error:
             client.stream_unary(generate_requests(string.ascii_uppercase), timeout=0.05)
-        assert error.value.status == StatusCode.DEADLINE_EXCEEDED
-        assert error.value.details == "Deadline Exceeded"
+        assert error.value.code == StatusCode.DEADLINE_EXCEEDED
+        assert error.value.message == "Deadline Exceeded"
 
     def test_timeout_while_streaming_result(self, client, protobufs):
 
@@ -72,8 +81,8 @@ class TestDeadlineExceededAtClient:
         with pytest.raises(GrpcError) as error:
             list(res)
 
-        assert error.value.status == StatusCode.DEADLINE_EXCEEDED
-        assert error.value.details == "Deadline Exceeded"
+        assert error.value.code == StatusCode.DEADLINE_EXCEEDED
+        assert error.value.message == "Deadline Exceeded"
 
 
 @pytest.mark.equivalence
@@ -98,8 +107,8 @@ class TestDeadlineExceededAtServer:
                 timeout=0.05,
                 metadata=[("stash", stash_metadata)],
             )
-        assert error.value.status == StatusCode.DEADLINE_EXCEEDED
-        assert error.value.details == "Deadline Exceeded"
+        assert error.value.code == StatusCode.DEADLINE_EXCEEDED
+        assert error.value.message == "Deadline Exceeded"
 
         # server should not have recieved all the requests
         captured_requests = list(instrumented.requests())
@@ -120,8 +129,8 @@ class TestDeadlineExceededAtServer:
         )
         with pytest.raises(GrpcError) as error:
             list(res)  # client will throw
-        assert error.value.status == StatusCode.DEADLINE_EXCEEDED
-        assert error.value.details == "Deadline Exceeded"
+        assert error.value.code == StatusCode.DEADLINE_EXCEEDED
+        assert error.value.message == "Deadline Exceeded"
 
         time.sleep(0.5)
 
@@ -138,8 +147,185 @@ class TestMethodException:
     def test_error_before_response(self, client, protobufs):
         with pytest.raises(GrpcError) as error:
             client.unary_error(protobufs.ExampleRequest(value="A"))
-        assert error.value.status == StatusCode.UNKNOWN
-        assert error.value.details == "Exception calling application: boom"
+        assert error.value.code == StatusCode.UNKNOWN
+        assert error.value.message == "Exception calling application: boom"
+
+    def test_error_while_streaming_response(self, client, protobufs):
+        res = client.stream_error(
+            protobufs.ExampleRequest(value="A", response_count=10)
+        )
+        recvd = []
+        with pytest.raises(GrpcError) as error:
+            for item in res:
+                recvd.append(item)
+
+        # the entrypoint raises after 9 yields, but in the nameko server the exception
+        # will abort the stream while some previously read messages are still in
+        # the buffer waiting to be sent.
+        assert len(recvd) < 10
+
+        assert error.value.code == StatusCode.UNKNOWN
+        assert error.value.message == "Exception iterating responses: boom"
+
+
+class TestRaiseGrpcError:
+    @pytest.fixture(params=["server=nameko"])
+    def server_type(self, request):
+        return request.param[7:]
+
+    def test_error_before_response(self, client, protobufs):
+        with pytest.raises(GrpcError) as error:
+            client.unary_grpc_error(protobufs.ExampleRequest(value="A"))
+        assert error.value.code == StatusCode.UNAUTHENTICATED
+        assert error.value.message == "Not allowed!"
+        assert isinstance(error.value.status, Status)
+
+    def test_error_while_streaming_response(self, client, protobufs):
+        res = client.stream_grpc_error(
+            protobufs.ExampleRequest(value="A", response_count=10)
+        )
+        recvd = []
+        with pytest.raises(GrpcError) as error:
+            for item in res:
+                recvd.append(item)
+
+        # the entrypoint raises after 9 yields, but in the nameko server the exception
+        # will abort the stream while some previously read messages are still in
+        # the buffer waiting to be sent.
+        assert len(recvd) < 10
+
+        assert error.value.code == StatusCode.RESOURCE_EXHAUSTED
+        assert error.value.message == "Out of tokens!"
+        assert isinstance(error.value.status, Status)
+
+
+@pytest.mark.equivalence
+class TestErrorViaContext:
+    def test_error_before_response(self, client, protobufs):
+        with pytest.raises(GrpcError) as error:
+            client.unary_error_via_context(protobufs.ExampleRequest(value="A"))
+        assert error.value.code == StatusCode.UNAUTHENTICATED
+        assert error.value.message == "Not allowed!"
+        assert isinstance(error.value.status, Status)
+
+    def test_error_while_streaming_response(self, client, protobufs):
+
+        res = client.stream_error_via_context(
+            protobufs.ExampleRequest(value="A", response_count=10)
+        )
+        recvd = []
+        with pytest.raises(GrpcError) as error:
+            for item in res:
+                recvd.append(item)
+
+        # there is no exception raised in the entrypoint here, in contrast to
+        # TestMethodException.test_error_while_streaming_response above, so we
+        # are guaranteed to receive all 9 messages
+        assert len(recvd) == 9
+
+        assert error.value.code == StatusCode.RESOURCE_EXHAUSTED
+        assert error.value.message == "Out of tokens!"
+        assert isinstance(error.value.status, Status)
+
+
+class TestErrorDetails:
+    @pytest.fixture(params=["client=nameko", "client=dp"])
+    def client_type(self, request):
+        return request.param[7:]
+
+    @pytest.fixture(params=["server=nameko"])
+    def server_type(self, request):
+        return request.param[7:]
+
+    @pytest.fixture(params=[True, False])
+    def debug_mode(self, request):
+        with config.patch({"GRPC_DEBUG": request.param}):
+            yield request.param
+
+    def unpack_debug_info(self, detail):
+        any_ = Any()
+        any_.CopyFrom(detail)
+        debug_info = DebugInfo()
+        any_.Unpack(debug_info)
+        return debug_info
+
+    def test_error_before_response(self, client, protobufs, debug_mode):
+        with pytest.raises(GrpcError) as error:
+            client.unary_error(protobufs.ExampleRequest(value="A"))
+        assert error.value.code == StatusCode.UNKNOWN
+        assert error.value.message == "Exception calling application: boom"
+
+        status = error.value.status
+
+        assert status.code == StatusCode.UNKNOWN.value[0]
+        assert status.message == "Exception calling application: boom"
+
+        if debug_mode:
+            debug_info = self.unpack_debug_info(status.details[0])
+            assert debug_info.stack_entries[0] == "Traceback (most recent call last):\n"
+            assert debug_info.detail == "boom"
+        else:
+            assert not status.details
+
+    def test_error_while_streaming_response(self, client, protobufs, debug_mode):
+        res = client.stream_error(
+            protobufs.ExampleRequest(value="A", response_count=10)
+        )
+        with pytest.raises(GrpcError) as error:
+            list(res)
+
+        assert error.value.code == StatusCode.UNKNOWN
+        assert error.value.message == "Exception iterating responses: boom"
+
+        status = error.value.status
+
+        assert status.code == StatusCode.UNKNOWN.value[0]
+        assert status.message == "Exception iterating responses: boom"
+
+        if debug_mode:
+            debug_info = self.unpack_debug_info(status.details[0])
+            assert debug_info.stack_entries[0] == "Traceback (most recent call last):\n"
+            assert debug_info.detail == "boom"
+        else:
+            assert not status.details
+
+
+class TestCustomErrorFromException:
+    @pytest.fixture(params=["server=nameko"])
+    def server_type(self, request):
+        return request.param[7:]
+
+    @pytest.fixture(autouse=True)
+    def register_exception_handler(self):
+        from example_nameko import Error
+
+        def handler(exc_info, code=None, message=None):
+            exc_type, exc, tb = exc_info
+
+            code = code or StatusCode.PERMISSION_DENIED
+            message = "Not allowed!"
+
+            status = Status(
+                code=STATUS_CODE_ENUM_TO_INT_MAP[code],
+                message=message,
+                details=[],  # don't include traceback
+            )
+
+            return GrpcError(code=code, message=message, status=status)
+
+        register_exception_handler(Error, handler)
+
+    def test_error_before_response(self, client, protobufs):
+        with pytest.raises(GrpcError) as error:
+            client.unary_error(protobufs.ExampleRequest(value="A"))
+        assert error.value.code == StatusCode.PERMISSION_DENIED
+        assert error.value.message == "Not allowed!"
+
+        status = error.value.status
+
+        assert status.code == StatusCode.PERMISSION_DENIED.value[0]
+        assert status.message == "Not allowed!"
+        assert not status.details
 
     def test_error_while_streaming_response(self, client, protobufs):
         res = client.stream_error(
@@ -148,5 +334,11 @@ class TestMethodException:
         with pytest.raises(GrpcError) as error:
             list(res)
 
-        assert error.value.status == StatusCode.UNKNOWN
-        assert error.value.details == "Exception iterating responses: boom"
+        assert error.value.code == StatusCode.PERMISSION_DENIED
+        assert error.value.message == "Not allowed!"
+
+        status = error.value.status
+
+        assert status.code == StatusCode.PERMISSION_DENIED.value[0]
+        assert status.message == "Not allowed!"
+        assert not status.details

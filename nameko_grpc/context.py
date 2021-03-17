@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 import json
 
+from nameko_grpc.errors import STATUS_CODE_ENUM_TO_INT_MAP
+
 
 METADATA_PREFIX = "x-nameko-"
 
@@ -63,10 +65,12 @@ class GrpcContext:
         self.response_stream = response_stream
 
     def set_code(self, code):
-        self.response_stream.trailers.set(("grpc-status", str(code)))
+        self.response_stream.trailers.set(
+            ("grpc-status", str(STATUS_CODE_ENUM_TO_INT_MAP[code]))
+        )
 
-    def set_details(self, details):
-        self.response_stream.trailers.set(("grpc-message", details))
+    def set_message(self, message):
+        self.response_stream.trailers.set(("grpc-message", message))
 
     def invocation_metadata(self):
         return self.request_stream.headers.for_application
