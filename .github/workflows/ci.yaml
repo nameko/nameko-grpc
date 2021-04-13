@@ -72,12 +72,12 @@ jobs:
 
     steps:
     - name: checkout
-       uses: actions/checkout@v2
+      uses: actions/checkout@v2
 
-     - name: setup python
-       uses: actions/setup-python@v2
-       with:
-         python-version: 3.9
+    - name: setup python
+      uses: actions/setup-python@v2
+      with:
+        python-version: 3.9
 
     - name: generate distributables
       run: |
