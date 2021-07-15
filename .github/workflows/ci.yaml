@@ -2,6 +2,8 @@ on:
   push:
     branches:
       - "**"
+    tags:
+      - "v*"
   pull_request:
     branches:
       - master
@@ -81,6 +83,7 @@ jobs:
 
     - name: generate distributables
       run: |
+        pip install wheel
         python setup.py sdist bdist_wheel
 
     - name: publish to pypi
