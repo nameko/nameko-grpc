@@ -94,6 +94,7 @@ class ConnectionManager:
                     f"{f' with error {error}' if error else ''}."
                 )
                 receive_stream.close(error)
+            self.sock.close()
             self.stopped.set()
 
     def run_forever(self):
@@ -143,7 +144,6 @@ class ConnectionManager:
     def stop(self):
         self.run = False
         self.stopped.wait()
-        self.sock.close()
 
     def on_iteration(self):
         """ Called on every iteration of the event loop.
