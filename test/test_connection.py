@@ -1,7 +1,9 @@
-import pytest
+# -*- coding: utf-8 -*-
 import objgraph
-from nameko_grpc.client import Client
+import pytest
 from nameko.testing.waiting import wait_for_call
+
+from nameko_grpc.client import Client
 
 
 class TestCloseSocketOnClientExit:
