@@ -29,6 +29,7 @@ setup(
             "grpcio-tools",
             "grpcio-status",
             "googleapis-common-protos",
+            "objgraph",
             "wrapt",
             "zmq",
         ]
