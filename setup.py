@@ -26,6 +26,7 @@ setup(
         "dev": [
             "coverage",
             "pytest",
+            "pytest-timeout",
             "grpcio-tools",
             "grpcio-status",
             "googleapis-common-protos",

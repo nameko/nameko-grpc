@@ -9,7 +9,7 @@ static:
 	pre-commit run --all-files
 
 test:
-	py.test test -v
+	py.test test -v --timeout 30
 
 coverage:
 	coverage run -m pytest test -v
