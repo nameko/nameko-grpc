@@ -48,7 +48,6 @@ class TestDisposeServerConnectionOnExit:
         # i can't find the strong reference.
         gc.collect()
         assert len(objgraph.by_type("ServerConnectionManager")) == 1
-        assert gc.get_referrers(objgraph.by_type("ServerConnectionManager")[0]) == []
 
 
 class TestDisposeClientConnectionOnExit:
