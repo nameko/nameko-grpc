@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
-import objgraph
 import pytest
+from nameko.testing.utils import get_extension
 from nameko.testing.waiting import wait_for_call
 
 from nameko_grpc.client import Client
+from nameko_grpc.entrypoint import GrpcServer
 
 
 class TestCloseSocketOnClientExit:
@@ -25,7 +26,9 @@ class TestCloseSocketOnClientExit:
         )
         proxy = client.start()
 
-        connection = objgraph.by_type("ServerConnectionManager")[0]
+        container = server
+        grpc_server = get_extension(container, GrpcServer)
+        connection = grpc_server.channel.conn_pool.connections.queue[0]
 
         response = proxy.unary_unary(protobufs.ExampleRequest(value="A"))
         assert response.message == "A"
