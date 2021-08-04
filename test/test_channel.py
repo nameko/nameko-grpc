@@ -42,10 +42,9 @@ class TestDisposeServerConnectionOnExit:
             assert response.message == "A"
             client.stop()
 
-        # there is always one server connnection in memory, even if it has no referrers
-        # anymore. this is something to do with the eventlet loop i think. seems to be
-        # the same situation as https://stackoverflow.com/questions/1127836 except
-        # i can't find the strong reference.
+        # while the server is running there is always exactly one server connnection
+        # that remains in memory -- the previously used one remains in the closure of
+        # the "while is accepting" loop inside GrpcServer.run
         gc.collect()
         assert len(objgraph.by_type("ServerConnectionManager")) == 1
 
