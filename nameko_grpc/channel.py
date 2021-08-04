@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import queue
 import socket
+import weakref
 from logging import getLogger
 from urllib.parse import urlparse
 
@@ -52,7 +53,7 @@ class ClientConnectionPool:
 
         sock.settimeout(60)  # XXX needed and/or correct value?
         connection = ClientConnectionManager(sock)
-        self.connections.put(connection)
+        self.connections.put(weakref.ref(connection))
 
         def run_with_reconnect():
             connection.run_forever()
@@ -65,9 +66,10 @@ class ClientConnectionPool:
 
     def get(self):
         while True:
-            conn = self.connections.get()
-            if conn.alive:
-                self.connections.put(conn)
+            connection_weakref = self.connections.get()
+            conn = connection_weakref()
+            if conn and conn.alive:
+                self.connections.put(connection_weakref)
                 return conn
 
     def start(self):
@@ -78,7 +80,10 @@ class ClientConnectionPool:
     def stop(self):
         self.run = False
         while not self.connections.empty():
-            self.connections.get().stop()
+            connection_weakref = self.connections.get()
+            conn = connection_weakref()
+            if conn:
+                conn.stop()
 
 
 class ClientChannel:
@@ -133,7 +138,7 @@ class ServerConnectionPool:
             sock.settimeout(60)  # XXX needed and/or correct value?
 
             connection = ServerConnectionManager(sock, self.handle_request)
-            self.connections.put(connection)
+            self.connections.put(weakref.ref(connection))
             self.spawn_thread(
                 target=connection.run_forever, name=f"grpc server connection [{sock}]"
             )
@@ -148,7 +153,10 @@ class ServerConnectionPool:
     def stop(self):
         self.is_accepting = False
         while not self.connections.empty():
-            self.connections.get().stop()
+            connection_weakref = self.connections.get()
+            conn = connection_weakref()
+            if conn is not None:
+                conn.stop()
         self.listening_socket.close()
 
 
