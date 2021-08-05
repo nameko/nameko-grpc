@@ -2,9 +2,11 @@
 """
 Usage: python performance_grpc.py
 """
-import grpc
-from concurrent import futures
 import time
+from concurrent import futures
+
+import grpc
+
 
 example_pb2, example_pb2_grpc = grpc.protos_and_services("example.proto")
 

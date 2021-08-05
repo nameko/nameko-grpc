@@ -3,7 +3,9 @@
 Usage: nameko run performance_nameko
 """
 import grpc
+
 from nameko_grpc.entrypoint import Grpc
+
 
 example_pb2, example_pb2_grpc = grpc.protos_and_services("example.proto")
 entrypoint = Grpc.implementing(example_pb2_grpc.exampleStub)
