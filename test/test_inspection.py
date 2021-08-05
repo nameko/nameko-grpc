@@ -40,3 +40,10 @@ class TestInspection:
         assert insp.cardinality_for_method("unary_stream") == Cardinality.UNARY_STREAM
         assert insp.cardinality_for_method("stream_unary") == Cardinality.STREAM_UNARY
         assert insp.cardinality_for_method("stream_stream") == Cardinality.STREAM_STREAM
+
+    def test_cache_is_keyed_on_stub(self, load_stubs):
+        inspector1 = Inspector(load_stubs("example").exampleStub)
+        inspector2 = Inspector(load_stubs("advanced").advancedStub)
+
+        assert inspector1.service_name == "nameko.example"
+        assert inspector2.service_name == "nameko.advanced"

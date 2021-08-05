@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import importlib
 import inspect
+from functools import lru_cache
 
 from google.protobuf import descriptor
 from mock import Mock
@@ -8,6 +9,7 @@ from mock import Mock
 from nameko_grpc.constants import Cardinality
 
 
+@lru_cache()
 class Inspector:
     _stub_module = None
     _protobufs_module = None
