@@ -21,7 +21,13 @@ setup(
     author="Matt Yule-Bennett",
     url="http://github.com/nameko/nameko-grpc",
     packages=find_packages(exclude=["test"]),
-    install_requires=["nameko>=3.0.0-rc9", "h2>=3", "grpcio", "protobuf"],
+    install_requires=[
+        "nameko>=3.0.0-rc9",
+        "h2>=3",
+        "grpcio",
+        "protobuf",
+        "googleapis-common-protos",
+    ],
     extras_require={
         "dev": [
             "coverage",
