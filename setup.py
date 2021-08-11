@@ -14,14 +14,20 @@ with open(os.path.join(here, "README.md"), "r", "utf-8") as handle:
 
 setup(
     name="nameko-grpc",
-    version="1.2.0rc1",
+    version="1.2.0rc2",
     description="Nameko gRPC extensions",
     long_description=readme,
     long_description_content_type="text/markdown",
     author="Matt Yule-Bennett",
     url="http://github.com/nameko/nameko-grpc",
     packages=find_packages(exclude=["test"]),
-    install_requires=["nameko>=3.0.0-rc9", "h2>=3", "grpcio", "protobuf"],
+    install_requires=[
+        "nameko>=3.0.0-rc9",
+        "h2>=3",
+        "grpcio",
+        "protobuf",
+        "googleapis-common-protos",
+    ],
     extras_require={
         "dev": [
             "coverage",
