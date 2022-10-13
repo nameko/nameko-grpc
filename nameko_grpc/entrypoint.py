@@ -165,7 +165,14 @@ class Grpc(Entrypoint):
         request = request_stream.consume(self.input_type)
 
         if self.cardinality in (Cardinality.UNARY_STREAM, Cardinality.UNARY_UNARY):
-            request = next(request)
+            try:
+                request = next(request)
+            except Exception:
+                exc_info = sys.exc_info()
+                message = "Error parsing request: {}".format(exc_info[1])
+                error = GrpcError.from_exception(exc_info, message=message)
+                response_stream.close(error)
+                return
 
         context = GrpcContext(request_stream, response_stream)
 
@@ -185,7 +192,7 @@ class Grpc(Entrypoint):
             )
         except ContainerBeingKilled:
             raise GrpcError(
-                status=StatusCode.UNAVAILABLE, message="Server shutting down"
+                code=StatusCode.UNAVAILABLE, message="Server shutting down"
             )
 
     def handle_result(self, response_stream, worker_ctx, result, exc_info):
