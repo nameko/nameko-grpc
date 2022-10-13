@@ -13,8 +13,7 @@ class TestCloseSocketOnClientExit:
         return request.param[7:]
 
     def test_close_socket(self, server, load_stubs, spec_dir, grpc_port, protobufs):
-        """ Regression test for https://github.com/nameko/nameko-grpc/issues/39
-        """
+        """Regression test for https://github.com/nameko/nameko-grpc/issues/39"""
         stubs = load_stubs("example")
 
         client = Client(

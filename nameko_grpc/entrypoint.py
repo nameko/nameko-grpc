@@ -131,7 +131,7 @@ class Grpc(Entrypoint):
 
     @classmethod
     def decorator(cls, stub, *args, **kwargs):
-        """ Override Entrypoint.decorator to ensure `stub` is passed to instance.
+        """Override Entrypoint.decorator to ensure `stub` is passed to instance.
 
         Would be nicer if Nameko had a better mechanism for this.
         """

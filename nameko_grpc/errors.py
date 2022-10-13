@@ -22,8 +22,7 @@ class GrpcError(Exception):
         self.status = status
 
     def as_headers(self):
-        """ Dehydrate this instance to headers to be sent as trailing metadata.
-        """
+        """Dehydrate this instance to headers to be sent as trailing metadata."""
         headers = {
             # ("content-length", "0"),
             "grpc-status": str(STATUS_CODE_ENUM_TO_INT_MAP[self.code]),
@@ -35,8 +34,7 @@ class GrpcError(Exception):
 
     @classmethod
     def from_headers(cls, headers):
-        """ Rehydrate a new instance from headers received as trailing metadata.
-        """
+        """Rehydrate a new instance from headers received as trailing metadata."""
         code = int(headers.get("grpc-status"))
         message = headers.get("grpc-message")
         status = headers.get(GRPC_DETAILS_METADATA_KEY)
@@ -57,7 +55,7 @@ class GrpcError(Exception):
 
     @staticmethod
     def from_exception(exc_info, code=None, message=None):
-        """ Utility method to create a new GrpcError instance representing an
+        """Utility method to create a new GrpcError instance representing an
         underlying exception. Useful in try/except clauses.
 
         By default, a `google.rpc.Status` message will be generated capturing the
@@ -86,7 +84,7 @@ def make_status(code, message, details=None):
 
 
 def register_exception_handler(exc_type, custom_error_from_exception):
-    """ Register a custom implementation to generate a GrpcError from an underlying
+    """Register a custom implementation to generate a GrpcError from an underlying
     exception, by exception type.
 
     Must be a callable with a signature matching `default_error_from_exception`.
@@ -95,13 +93,12 @@ def register_exception_handler(exc_type, custom_error_from_exception):
 
 
 def unregister_expection_handler(exc_type):
-    """ Unregister a custom implementation.
-    """
+    """Unregister a custom implementation."""
     registry.pop(exc_type, None)
 
 
 def default_error_from_exception(exc_info, code=None, message=None):
-    """ Create a new GrpcError instance representing an underlying exception.
+    """Create a new GrpcError instance representing an underlying exception.
 
     If the `GRPC_DEBUG` key is set in the Nameko config, the `status` message will
     capture the underyling traceback in a `google.rpc.error_details.DebugInfo` message.
@@ -117,7 +114,8 @@ def default_error_from_exception(exc_info, code=None, message=None):
         debug_info = Any()
         debug_info.Pack(
             DebugInfo(
-                stack_entries=traceback.format_exception(*exc_info), detail=str(exc),
+                stack_entries=traceback.format_exception(*exc_info),
+                detail=str(exc),
             )
         )
         status.details.append(debug_info)

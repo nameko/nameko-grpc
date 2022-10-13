@@ -303,7 +303,7 @@ def generate_messages():
         compress.side_effect = lambda body, _: (False, body)
 
         def generate(count, length):
-            """ Generate a series of mock messages.
+            """Generate a series of mock messages.
 
             If `count` is 2 and `length` is 4, when passed to `stream.populate`,
             two messages with the following payload will be added to the stream's

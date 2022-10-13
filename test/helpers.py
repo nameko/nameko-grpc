@@ -22,7 +22,7 @@ def status_from_metadata(metadata):
 
 
 def extract_metadata(context):
-    """ Extracts invocation metadata from `context` and returns it as JSON.
+    """Extracts invocation metadata from `context` and returns it as JSON.
 
     Binary headers are included as base64 encoded strings.
     Duplicate header values are joined as comma separated, preserving order.
@@ -39,8 +39,7 @@ def extract_metadata(context):
 
 
 def maybe_echo_metadata(context):
-    """ Copy metadata from request to response.
-    """
+    """Copy metadata from request to response."""
     initial_metadata = []
     trailing_metadata = []
 
@@ -62,8 +61,7 @@ def maybe_sleep(request):
 
 
 class RemoteClientTransport:
-    """ Serialializes/deserializes objects through ZMQ sockets using `pickle`.
-    """
+    """Serialializes/deserializes objects through ZMQ sockets using `pickle`."""
 
     ENDSTREAM = "endstream"
 
@@ -72,7 +70,7 @@ class RemoteClientTransport:
 
     @classmethod
     def bind(cls, context, socket_type, target):
-        """ Create a new transport over a ZMQ socket of type `socket_type`, bound
+        """Create a new transport over a ZMQ socket of type `socket_type`, bound
         to the `target` address.
         """
         socket = context.socket(socket_type)
@@ -87,7 +85,7 @@ class RemoteClientTransport:
 
     @classmethod
     def connect(cls, context, socket_type, target):
-        """ Create a new transport over a ZMQ socket of type `socket_type`, connected
+        """Create a new transport over a ZMQ socket of type `socket_type`, connected
         to the `target` address.
         """
         socket = context.socket(socket_type)
@@ -138,7 +136,7 @@ class RemoteClientTransport:
 
 
 class Command:
-    """ Encapsulates a command to run on a remote GRPC client.
+    """Encapsulates a command to run on a remote GRPC client.
 
     A command can be issued to a remote client, or responded to by that remote client.
 
@@ -194,7 +192,7 @@ class Command:
         self.__dict__.update(newstate)
 
     def issue(self):
-        """ Issue this command to a remote client.
+        """Issue this command to a remote client.
 
         Sends itelf over the given `transport`.
         """
@@ -211,8 +209,7 @@ class Command:
 
     @staticmethod
     def retrieve_commands(transport):
-        """ Retrieve a series of commands over the given `transport`
-        """
+        """Retrieve a series of commands over the given `transport`"""
         # this is actually just receive_stream...
         while True:
             command = transport.receive()
@@ -225,16 +222,14 @@ class Command:
         transport.close()
 
     def bind_transport(self, socket_type):
-        """ Bind a new transport using the given `socket_type`.
-        """
+        """Bind a new transport using the given `socket_type`."""
         transport, port = RemoteClientTransport.bind_to_free_port(
             self.transport.context, socket_type, "tcp://127.0.0.1"
         )
         return transport, port
 
     def connect_transport(self, socket_type, port):
-        """ Connect a new transport to `port` using the given `socket_type`.
-        """
+        """Connect a new transport to `port` using the given `socket_type`."""
         transport = RemoteClientTransport.connect(
             self.transport.context, socket_type, "tcp://127.0.0.1:{}".format(port)
         )
@@ -242,7 +237,7 @@ class Command:
 
     @property
     def request_transport(self):
-        """ Bind or connect the request transport.
+        """Bind or connect the request transport.
 
         Depending on the mode of this command, either binds a new transport to a free
         port, or connects to the established port.
@@ -257,7 +252,7 @@ class Command:
 
     @property
     def response_transport(self):
-        """ Bind or connect the response transport.
+        """Bind or connect the response transport.
 
         Depending on the mode of this command, either binds a new transport to a free
         port, or connects to the established port.
@@ -272,7 +267,7 @@ class Command:
 
     @property
     def metadata_transport(self):
-        """ Bind or connect the metadata transport.
+        """Bind or connect the metadata transport.
 
         Depending on the mode of this command, either binds a new transport to a free
         port, or connects to the established port.
@@ -286,7 +281,7 @@ class Command:
         return self._metadata_transport
 
     def send_request(self, request):
-        """ Send the request for this command to the remote client.
+        """Send the request for this command to the remote client.
 
         Only available in ISSUE mode.
         """
@@ -301,7 +296,7 @@ class Command:
             self.request_transport.send(request, close=True)
 
     def get_request(self):
-        """ Get the request for this command from the caller.
+        """Get the request for this command from the caller.
 
         Only available in RESPOND mode.
         """
@@ -313,8 +308,7 @@ class Command:
         return self.request_transport.receive(close=True)
 
     def send_response(self, response):
-        """ Send the response for this command
-        """
+        """Send the response for this command"""
         if self.mode is not Command.Modes.RESPOND:
             raise ValueError("Command must be in RESPOND mode to send a response")
 
@@ -326,8 +320,7 @@ class Command:
             self.response_transport.send(response, close=True)
 
     def get_response(self):
-        """ Get the response for this command from the remote client
-        """
+        """Get the response for this command from the remote client"""
         if self.mode is not Command.Modes.ISSUE:
             raise ValueError("Command must be in ISSUE mode to get a response")
 
@@ -336,16 +329,14 @@ class Command:
         return self.response_transport.receive(close=True)
 
     def send_metadata(self, metadata):
-        """ Send the response metadata for this command
-        """
+        """Send the response metadata for this command"""
         if self.mode is not Command.Modes.RESPOND:
             raise ValueError("Command must be in RESPOND mode to send metadata")
 
         self.metadata_transport.send(metadata, close=True)
 
     def get_metadata(self):
-        """ Get the response metadata for this command from the remote client
-        """
+        """Get the response metadata for this command from the remote client"""
         if self.mode is not Command.Modes.ISSUE:
             raise ValueError("Command must be in ISSUE mode to get a metadata")
 
@@ -409,7 +400,7 @@ class Stash:
 
 @wrapt.decorator
 def instrumented(wrapped, instance, args, kwargs):
-    """ Decorator for instrumenting GRPC implementation methods.
+    """Decorator for instrumenting GRPC implementation methods.
 
     Stores requests and responses to file for later inspection.
     """

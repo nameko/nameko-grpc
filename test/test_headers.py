@@ -38,7 +38,10 @@ class TestDecodeHeader:
         assert padded_value.endswith(b"=")
 
         trimmed_value = padded_value[:-2]
-        assert decode_header((b"foo-bin", trimmed_value)) == ("foo-bin", b"1234",)
+        assert decode_header((b"foo-bin", trimmed_value)) == (
+            "foo-bin",
+            b"1234",
+        )
 
     def test_string_value(self):
         assert decode_header((b"foo", b"123")) == ("foo", "123")

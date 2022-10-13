@@ -17,7 +17,7 @@ class TestDisposeServerConnectionOnExit:
         return request.param[7:]
 
     def test_dispose(self, server, load_stubs, spec_dir, grpc_port, protobufs):
-        """ Regression test for server connection part of
+        """Regression test for server connection part of
         https://github.com/nameko/nameko-grpc/issues/40
         """
         stubs = load_stubs("example")
@@ -57,7 +57,7 @@ class TestDisposeClientConnectionOnExit:
         return request.param[7:]
 
     def test_dispose(self, server, load_stubs, spec_dir, grpc_port, protobufs):
-        """ Regression test for client connection part of
+        """Regression test for client connection part of
         https://github.com/nameko/nameko-grpc/issues/40
         """
         stubs = load_stubs("example")

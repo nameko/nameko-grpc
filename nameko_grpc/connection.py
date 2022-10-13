@@ -72,7 +72,8 @@ class ConnectionManager:
             yield
         except Exception:
             log.info(
-                "ConnectionManager shutting down with error. Traceback:", exc_info=True,
+                "ConnectionManager shutting down with error. Traceback:",
+                exc_info=True,
             )
             error = GrpcError.from_exception(
                 sys.exc_info(), code=StatusCode.UNAVAILABLE
@@ -98,8 +99,7 @@ class ConnectionManager:
             self.stopped.set()
 
     def run_forever(self):
-        """ Event loop.
-        """
+        """Event loop."""
         self.conn.initiate_connection()
 
         with self.cleanup_on_exit():
@@ -146,7 +146,7 @@ class ConnectionManager:
         self.stopped.wait()
 
     def on_iteration(self):
-        """ Called on every iteration of the event loop.
+        """Called on every iteration of the event loop.
 
         If there are any open `SendStream`s with headers or data to send, try to send
         them.
@@ -156,14 +156,14 @@ class ConnectionManager:
             self.send_data(stream_id)
 
     def request_received(self, event):
-        """ Called when a request is received on a stream.
+        """Called when a request is received on a stream.
 
         Subclasses should extend this method to handle the request accordingly.
         """
         log.debug("request received, stream %s", event.stream_id)
 
     def response_received(self, event):
-        """ Called when a response is received on a stream.
+        """Called when a response is received on a stream.
 
         Subclasses should extend this method to handle the response accordingly.
         """
@@ -175,7 +175,7 @@ class ConnectionManager:
         receive_stream.headers.set(*event.headers, from_wire=True)
 
     def data_received(self, event):
-        """ Called when data is received on a stream.
+        """Called when data is received on a stream.
 
         If there is any open `ReceiveStream`, write the data to it.
         """
@@ -194,7 +194,7 @@ class ConnectionManager:
         self.conn.acknowledge_received_data(event.flow_controlled_length, stream_id)
 
     def window_updated(self, event):
-        """ Called when the flow control window for a stream is changed.
+        """Called when the flow control window for a stream is changed.
 
         Any data waiting to be sent on the stream may fit in the window now.
         """
@@ -202,7 +202,7 @@ class ConnectionManager:
         self.send_data(event.stream_id)
 
     def stream_ended(self, event):
-        """ Called when an incoming stream ends.
+        """Called when an incoming stream ends.
 
         Close any `ReceiveStream` that was opened for this stream.
         """
@@ -212,7 +212,7 @@ class ConnectionManager:
             receive_stream.close()
 
     def stream_reset(self, event):
-        """ Called when an incoming stream is reset.
+        """Called when an incoming stream is reset.
 
         Close any `ReceiveStream` that was opened for this stream.
         """
@@ -240,7 +240,7 @@ class ConnectionManager:
         self.run = False
 
     def send_headers(self, stream_id, immediate=False):
-        """ Attempt to send any headers on a stream.
+        """Attempt to send any headers on a stream.
 
         Streams determine when headers should be sent. By default headers are not
         returned until there is also data ready to be sent. This can be overriddden
@@ -256,7 +256,7 @@ class ConnectionManager:
             self.conn.send_headers(stream_id, headers, end_stream=False)
 
     def send_data(self, stream_id):
-        """ Attempt to send any pending data on a stream.
+        """Attempt to send any pending data on a stream.
 
         Up to the current flow-control window size bytes may be sent.
 
@@ -290,8 +290,7 @@ class ConnectionManager:
             self.end_stream(stream_id)
 
     def end_stream(self, stream_id):
-        """ Close an outbound stream, sending any trailers.
-        """
+        """Close an outbound stream, sending any trailers."""
         send_stream = self.send_streams.pop(stream_id)
 
         try:
@@ -319,13 +318,12 @@ class ClientConnectionManager(ConnectionManager):
         self.counter = itertools.count(start=1, step=2)
 
     def on_iteration(self):
-        """ On each iteration of the event loop, also initiate any pending requests.
-        """
+        """On each iteration of the event loop, also initiate any pending requests."""
         self.send_pending_requests()
         super().on_iteration()
 
     def send_request(self, request_headers):
-        """ Called by the client to invoke a GRPC method.
+        """Called by the client to invoke a GRPC method.
 
         Establish a `SendStream` to send the request payload and `ReceiveStream`
         for receiving the eventual response. `SendStream` and `ReceiveStream` are
@@ -348,7 +346,7 @@ class ClientConnectionManager(ConnectionManager):
         return request_stream, response_stream
 
     def response_received(self, event):
-        """ Called when a response is received on a stream.
+        """Called when a response is received on a stream.
 
         If the headers contain an error, we should raise it here.
         """
@@ -368,7 +366,7 @@ class ClientConnectionManager(ConnectionManager):
             del self.receive_streams[stream_id]
 
     def trailers_received(self, event):
-        """ Called when trailers are received on a stream.
+        """Called when trailers are received on a stream.
 
         If the trailers contain an error, we should raise it here.
         """
@@ -388,7 +386,7 @@ class ClientConnectionManager(ConnectionManager):
             del self.receive_streams[stream_id]
 
     def send_pending_requests(self):
-        """ Initiate requests for any pending invocations.
+        """Initiate requests for any pending invocations.
 
         Sends initial headers and any request data that is ready to be sent.
         """
@@ -434,7 +432,7 @@ class ServerConnectionManager(ConnectionManager):
         self.handle_request = handle_request
 
     def request_received(self, event):
-        """ Receive a GRPC request and pass it to the GrpcServer to fire any
+        """Receive a GRPC request and pass it to the GrpcServer to fire any
         appropriate entrypoint.
 
         Establish a `ReceiveStream` to receive the request payload and `SendStream`
