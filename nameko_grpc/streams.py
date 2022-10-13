@@ -197,13 +197,16 @@ class SendStream(StreamBase):
 
             # add the bytes from the message to the buffer
             if message and message != STREAM_END:
-                body = message.SerializeToString()
+                body = self.serialize_message(message)
                 compressed, body = compress(body, self.encoding)
 
                 data = (
                     struct.pack("?", compressed) + struct.pack(">I", len(body)) + body
                 )
                 self.buffer.write(data)
+
+    def serialize_message(self, message):
+        return message.SerializeToString()
 
     def read(self, max_bytes, chunk_size):
         """ Read up to `max_bytes` from the stream, yielding up to `chunk_size`

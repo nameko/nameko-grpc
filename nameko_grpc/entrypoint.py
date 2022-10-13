@@ -169,8 +169,12 @@ class Grpc(Entrypoint):
                 request = next(request)
             except Exception:
                 exc_info = sys.exc_info()
-                message = "Error parsing request: {}".format(exc_info[1])
-                error = GrpcError.from_exception(exc_info, message=message)
+                message = "Exception deserializing request!"
+                error = GrpcError.from_exception(
+                    exc_info,
+                    code=StatusCode.INTERNAL,
+                    message=message,
+                )
                 response_stream.close(error)
                 return
 
@@ -191,9 +195,7 @@ class Grpc(Entrypoint):
                 handle_result=handle_result,
             )
         except ContainerBeingKilled:
-            raise GrpcError(
-                code=StatusCode.UNAVAILABLE, message="Server shutting down"
-            )
+            raise GrpcError(code=StatusCode.UNAVAILABLE, message="Server shutting down")
 
     def handle_result(self, response_stream, worker_ctx, result, exc_info):
 

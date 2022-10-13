@@ -342,3 +342,18 @@ class TestCustomErrorFromException:
         assert status.code == StatusCode.PERMISSION_DENIED.value[0]
         assert status.message == "Not allowed!"
         assert not status.details
+
+
+class TestErrorInvalidRequest:
+    @pytest.fixture(params=["client=nameko"])
+    def client_type(self, request):
+        return request.param[7:]
+
+    def test_invalid_request(self, client, protobufs):
+        from unittest import mock
+        with mock.patch("nameko_grpc.streams.SendStream.serialize_message",
+                        return_value=b'some rubbish'):
+            with pytest.raises(GrpcError) as error:
+                client.unary_unary(protobufs.ExampleRequest(value="hello"))
+        assert error.value.code == StatusCode.INTERNAL
+        assert error.value.message == "Exception deserializing request!"
