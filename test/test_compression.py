@@ -17,7 +17,7 @@ from nameko_grpc.errors import GrpcError
 
 @pytest.mark.equivalence
 class TestCompression:
-    """ Some of these tests are incomplete because the standard Python GRPC client
+    """Some of these tests are incomplete because the standard Python GRPC client
     and/or server don't conform to the spec.
 
     See https://stackoverflow.com/questions/53233339/what-is-the-state-of-compression-
@@ -165,7 +165,7 @@ class TestCompression:
     def test_request_unsupported_algorithm_at_server(
         self, start_client, start_server, protobufs, client_type, server_type
     ):
-        """ It's not possible to run this test with the GRPC server.
+        """It's not possible to run this test with the GRPC server.
 
         The server can be configured to disable certain compression algorithms with
         the grpc.compression_enabled_algorithms_bitset server option. Unfortunately,
@@ -223,7 +223,7 @@ class TestCompression:
         pass
 
     def test_respond_with_different_algorithm(self):
-        """ The GRPC server doesn't seem to support this behaviour. It's either
+        """The GRPC server doesn't seem to support this behaviour. It's either
         explicitly not supported, or there is a bug that results in an error if the
         server also has a default compression algorithm set.
 
@@ -234,7 +234,7 @@ class TestCompression:
         pytest.skip("See docstring for details")
 
     def test_disable_compression_for_message(self):
-        """ The non-beta GRPC client doesn't support any way to disable compression
+        """The non-beta GRPC client doesn't support any way to disable compression
         for a call. Additionally, it's not clear how the client should request that
         an the next _message_ should be sent uncompressed as described in the spec.
 

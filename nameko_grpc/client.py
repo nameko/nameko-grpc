@@ -176,8 +176,7 @@ class ClientBase:
 
 
 class Client(ClientBase):
-    """ Standalone gRPC client that uses native threads.
-    """
+    """Standalone gRPC client that uses native threads."""
 
     def __enter__(self):
         return self.start()

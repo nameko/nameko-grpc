@@ -100,7 +100,7 @@ class HeaderManager:
         return list(map(encode_header, headers))
 
     def get(self, name, default=None):
-        """ Get a header by `name`.
+        """Get a header by `name`.
 
         Joins duplicate headers into a comma-separated string of values.
         """
@@ -113,7 +113,7 @@ class HeaderManager:
         return comma_join(matches)
 
     def set(self, *headers, from_wire=False):
-        """ Set headers.
+        """Set headers.
 
         Overwrites any existing header with the same name. Optionally decodes
         the headers first.
@@ -130,7 +130,7 @@ class HeaderManager:
         self.data.extend(headers)
 
     def append(self, *headers, from_wire=False):
-        """ Add new headers.
+        """Add new headers.
 
         Preserves and appends to any existing header with the same name. Optionally
         decodes the headers first.
@@ -145,12 +145,10 @@ class HeaderManager:
 
     @property
     def for_wire(self):
-        """ A sorted list of encoded headers for transmitting over the wire.
-        """
+        """A sorted list of encoded headers for transmitting over the wire."""
         return self.encode(sort_headers_for_wire(self.data))
 
     @property
     def for_application(self):
-        """ A filtered list of headers for use by the application.
-        """
+        """A filtered list of headers for use by the application."""
         return filter_headers_for_application(self.data)

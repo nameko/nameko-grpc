@@ -18,7 +18,7 @@ def decode_value(value):
 
 
 def metadata_from_context_data(data):
-    """ Utility function transforming a `data` dictionary into metadata suitable
+    """Utility function transforming a `data` dictionary into metadata suitable
     for a GRPC stream.
     """
     metadata = []
@@ -30,7 +30,7 @@ def metadata_from_context_data(data):
 
 
 def context_data_from_metadata(metadata):
-    """ Utility function transforming `metadata` into a context data dictionary.
+    """Utility function transforming `metadata` into a context data dictionary.
 
     Metadata may have been encoded at the client by `metadata_from_context_data`, or
     it may be "normal" GRPC metadata. In this case, duplicate values are allowed;
@@ -55,7 +55,7 @@ def context_data_from_metadata(metadata):
 
 
 class GrpcContext:
-    """ Context object passed to GRPC methods.
+    """Context object passed to GRPC methods.
 
     Gives access to request metadata and allows response metadata to be set.
     """

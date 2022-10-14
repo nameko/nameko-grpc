@@ -153,6 +153,8 @@ class example:
                 message = "Out of tokens!"
 
                 raise GrpcError(
-                    code=code, message=message, status=make_status(code, message),
+                    code=code,
+                    message=message,
+                    status=make_status(code, message),
                 )
             yield ExampleReply(message=message, seqno=i + 1, metadata=metadata)

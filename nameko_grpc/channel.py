@@ -16,7 +16,7 @@ CONNECT_TIMEOUT = 5
 
 
 class ClientConnectionPool:
-    """ Simple connection pool for clients.
+    """Simple connection pool for clients.
 
     Accepts a list of targets and will maintain a connection to each of them,
     round-robining requests between them.
@@ -87,7 +87,7 @@ class ClientConnectionPool:
 
 
 class ClientChannel:
-    """ Simple client channel.
+    """Simple client channel.
 
     Channels could eventually suppport pluggable resolvers and load-balancing.
     """
@@ -106,7 +106,7 @@ class ClientChannel:
 
 
 class ServerConnectionPool:
-    """ Simple connection pool for servers.
+    """Simple connection pool for servers.
 
     Just accepts new connections and allows them to run until close.
     """
@@ -127,7 +127,9 @@ class ServerConnectionPool:
         if self.ssl:
             context = self.ssl.server_context()
             sock = context.wrap_socket(
-                sock=sock, server_side=True, suppress_ragged_eofs=True,
+                sock=sock,
+                server_side=True,
+                suppress_ragged_eofs=True,
             )
 
         return sock
@@ -161,8 +163,7 @@ class ServerConnectionPool:
 
 
 class ServerChannel:
-    """ Simple server channel encapsulating incoming connection management.
-    """
+    """Simple server channel encapsulating incoming connection management."""
 
     def __init__(self, host, port, ssl, spawn_thread, handle_request):
         self.conn_pool = ServerConnectionPool(

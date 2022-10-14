@@ -55,13 +55,13 @@ class StreamBase:
 
     @property
     def exhausted(self):
-        """ A stream is exhausted if it is closed and there are no more messages to be
+        """A stream is exhausted if it is closed and there are no more messages to be
         consumed or bytes to be read.
         """
         return self.closed and self.queue.empty() and self.buffer.empty()
 
     def close(self, error=None):
-        """ Close this stream, preventing further messages or data to be added.
+        """Close this stream, preventing further messages or data to be added.
 
         If closed with an error, the error will be raised when reading
         or consuming from this stream.
@@ -86,13 +86,12 @@ class StreamBase:
 
 
 class ReceiveStream(StreamBase):
-    """ An HTTP2 stream that receives data as bytes to be iterated over as GRPC
+    """An HTTP2 stream that receives data as bytes to be iterated over as GRPC
     messages.
     """
 
     def write(self, data):
-        """ Write data to this stream, separating it into message-sized chunks.
-        """
+        """Write data to this stream, separating it into message-sized chunks."""
         if self.closed:
             return
 
@@ -113,7 +112,7 @@ class ReceiveStream(StreamBase):
             self.queue.put((compressed_flag, message_data))
 
     def consume(self, message_type):
-        """ Consume the data in this stream by yielding `message_type` messages,
+        """Consume the data in this stream by yielding `message_type` messages,
         or raising if the stream was closed with an error.
         """
         while True:
@@ -134,7 +133,7 @@ class ReceiveStream(StreamBase):
 
 
 class SendStream(StreamBase):
-    """ An HTTP2 stream that receives data as GRPC messages to be read as chunks of
+    """An HTTP2 stream that receives data as GRPC messages to be read as chunks of
     bytes.
     """
 
@@ -147,8 +146,7 @@ class SendStream(StreamBase):
         return self.headers.get("grpc-encoding")
 
     def populate(self, iterable):
-        """ Populate this stream with an iterable of messages.
-        """
+        """Populate this stream with an iterable of messages."""
         for item in iterable:
             if self.closed:
                 return
@@ -156,7 +154,7 @@ class SendStream(StreamBase):
         self.close()
 
     def headers_to_send(self, defer_until_data=True):
-        """ Return any headers to be sent with this stream.
+        """Return any headers to be sent with this stream.
 
         Headers may only be transmitted before any data is sent.
         This state is maintained by only returning headers from this method once.
@@ -175,16 +173,14 @@ class SendStream(StreamBase):
         return self.headers.for_wire
 
     def trailers_to_send(self):
-        """ Return any trailers to be sent after this stream.
-        """
+        """Return any trailers to be sent after this stream."""
         if len(self.trailers) == 0:
             return False
 
         return self.trailers.for_wire
 
     def flush_queue_to_buffer(self):
-        """ Write the bytes from any messages in the queue to the buffer.
-        """
+        """Write the bytes from any messages in the queue to the buffer."""
         while True:
             try:
                 message = self.queue.get_nowait()
@@ -197,7 +193,7 @@ class SendStream(StreamBase):
 
             # add the bytes from the message to the buffer
             if message and message != STREAM_END:
-                body = message.SerializeToString()
+                body = self.serialize_message(message)
                 compressed, body = compress(body, self.encoding)
 
                 data = (
@@ -205,8 +201,11 @@ class SendStream(StreamBase):
                 )
                 self.buffer.write(data)
 
+    def serialize_message(self, message):
+        return message.SerializeToString()
+
     def read(self, max_bytes, chunk_size):
-        """ Read up to `max_bytes` from the stream, yielding up to `chunk_size`
+        """Read up to `max_bytes` from the stream, yielding up to `chunk_size`
         bytes at a time.
         """
         sent = 0

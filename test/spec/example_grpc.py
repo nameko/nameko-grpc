@@ -62,7 +62,10 @@ class example(example_pb2_grpc.exampleServicer):
     def unary_error_via_context(self, request, context):
         # using rich status to test compatibility with
         # https://grpc.github.io/grpc/python/grpc_status.html
-        status = make_status(code=StatusCode.UNAUTHENTICATED, message="Not allowed!",)
+        status = make_status(
+            code=StatusCode.UNAUTHENTICATED,
+            message="Not allowed!",
+        )
         context.abort_with_status(rpc_status.to_status(status))
 
     @instrumented
