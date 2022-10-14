@@ -9,8 +9,8 @@ static:
 	pre-commit run --all-files
 
 test:
-	py.test test -v --timeout 120
+	nameko test test -v --timeout 120
 
 coverage:
-	coverage run -m pytest test -v
+	coverage run -m nameko test test -v
 	coverage report
