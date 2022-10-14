@@ -33,6 +33,7 @@ setup(
         "dev": [
             "coverage",
             "pytest",
+            "pytest-eventlet",
             "pytest-timeout",
             "grpcio-tools",
             "grpcio-status",
