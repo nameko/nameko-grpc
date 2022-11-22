@@ -37,7 +37,13 @@ class Future:
     def result(self):
         response = self.response_stream.consume(self.output_type)
         if self.cardinality in (Cardinality.STREAM_UNARY, Cardinality.UNARY_UNARY):
-            response = next(response)
+            try:
+                response = next(response)
+            except StopIteration:
+                raise GrpcError(
+                    code=StatusCode.UNAVAILABLE,
+                    message="Stream was closed mid connection"
+                )
         return response
 
 
