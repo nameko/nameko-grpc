@@ -42,7 +42,7 @@ class Future:
             except StopIteration:
                 raise GrpcError(
                     code=StatusCode.UNAVAILABLE,
-                    message="Stream was closed mid connection"
+                    message="Stream was closed mid connection",
                 )
         return response
 
