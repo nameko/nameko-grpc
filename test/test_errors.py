@@ -373,6 +373,6 @@ class TestErrorStreamClosed:
             return_value=[ConnectionTerminated()],
         ):
             with pytest.raises(GrpcError) as error:
-                resp = client.unary_unary(protobufs.ExampleRequest(value="hello"))
+                client.unary_unary(protobufs.ExampleRequest(value="hello"))
         assert error.value.code == StatusCode.UNAVAILABLE
         assert error.value.message == "Stream was closed mid connection"
