@@ -49,7 +49,17 @@ def patch_h2_transitions() -> None:
             None,
             ConnectionState.SERVER_OPEN,
         ),
+
+        (ConnectionState.IDLE, ConnectionInputs.SEND_GOAWAY):
+            (None, ConnectionState.IDLE),
+
+        (ConnectionState.CLIENT_OPEN, ConnectionInputs.SEND_GOAWAY):
+            (None, ConnectionState.CLIENT_OPEN),
+
+        (ConnectionState.SERVER_OPEN, ConnectionInputs.SEND_GOAWAY):
+            (None, ConnectionState.SERVER_OPEN),
     }
+
     H2ConnectionStateMachine._transitions.update(patched_transitions)
 
     # no op this method which is called by h2 after recieving a GO_AWAY frame
