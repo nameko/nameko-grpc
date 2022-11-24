@@ -119,6 +119,8 @@ class ServerConnectionPool:
         self.handle_request = handle_request
 
         self.connections = queue.Queue()
+        self.is_accepting = False
+        self.listening_socket = None
 
     def listen(self):
         sock = eventlet.listen((self.host, self.port))

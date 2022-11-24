@@ -40,6 +40,11 @@ log = getLogger(__name__)
 SELECT_TIMEOUT = 0.01
 
 
+class ConnectionTerminatingError(Exception):
+    pass
+
+
+
 class ConnectionManager:
     """
     Base class for managing a single GRPC HTTP/2 connection.
@@ -60,10 +65,11 @@ class ConnectionManager:
 
         self.run = True
         self.stopped = Event()
+        self.terminating = False
 
     @property
     def alive(self):
-        return not self.stopped.is_set()
+        return not self.stopped.is_set() and not self.terminating
 
     @contextmanager
     def cleanup_on_exit(self):
@@ -142,7 +148,8 @@ class ConnectionManager:
                         self.connection_terminated(event)
 
     def stop(self):
-        self.run = False
+        self.conn.close_connection()
+        self.terminating = True
         self.stopped.wait()
 
     def on_iteration(self):
@@ -154,6 +161,12 @@ class ConnectionManager:
         for stream_id in list(self.send_streams.keys()):
             self.send_headers(stream_id)
             self.send_data(stream_id)
+
+        if self.terminating:
+            send_streams_closed = all(stream.exhausted for stream in self.send_streams)
+            receive_streams_closed = all(stream.exhausted for stream in self.receive_streams)
+            if send_streams_closed and receive_streams_closed:
+                self.run = False
 
     def request_received(self, event):
         """Called when a request is received on a stream.
@@ -237,7 +250,7 @@ class ConnectionManager:
 
     def connection_terminated(self, event):
         log.debug("connection terminated")
-        self.run = False
+        self.terminating = True
 
     def send_headers(self, stream_id, immediate=False):
         """Attempt to send any headers on a stream.
@@ -332,6 +345,8 @@ class ClientConnectionManager(ConnectionManager):
 
         Invocations are queued and sent on the next iteration of the event loop.
         """
+        if self.terminating:
+            raise ConnectionTerminatingError("Can not send request over terminating connection")
         stream_id = next(self.counter)
 
         request_stream = SendStream(stream_id)
