@@ -88,7 +88,7 @@ class ConnectionManager:
                 if send_stream.closed:
                     continue  # stream.close() is idemponent but this prevents the log
                 log.info(
-                    f"Terminating send stream {send_stream}"
+                    f"Terminating send stream {send_stream.id}"
                     f"{f' with error {error}' if error else ''}."
                 )
                 send_stream.close(error)
@@ -96,7 +96,7 @@ class ConnectionManager:
                 if receive_stream.closed:
                     continue  # stream.close() is idemponent but this prevents the log
                 log.info(
-                    f"Terminating receive stream {receive_stream}"
+                    f"Terminating receive stream {receive_stream.id}"
                     f"{f' with error {error}' if error else ''}."
                 )
                 receive_stream.close(error)
@@ -162,11 +162,12 @@ class ConnectionManager:
             self.send_data(stream_id)
 
         if self.terminating:
-            send_streams_closed = all(stream.exhausted for stream in self.send_streams)
+            send_streams_closed = all(stream.exhausted for stream in self.send_streams.values())
             receive_streams_closed = all(
-                stream.exhausted for stream in self.receive_streams
+                stream.exhausted for stream in self.receive_streams.values()
             )
             if send_streams_closed and receive_streams_closed:
+                log.debug("connection terminated")
                 self.run = False
 
     def request_received(self, event):
@@ -250,7 +251,12 @@ class ConnectionManager:
         receive_stream.trailers.set(*event.headers, from_wire=True)
 
     def connection_terminated(self, event):
-        log.debug("connection terminated")
+        """ Flag termination, initiating a graceful termination allowing existing streams
+        to finish sending/receiving
+
+        H2 signals a connection terminated event after receiving a GOAWAY frame
+        """
+        log.debug("connection terminating")
         self.terminating = True
 
     def send_headers(self, stream_id, immediate=False):
@@ -345,10 +351,13 @@ class ClientConnectionManager(ConnectionManager):
         over the response.
 
         Invocations are queued and sent on the next iteration of the event loop.
+
+        raises ConnectionTerminatingError if connection is terminating. Check
+         connection .is_alive() before initiating send_request
         """
         if self.terminating:
             raise ConnectionTerminatingError(
-                "Can not send request over terminating connection"
+                "Connection is terminating. No new streams can be initiated"
             )
         stream_id = next(self.counter)
 
