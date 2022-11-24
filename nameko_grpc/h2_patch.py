@@ -1,10 +1,11 @@
+# -*- coding: utf-8 -*-
 import logging
 
 from h2.connection import (
     ConnectionInputs,
     ConnectionState,
+    H2Connection,
     H2ConnectionStateMachine,
-    H2Connection
 )
 
 

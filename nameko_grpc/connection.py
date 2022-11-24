@@ -44,7 +44,6 @@ class ConnectionTerminatingError(Exception):
     pass
 
 
-
 class ConnectionManager:
     """
     Base class for managing a single GRPC HTTP/2 connection.
@@ -164,7 +163,9 @@ class ConnectionManager:
 
         if self.terminating:
             send_streams_closed = all(stream.exhausted for stream in self.send_streams)
-            receive_streams_closed = all(stream.exhausted for stream in self.receive_streams)
+            receive_streams_closed = all(
+                stream.exhausted for stream in self.receive_streams
+            )
             if send_streams_closed and receive_streams_closed:
                 self.run = False
 
@@ -346,7 +347,9 @@ class ClientConnectionManager(ConnectionManager):
         Invocations are queued and sent on the next iteration of the event loop.
         """
         if self.terminating:
-            raise ConnectionTerminatingError("Can not send request over terminating connection")
+            raise ConnectionTerminatingError(
+                "Can not send request over terminating connection"
+            )
         stream_id = next(self.counter)
 
         request_stream = SendStream(stream_id)
