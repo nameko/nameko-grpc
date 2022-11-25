@@ -51,9 +51,6 @@ class H2Logger(DummyLogger):
         self.logger.debug(*vargs, **kwargs)
 
     def trace(self, *vargs, **kwargs):
-        """
-        No-op logging. Only level needed for now.
-        """
         # log level below debug
         self.logger.log(logging.DEBUG - 5, *vargs, **kwargs)
 
