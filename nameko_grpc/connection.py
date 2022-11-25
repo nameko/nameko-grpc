@@ -88,7 +88,7 @@ class ConnectionManager:
                 if send_stream.closed:
                     continue  # stream.close() is idemponent but this prevents the log
                 log.info(
-                    f"Terminating send stream {send_stream.id}"
+                    f"Terminating send stream {send_stream.stream_id}"
                     f"{f' with error {error}' if error else ''}."
                 )
                 send_stream.close(error)
@@ -96,7 +96,7 @@ class ConnectionManager:
                 if receive_stream.closed:
                     continue  # stream.close() is idemponent but this prevents the log
                 log.info(
-                    f"Terminating receive stream {receive_stream.id}"
+                    f"Terminating receive stream {receive_stream.stream_id}"
                     f"{f' with error {error}' if error else ''}."
                 )
                 receive_stream.close(error)
@@ -288,6 +288,10 @@ class ConnectionManager:
             # window updates trigger sending of data, but can happen after a stream
             # has been completely sent
             return
+
+        # No headers are present on close so send streams fail to exhaust without
+        # a manual call to flush the queue (will either be an error or END_STREAM stuck)
+        send_stream.flush_queue_to_buffer()
 
         if not send_stream.headers_sent:
             # don't attempt to send any data until the headers have been sent
