@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import itertools
+import logging
 import select
 import sys
 from collections import deque
@@ -24,7 +25,7 @@ from h2.events import (
     WindowUpdated,
 )
 from h2.exceptions import StreamClosedError
-
+from h2.config import DummyLogger
 from nameko_grpc.compression import (
     SUPPORTED_ENCODINGS,
     UnsupportedEncoding,
@@ -35,6 +36,25 @@ from nameko_grpc.streams import ReceiveStream, SendStream
 
 
 log = getLogger(__name__)
+
+class H2Logger(DummyLogger):
+    """
+    Provide logger to H2 matching required interface
+    """
+
+    def __init__(self, logger: logging.Logger):
+        super().__init__()
+        self.logger = logger
+
+    def debug(self, *vargs, **kwargs):
+        self.logger.debug(*vargs, **kwargs)
+
+    def trace(self, *vargs, **kwargs):
+        """
+        No-op logging. Only level needed for now.
+        """
+        # log level below debug
+        self.logger.log(logging.DEBUG - 5, *vargs, **kwargs)
 
 
 SELECT_TIMEOUT = 0.01
@@ -56,7 +76,8 @@ class ConnectionManager:
     def __init__(self, sock, client_side):
         self.sock = sock
 
-        config = H2Configuration(client_side=client_side)
+        h2_logger = H2Logger(log.getChild("h2"))
+        config = H2Configuration(client_side=client_side, logger=h2_logger)  # logger type is wrong
         self.conn = H2Connection(config=config)
 
         self.receive_streams = {}
