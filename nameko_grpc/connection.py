@@ -52,7 +52,7 @@ class H2Logger(DummyLogger):
 
     def trace(self, *vargs, **kwargs):
         # log level below debug
-        self.logger.log(logging.DEBUG - 5, *vargs, **kwargs)
+        self.logger.log(5, *vargs, **kwargs)
 
 
 SELECT_TIMEOUT = 0.01
