@@ -9,7 +9,7 @@ from logging import getLogger
 from threading import Event
 
 from grpc import StatusCode
-from h2.config import H2Configuration
+from h2.config import DummyLogger, H2Configuration
 from h2.connection import H2Connection
 from h2.errors import ErrorCodes
 from h2.events import (
@@ -25,7 +25,7 @@ from h2.events import (
     WindowUpdated,
 )
 from h2.exceptions import StreamClosedError
-from h2.config import DummyLogger
+
 from nameko_grpc.compression import (
     SUPPORTED_ENCODINGS,
     UnsupportedEncoding,
@@ -36,6 +36,7 @@ from nameko_grpc.streams import ReceiveStream, SendStream
 
 
 log = getLogger(__name__)
+
 
 class H2Logger(DummyLogger):
     """
@@ -77,7 +78,9 @@ class ConnectionManager:
         self.sock = sock
 
         h2_logger = H2Logger(log.getChild("h2"))
-        config = H2Configuration(client_side=client_side, logger=h2_logger)  # logger type is wrong
+        config = H2Configuration(
+            client_side=client_side, logger=h2_logger
+        )  # logger type is wrong
         self.conn = H2Connection(config=config)
 
         self.receive_streams = {}
@@ -183,7 +186,9 @@ class ConnectionManager:
             self.send_data(stream_id)
 
         if self.terminating:
-            send_streams_closed = all(stream.exhausted for stream in self.send_streams.values())
+            send_streams_closed = all(
+                stream.exhausted for stream in self.send_streams.values()
+            )
             receive_streams_closed = all(
                 stream.exhausted for stream in self.receive_streams.values()
             )
@@ -272,7 +277,7 @@ class ConnectionManager:
         receive_stream.trailers.set(*event.headers, from_wire=True)
 
     def connection_terminated(self, event):
-        """ Flag termination, initiating a graceful termination allowing existing streams
+        """Flag termination, initiating a graceful termination allowing existing streams
         to finish sending/receiving
 
         H2 signals a connection terminated event after receiving a GOAWAY frame

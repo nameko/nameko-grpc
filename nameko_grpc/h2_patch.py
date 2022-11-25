@@ -14,22 +14,23 @@ logger = logging.getLogger(__name__)
 
 def patch_h2_transitions() -> None:
     """
-    H2 transitions immediately to closed state upon receiving a GOAWAY frame. This is out
-    of spec and results in errors when frames are received between the GOAWAY and
-    us (the client) terminating the connection gracefully.
+    H2 transitions immediately to closed state upon receiving a GOAWAY frame.
+    This is out of spec and results in errors when frames are received between
+    the GOAWAY and us (the client) terminating the connection gracefully.
     We still terminate the connection following a GOAWAY.
     https://github.com/python-hyper/h2/issues/1181
 
-    Instead of transitioning to CLOSED, remain in the current STATE and await a graceful
-    termination.
+    Instead of transitioning to CLOSED, remain in the current STATE and await
+    a graceful termination.
 
-    We also need to patch (noop) clear_outbound_data_buffer which would clear any outbound data.
+    We also need to patch (noop) clear_outbound_data_buffer which would clear any
+    outbound data.
 
-    This is designed to fix
-        RPC terminated with:
-        code = StatusCode.UNAVAILABLE
-        message = "Invalid input ConnectionInputs.RECV_PING in state ConnectionState.CLOSED"
-        status = "code: 14
+    Fixes:
+    RPC terminated with:
+    code = StatusCode.UNAVAILABLE
+    message = "Invalid input ConnectionInputs.RECV_PING in state ConnectionState.CLOSED"
+    status = "code: 14
     """
     logger.info("H2 transitions patched for RECV_GOAWAY frame fix")
 
@@ -49,15 +50,18 @@ def patch_h2_transitions() -> None:
             None,
             ConnectionState.SERVER_OPEN,
         ),
-
-        (ConnectionState.IDLE, ConnectionInputs.SEND_GOAWAY):
-            (None, ConnectionState.IDLE),
-
-        (ConnectionState.CLIENT_OPEN, ConnectionInputs.SEND_GOAWAY):
-            (None, ConnectionState.CLIENT_OPEN),
-
-        (ConnectionState.SERVER_OPEN, ConnectionInputs.SEND_GOAWAY):
-            (None, ConnectionState.SERVER_OPEN),
+        (ConnectionState.IDLE, ConnectionInputs.SEND_GOAWAY): (
+            None,
+            ConnectionState.IDLE,
+        ),
+        (ConnectionState.CLIENT_OPEN, ConnectionInputs.SEND_GOAWAY): (
+            None,
+            ConnectionState.CLIENT_OPEN,
+        ),
+        (ConnectionState.SERVER_OPEN, ConnectionInputs.SEND_GOAWAY): (
+            None,
+            ConnectionState.SERVER_OPEN,
+        ),
     }
 
     H2ConnectionStateMachine._transitions.update(patched_transitions)
