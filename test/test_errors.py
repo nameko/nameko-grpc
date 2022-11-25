@@ -7,7 +7,6 @@ from unittest import mock
 
 import pytest
 from grpc import StatusCode
-from h2.events import ConnectionTerminated
 from nameko import config
 
 from nameko_grpc.constants import Cardinality
@@ -360,19 +359,3 @@ class TestErrorInvalidRequest:
                 client.unary_unary(protobufs.ExampleRequest(value="hello"))
         assert error.value.code == StatusCode.INTERNAL
         assert error.value.message == "Exception deserializing request!"
-
-
-class TestErrorStreamClosed:
-    @pytest.fixture(params=["client=nameko"])
-    def client_type(self, request):
-        return request.param[7:]
-
-    def test_response_stream_closed(self, client, protobufs):
-        with mock.patch(
-            "h2.connection.H2Connection.receive_data",
-            return_value=[ConnectionTerminated()],
-        ):
-            with pytest.raises(GrpcError) as error:
-                client.unary_unary(protobufs.ExampleRequest(value="hello"))
-        assert error.value.code == StatusCode.UNAVAILABLE
-        assert error.value.message == "Stream was closed mid-request"
