@@ -166,7 +166,7 @@ class SendStream(StreamBase):
         if self.headers_sent or len(self.headers) == 0:
             return False
 
-        if defer_until_data and self.queue.empty():
+        if defer_until_data and self.queue.empty() and self.buffer.empty():
             return False
 
         self.headers_sent = True

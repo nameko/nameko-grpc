@@ -316,17 +316,9 @@ class ConnectionManager:
         # No headers are present on close so send streams fail to exhaust without
         # a manual call to flush the queue (will either be an error or END_STREAM stuck)
         send_stream.flush_queue_to_buffer()
-        log.debug(f"flushed queue -> {self}")
 
         if not send_stream.headers_sent:
             # don't attempt to send any data until the headers have been sent
-            log.debug(f"waiting for headers -> {self}")
-            log.debug(
-                f"{send_stream.closed} {send_stream.queue.empty()} {send_stream.buffer.empty()}"
-            )
-            if send_stream.exhausted:
-                log.debug("closing exhausted stream, stream %s", stream_id)
-                self.end_stream(stream_id)
             return
 
         try:
