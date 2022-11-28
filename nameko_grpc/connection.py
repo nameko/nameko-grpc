@@ -321,7 +321,9 @@ class ConnectionManager:
         if not send_stream.headers_sent:
             # don't attempt to send any data until the headers have been sent
             log.debug(f"waiting for headers -> {self}")
-            log.debug(f"{send_stream.closed} {send_stream.queue.empty()} {send_stream.buffer.empty()}")
+            log.debug(
+                f"{send_stream.closed} {send_stream.queue.empty()} {send_stream.buffer.empty()}"
+            )
             if send_stream.exhausted:
                 log.debug("closing exhausted stream, stream %s", stream_id)
                 self.end_stream(stream_id)
