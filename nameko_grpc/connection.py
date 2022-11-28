@@ -170,6 +170,7 @@ class ConnectionManager:
     def stop(self):
         self.conn.close_connection()
         self.terminating = True
+        log.debug("waiting for connection to terminate")
         self.stopped.wait()
 
     def on_iteration(self):
