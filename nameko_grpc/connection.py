@@ -529,5 +529,5 @@ class ServerConnectionManager(ConnectionManager):
             super().send_data(stream_id)
         except GrpcError as error:
             send_stream = self.send_streams.get(stream_id)
-            send_stream.trailers.set(*error.as_headers())
+            send_stream.trailers.set((":status", "200"), *error.as_headers())
             self.end_stream(stream_id)
