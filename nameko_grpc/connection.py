@@ -238,6 +238,7 @@ class ConnectionManager:
         Any data waiting to be sent on the stream may fit in the window now.
         """
         log.debug("window updated, stream %s", event.stream_id)
+        self.send_headers(event.stream_id)
         self.send_data(event.stream_id)
 
     def stream_ended(self, event):
@@ -529,5 +530,5 @@ class ServerConnectionManager(ConnectionManager):
             super().send_data(stream_id)
         except GrpcError as error:
             send_stream = self.send_streams.get(stream_id)
-            send_stream.trailers.set((":status", "200"), *error.as_headers())
+            send_stream.trailers.set(*error.as_headers())
             self.end_stream(stream_id)
