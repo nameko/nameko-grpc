@@ -9,7 +9,7 @@ static:
 	pre-commit run --all-files
 
 test:
-	nameko test test -v --timeout 120
+	nameko test test -v --timeout 120 -o log_cli=true -o log_cli_level=10
 
 coverage:
 	coverage run -m nameko test test -v
