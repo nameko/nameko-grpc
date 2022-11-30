@@ -314,9 +314,6 @@ class ConnectionManager:
             # has been completely sent
             return
 
-        # TODO: Note for me tomorrow. Flushing if headers aren't present is new behaviour causing
-        # the current intermintten test failures. Annoying as it's counter to the behaviour its fixing :(
-
         # No headers are present on close so send streams fail to exhaust without
         # a manual call to flush the queue (will either be an error or END_STREAM stuck)
         send_stream.flush_queue_to_buffer()
