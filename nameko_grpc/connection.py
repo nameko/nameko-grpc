@@ -275,14 +275,22 @@ class ConnectionManager:
 
         receive_stream.trailers.set(*event.headers, from_wire=True)
 
-    def connection_terminated(self, event):
-        """Flag termination, initiating a graceful termination allowing existing streams
-        to finish sending/receiving
+    def connection_terminated(self, event: ConnectionTerminated):
+        """H2 signals a connection terminated event after receiving a GOAWAY frame
 
-        H2 signals a connection terminated event after receiving a GOAWAY frame
+        If no error has occurred, flag termination and initiate a graceful termination
+        allowing existing streams to finish sending/receiving.
+
+        If an error has occurred then close down immediately.
         """
-        log.debug("connection terminating")
-        self.terminating = True
+        log.debug(f"received GOAWAY with error code {event.error_code}")
+        if event.error_code not in (ErrorCodes.NO_ERROR, ErrorCodes.ENHANCE_YOUR_CALM):
+            log.debug("connection terminated immediately")
+            self.terminating = True
+            self.run = False
+        else:
+            log.debug("connection terminating")
+            self.terminating = True
 
     def send_headers(self, stream_id, immediate=False):
         """Attempt to send any headers on a stream.
