@@ -77,7 +77,7 @@ class ConnectionManager:
         h2_logger = H2Logger(log.getChild("h2"))
         config = H2Configuration(
             client_side=client_side, logger=h2_logger
-        )  # logger type is wrong
+        )
         self.conn = H2Connection(config=config)
 
         self.receive_streams = {}
@@ -391,6 +391,11 @@ class ClientConnectionManager(ConnectionManager):
 
         raises ConnectionTerminatingError if connection is terminating. Check
          connection .is_alive() before initiating send_request
+
+        Note:
+            We are handling termination and raising TerminatingError here as the
+            underlying library H2 doesn't do this. If H2 ever begins handling graceful
+            shutdowns, this logic will need altering.
         """
         if self.terminating:
             raise ConnectionTerminatingError(
