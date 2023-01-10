@@ -75,9 +75,7 @@ class ConnectionManager:
         self.sock = sock
 
         h2_logger = H2Logger(log.getChild("h2"))
-        config = H2Configuration(
-            client_side=client_side, logger=h2_logger
-        )
+        config = H2Configuration(client_side=client_side, logger=h2_logger)
         self.conn = H2Connection(config=config)
 
         self.receive_streams = {}
