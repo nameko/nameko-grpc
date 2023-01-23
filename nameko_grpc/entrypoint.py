@@ -4,6 +4,8 @@ import time
 import types
 from functools import partial
 from logging import getLogger
+import weakref
+import queue
 
 from grpc import StatusCode
 from nameko import config
@@ -27,6 +29,7 @@ class GrpcServer(SharedExtension):
     def __init__(self):
         super(GrpcServer, self).__init__()
         self.entrypoints = {}
+        self.spawned_threads = queue.Queue()
 
     def register(self, entrypoint):
         self.entrypoints[entrypoint.method_path] = entrypoint
@@ -80,9 +83,10 @@ class GrpcServer(SharedExtension):
         ssl = SslConfig(config.get("GRPC_SSL"))
 
         def spawn_thread(target, args=(), kwargs=None, name=None):
-            self.container.spawn_managed_thread(
+            thread = self.container.spawn_managed_thread(
                 lambda: target(*args, **kwargs or {}), identifier=name
             )
+            self.spawned_threads.put(weakref.ref(thread))
 
         self.channel = ServerChannel(host, port, ssl, spawn_thread, self.handle_request)
 
@@ -95,6 +99,11 @@ class GrpcServer(SharedExtension):
 
     def kill(self):
         self.stop()
+        while not self.spawned_threads.empty():
+            thread = self.spawned_threads.get()()
+            if thread:
+                thread.kill()
+
 
 
 class Grpc(Entrypoint):
