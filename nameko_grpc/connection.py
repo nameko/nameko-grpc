@@ -173,8 +173,8 @@ class ConnectionManager:
     def stop(self):
         self.conn.close_connection()
         self.terminating = True
-        log.debug("waiting for connection to terminate")
-        self.stopped.wait()
+        log.debug("waiting for connection to terminate (Timeout 5s)")
+        self.stopped.wait(5)
 
     def on_iteration(self):
         """Called on every iteration of the event loop.
