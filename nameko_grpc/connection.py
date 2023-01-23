@@ -121,9 +121,11 @@ class ConnectionManager:
                 receive_stream.close(error)
             self.sock.close()
             self.stopped.set()
+            log.debug(f"connection terminated {self}")
 
     def run_forever(self):
         """Event loop."""
+        log.debug(f"connection initiated {self}")
         self.conn.initiate_connection()
 
         with self.cleanup_on_exit():
@@ -131,6 +133,9 @@ class ConnectionManager:
             while self.run:
 
                 self.on_iteration()
+
+                if not self.run:
+                    break
 
                 self.sock.sendall(self.conn.data_to_send())
                 ready = select.select([self.sock], [], [], SELECT_TIMEOUT)
@@ -189,7 +194,6 @@ class ConnectionManager:
                 stream.exhausted for stream in self.receive_streams.values()
             )
             if send_streams_closed and receive_streams_closed:
-                log.debug("connection terminated")
                 self.run = False
 
     def request_received(self, event):
@@ -283,7 +287,7 @@ class ConnectionManager:
         """
         log.debug(f"received GOAWAY with error code {event.error_code}")
         if event.error_code not in (ErrorCodes.NO_ERROR, ErrorCodes.ENHANCE_YOUR_CALM):
-            log.debug("connection terminated immediately")
+            log.debug("connection terminating immediately")
             self.terminating = True
             self.run = False
         else:
