@@ -96,13 +96,13 @@ class GrpcServer(SharedExtension):
     def stop(self):
         self.channel.stop()
         super(GrpcServer, self).stop()
-
-    def kill(self):
-        self.stop()
         while not self.spawned_threads.empty():
             thread = self.spawned_threads.get()()
             if thread:
                 thread.kill()
+
+    def kill(self):
+        self.stop()
 
 
 class Grpc(Entrypoint):
