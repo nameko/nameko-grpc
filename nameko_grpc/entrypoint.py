@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
+import queue
 import sys
 import time
 import types
+import weakref
 from functools import partial
 from logging import getLogger
-import weakref
-import queue
 
 from grpc import StatusCode
 from nameko import config
@@ -103,7 +103,6 @@ class GrpcServer(SharedExtension):
             thread = self.spawned_threads.get()()
             if thread:
                 thread.kill()
-
 
 
 class Grpc(Entrypoint):
