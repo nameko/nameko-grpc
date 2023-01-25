@@ -324,11 +324,7 @@ class ConnectionManager:
             # has been completely sent
             return
 
-        # No headers are present on close so send streams fail to exhaust without
-        # a manual call to flush the queue (will either be an error or END_STREAM stuck)
-        send_stream.flush_queue_to_buffer()
-
-        if not send_stream.headers_sent:
+        if not send_stream.headers_sent and not send_stream.closed:
             # don't attempt to send any data until the headers have been sent
             return
 
