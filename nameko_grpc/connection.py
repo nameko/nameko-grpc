@@ -324,7 +324,7 @@ class ConnectionManager:
             # has been completely sent
             return
 
-        if not send_stream.headers_sent and not send_stream.closed:
+        if not send_stream.headers_sent:
             # don't attempt to send any data until the headers have been sent
             return
 

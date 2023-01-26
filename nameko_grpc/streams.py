@@ -58,7 +58,15 @@ class StreamBase:
         """A stream is exhausted if it is closed and there are no more messages to be
         consumed or bytes to be read.
         """
-        return self.closed and self.queue.empty() and self.buffer.empty()
+        return self.closed and self._empty
+
+    @property
+    def _empty(self):
+        queue_empty = self.queue.empty()
+        if not queue_empty and self.closed:
+            queue_empty = self.queue.qsize() == 1
+
+        return queue_empty and self.buffer.empty()
 
     def close(self, error=None):
         """Close this stream, preventing further messages or data to be added.
