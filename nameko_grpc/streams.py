@@ -62,7 +62,7 @@ class StreamBase:
         exhausted stream will possibly still have 1 item left in the queue, so we
         must check for that.
         """
-        return self.closed and self.queue.qsize() in (0, 1) and self.buffer.empty()
+        return self.closed and self.queue.empty() and self.buffer.empty()
 
     def close(self, error=None):
         """Close this stream, preventing further messages or data to be added.
