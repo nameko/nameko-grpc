@@ -71,12 +71,13 @@ class ConnectionManager:
     by subclasses.
     """
 
-    def __init__(self, sock, client_side):
+    def __init__(self, sock, client_side, max_concurrent_streams=100):
         self.sock = sock
 
         h2_logger = H2Logger(log.getChild("h2"))
         config = H2Configuration(client_side=client_side, logger=h2_logger)
         self.conn = H2Connection(config=config)
+        self.conn.local_settings.max_concurrent_streams = max_concurrent_streams
 
         self.receive_streams = {}
         self.send_streams = {}
@@ -502,8 +503,10 @@ class ServerConnectionManager(ConnectionManager):
     Extends the base `ConnectionManager` to handle incoming GRPC requests.
     """
 
-    def __init__(self, sock, handle_request):
-        super().__init__(sock, client_side=False)
+    def __init__(self, sock, handle_request, max_concurrent_streams=100):
+        super().__init__(
+            sock, client_side=False, max_concurrent_streams=max_concurrent_streams
+        )
         self.handle_request = handle_request
 
     def request_received(self, event):

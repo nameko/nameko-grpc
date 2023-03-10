@@ -111,12 +111,15 @@ class ServerConnectionPool:
     Just accepts new connections and allows them to run until close.
     """
 
-    def __init__(self, host, port, ssl, spawn_thread, handle_request):
+    def __init__(
+        self, host, port, ssl, spawn_thread, handle_request, max_concurrent_streams=100
+    ):
         self.host = host
         self.port = port
         self.ssl = ssl
         self.spawn_thread = spawn_thread
         self.handle_request = handle_request
+        self.max_concurrent_streams = max_concurrent_streams
 
         self.connections = queue.Queue()
         self.is_accepting = False
@@ -141,7 +144,9 @@ class ServerConnectionPool:
             sock, _ = self.listening_socket.accept()
             sock.settimeout(60)  # XXX needed and/or correct value?
 
-            connection = ServerConnectionManager(sock, self.handle_request)
+            connection = ServerConnectionManager(
+                sock, self.handle_request, self.max_concurrent_streams
+            )
             self.connections.put(weakref.ref(connection))
             self.spawn_thread(
                 target=connection.run_forever, name=f"grpc server connection [{sock}]"
@@ -167,9 +172,11 @@ class ServerConnectionPool:
 class ServerChannel:
     """Simple server channel encapsulating incoming connection management."""
 
-    def __init__(self, host, port, ssl, spawn_thread, handle_request):
+    def __init__(
+        self, host, port, ssl, spawn_thread, handle_request, max_concurrent_streams=100
+    ):
         self.conn_pool = ServerConnectionPool(
-            host, port, ssl, spawn_thread, handle_request
+            host, port, ssl, spawn_thread, handle_request, max_concurrent_streams
         )
 
     def start(self):
