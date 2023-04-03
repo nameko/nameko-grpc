@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import traceback
+from urllib.parse import quote, unquote
 
 from grpc import StatusCode
 from nameko import config
@@ -8,11 +9,27 @@ from google.protobuf.any_pb2 import Any
 from google.rpc.error_details_pb2 import DebugInfo
 from google.rpc.status_pb2 import Status
 
-
 STATUS_CODE_INT_TO_ENUM_MAP = {item.value[0]: item for item in StatusCode}
 STATUS_CODE_ENUM_TO_INT_MAP = {item: item.value[0] for item in StatusCode}
 
 GRPC_DETAILS_METADATA_KEY = "grpc-status-details-bin"
+
+
+_UNQUOTED = ''.join([chr(i) for i in range(0x20, 0x24 + 1)]
+                    + [chr(i) for i in range(0x26, 0x7E + 1)])
+
+
+def encode_grpc_message(message: str) -> str:
+    """
+    We must percent encode error messages to ensure we don't transmit invalid
+    header values.
+    ref: https://github.com/grpc/grpc/blob/master/doc/PROTOCOL-HTTP2.md#requests
+    """
+    return quote(message, safe=_UNQUOTED, encoding='utf-8')
+
+
+def decode_grpc_message(value: str) -> str:
+    return unquote(value, encoding='utf-8', errors='replace')
 
 
 class GrpcError(Exception):
@@ -26,7 +43,7 @@ class GrpcError(Exception):
         headers = {
             # ("content-length", "0"),
             "grpc-status": str(STATUS_CODE_ENUM_TO_INT_MAP[self.code]),
-            "grpc-message": self.message,
+            "grpc-message": encode_grpc_message(self.message)
         }
         if self.status:
             headers[GRPC_DETAILS_METADATA_KEY] = self.status.SerializeToString()
@@ -41,7 +58,7 @@ class GrpcError(Exception):
 
         return cls(
             code=STATUS_CODE_INT_TO_ENUM_MAP[code],
-            message=message,
+            message=decode_grpc_message(message),
             status=Status.FromString(status) if status else None,
         )
 
