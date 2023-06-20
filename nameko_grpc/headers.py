@@ -89,7 +89,7 @@ _UNQUOTED = "".join(
 )
 
 
-def encode_grpc_message(message):
+def quote_encode(message):
     """
     We must percent encode error messages to ensure we don't transmit invalid
     header values.
@@ -98,7 +98,7 @@ def encode_grpc_message(message):
     return quote(message, safe=_UNQUOTED, encoding="utf-8")
 
 
-def decode_grpc_message(value):
+def quote_decode(value):
     return unquote(value, encoding="utf-8", errors="replace")
 
 
