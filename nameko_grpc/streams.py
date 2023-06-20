@@ -57,6 +57,10 @@ class StreamBase:
     def exhausted(self):
         """A stream is exhausted if it is closed and there are no more messages to be
         consumed or bytes to be read.
+
+        When a stream is closed we append the STREAM_END item or a GrpcError, so an
+        exhausted stream will possibly still have 1 item left in the queue, so we
+        must check for that.
         """
         return self.closed and self.queue.empty() and self.buffer.empty()
 
@@ -70,7 +74,7 @@ class StreamBase:
         in race conditions between timeout threads, connection teardown, and the
         natural termination of streams.
 
-        SendStreams have an additional race condition beteen the end of the iterator
+        SendStreams have an additional race condition between the end of the iterator
         and the StreamEnded event received from the remote side.
 
         An error is only raised if the first invocation happened due to an error.
@@ -166,7 +170,7 @@ class SendStream(StreamBase):
         if self.headers_sent or len(self.headers) == 0:
             return False
 
-        if defer_until_data and self.queue.empty():
+        if defer_until_data and self.queue.empty() and self.buffer.empty():
             return False
 
         self.headers_sent = True
