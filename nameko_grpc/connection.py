@@ -330,8 +330,8 @@ class ConnectionManager:
         # When a stream is closed, a STREAM_END item or ERROR is placed in the queue.
         # If we never read from the stream again, these are not consumed, and the
         # stream is never exhausted which prevents a graceful termination.
-        # Because we return early if headers haven't been sent, we need to manually flush the queue
-        # (an operation that would otherwise occur during `stream.read`)
+        # Because we return early if headers haven't been sent, we need to manually
+        # flush the queue (an operation that would otherwise occur during `stream.read`)
         send_stream.flush_queue_to_buffer()
 
         if not send_stream.headers_sent:
