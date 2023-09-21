@@ -328,11 +328,10 @@ class ConnectionManager:
             return
 
         # When a stream is closed, a STREAM_END item or ERROR is placed in the queue.
-        # If we never read from the stream again, these are not surfaced, and the
-        # stream is never exhausted.
-        # Because we shortcut sending data if headers haven't been set yet, we need
-        # to manually flush the queue, surfacing the end/error, and ensuring the
-        # queue exhausts (and we can terminate).
+        # If we never read from the stream again, these are not consumed, and the
+        # stream is never exhausted which prevents a graceful termination.
+        # Because we return early if headers haven't been sent, we need to manually flush the queue
+        # (an operation that would otherwise occur during `stream.read`)
         send_stream.flush_queue_to_buffer()
 
         if not send_stream.headers_sent:
@@ -405,6 +404,7 @@ class ClientConnectionManager(ConnectionManager):
             We are handling termination and raising TerminatingError here as the
             underlying library H2 doesn't do this. If H2 ever begins handling graceful
             shutdowns, this logic will need altering.
+            https://github.com/python-hyper/h2/issues/1181
         """
         if self.terminating:
             raise ConnectionTerminatingError(

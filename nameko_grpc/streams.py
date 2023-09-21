@@ -59,10 +59,6 @@ class StreamBase:
     def exhausted(self):
         """A stream is exhausted if it is closed and there are no more messages to be
         consumed or bytes to be read.
-
-        When a stream is closed we append the STREAM_END item or a GrpcError, so an
-        exhausted stream will possibly still have 1 item left in the queue, so we
-        must check for that.
         """
         return self.closed and self.queue.empty() and self.buffer.empty()
 
