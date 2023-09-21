@@ -214,12 +214,15 @@ class ConnectionManager:
     def stream_reset(self, event):
         """Called when an incoming stream is reset.
 
-        Close any `ReceiveStream` that was opened for this stream.
+        Close any Streams that we have opened for this stream_id
         """
         log.debug("stream reset, stream %s", event.stream_id)
         receive_stream = self.receive_streams.pop(event.stream_id, None)
         if receive_stream:
             receive_stream.close()
+        send_stream = self.send_streams.pop(event.stream_id, None)
+        if send_stream:
+            send_stream.close()
 
     def settings_changed(self, event):
         log.debug("settings changed")
