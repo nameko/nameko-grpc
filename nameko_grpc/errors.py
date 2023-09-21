@@ -4,6 +4,8 @@ import traceback
 from grpc import StatusCode
 from nameko import config
 
+from nameko_grpc.headers import quote_decode, quote_encode
+
 from google.protobuf.any_pb2 import Any
 from google.rpc.error_details_pb2 import DebugInfo
 from google.rpc.status_pb2 import Status
@@ -26,7 +28,7 @@ class GrpcError(Exception):
         headers = {
             # ("content-length", "0"),
             "grpc-status": str(STATUS_CODE_ENUM_TO_INT_MAP[self.code]),
-            "grpc-message": self.message,
+            "grpc-message": quote_encode(self.message),
         }
         if self.status:
             headers[GRPC_DETAILS_METADATA_KEY] = self.status.SerializeToString()
@@ -41,7 +43,7 @@ class GrpcError(Exception):
 
         return cls(
             code=STATUS_CODE_INT_TO_ENUM_MAP[code],
-            message=message,
+            message=quote_decode(message),
             status=Status.FromString(status) if status else None,
         )
 

@@ -5,4 +5,6 @@ __pycache__
 *_pb2_grpc.py
 .coverage
 .DS_Store
-.idea
+.idea/
+build/
+dist/

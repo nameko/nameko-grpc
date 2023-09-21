@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import base64
+from urllib.parse import quote, unquote
 
 
 def is_grpc_header(name):
@@ -81,6 +82,24 @@ def comma_join(values):
     else:
         separator = ","
     return separator.join(values)
+
+
+_UNQUOTED = "".join(
+    [chr(i) for i in range(0x20, 0x24 + 1)] + [chr(i) for i in range(0x26, 0x7E + 1)]
+)
+
+
+def quote_encode(message):
+    """
+    We must percent encode error messages to ensure we don't transmit invalid
+    header values.
+    ref: https://github.com/grpc/grpc/blob/master/doc/PROTOCOL-HTTP2.md#requests
+    """
+    return quote(message, safe=_UNQUOTED, encoding="utf-8")
+
+
+def quote_decode(value):
+    return unquote(value, encoding="utf-8", errors="replace")
 
 
 class HeaderManager:

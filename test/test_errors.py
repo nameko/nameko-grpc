@@ -2,6 +2,7 @@
 import json
 import re
 import string
+import sys
 import time
 from unittest import mock
 
@@ -376,3 +377,26 @@ class TestErrorStreamClosed:
                 client.unary_unary(protobufs.ExampleRequest(value="hello"))
         assert error.value.code == StatusCode.UNAVAILABLE
         assert error.value.message == "Stream was closed mid-request"
+
+
+class TestGrpcErrorEncodesHeader:
+    def test_encode_grpc_message(self):
+        try:
+            raise NotImplementedError("\na")
+        except NotImplementedError:
+            error = GrpcError.from_exception(sys.exc_info())
+
+        headers = error.as_headers()
+        grpc_header = [header for header in headers if header[0] == "grpc-message"][0]
+        assert grpc_header == ("grpc-message", "%0Aa")
+
+    def test_decode_grpc_message(self):
+        try:
+            raise NotImplementedError("\na")
+        except NotImplementedError:
+            error = GrpcError.from_exception(sys.exc_info())
+
+        headers_dict = {header: value for (header, value) in error.as_headers()}
+        error_received = GrpcError.from_headers(headers_dict)
+
+        assert error_received.message == "\na"
