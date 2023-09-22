@@ -27,7 +27,7 @@ setup(
         "grpcio",
         "protobuf",
         "googleapis-common-protos",
-        "importlib-metadata<5.0.0",
+        "importlib-metadata<5 ; python_version<='3.7'",
     ],
     extras_require={
         "dev": [
