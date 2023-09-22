@@ -34,6 +34,7 @@ setup(
             "coverage",
             "pytest",
             "pytest-timeout",
+            "grpcio<1.50",
             "grpcio-tools",
             "grpcio-status",
             "googleapis-common-protos",
