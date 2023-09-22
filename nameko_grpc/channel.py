@@ -39,6 +39,8 @@ class ClientConnectionPool:
         self.spawn_thread = spawn_thread
 
         self.connections = queue.Queue()
+        self.is_accepting = False
+        self.listening_socket = None
 
     def connect(self, target):
         sock = socket.create_connection(

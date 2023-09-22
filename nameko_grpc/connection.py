@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import itertools
+import logging
 import select
 import sys
 from collections import deque
@@ -8,7 +9,7 @@ from logging import getLogger
 from threading import Event
 
 from grpc import StatusCode
-from h2.config import H2Configuration
+from h2.config import DummyLogger, H2Configuration
 from h2.connection import H2Connection
 from h2.errors import ErrorCodes
 from h2.events import (
@@ -37,7 +38,28 @@ from nameko_grpc.streams import ReceiveStream, SendStream
 log = getLogger(__name__)
 
 
+class H2Logger(DummyLogger):
+    """
+    Provide logger to H2 matching required interface
+    """
+
+    def __init__(self, logger: logging.Logger):
+        super().__init__()
+        self.logger = logger
+
+    def debug(self, *vargs, **kwargs):
+        self.logger.debug(*vargs, **kwargs)
+
+    def trace(self, *vargs, **kwargs):
+        # log level below debug
+        self.logger.log(5, *vargs, **kwargs)
+
+
 SELECT_TIMEOUT = 0.01
+
+
+class ConnectionTerminatingError(Exception):
+    pass
 
 
 class ConnectionManager:
@@ -52,7 +74,8 @@ class ConnectionManager:
     def __init__(self, sock, client_side):
         self.sock = sock
 
-        config = H2Configuration(client_side=client_side)
+        h2_logger = H2Logger(log.getChild("h2"))
+        config = H2Configuration(client_side=client_side, logger=h2_logger)
         self.conn = H2Connection(config=config)
 
         self.receive_streams = {}
@@ -60,10 +83,11 @@ class ConnectionManager:
 
         self.run = True
         self.stopped = Event()
+        self.terminating = False
 
     @property
     def alive(self):
-        return not self.stopped.is_set()
+        return not self.stopped.is_set() and not self.terminating
 
     @contextmanager
     def cleanup_on_exit(self):
@@ -83,7 +107,7 @@ class ConnectionManager:
                 if send_stream.closed:
                     continue  # stream.close() is idemponent but this prevents the log
                 log.info(
-                    f"Terminating send stream {send_stream}"
+                    f"Terminating send stream {send_stream.stream_id}"
                     f"{f' with error {error}' if error else ''}."
                 )
                 send_stream.close(error)
@@ -91,15 +115,17 @@ class ConnectionManager:
                 if receive_stream.closed:
                     continue  # stream.close() is idemponent but this prevents the log
                 log.info(
-                    f"Terminating receive stream {receive_stream}"
+                    f"Terminating receive stream {receive_stream.stream_id}"
                     f"{f' with error {error}' if error else ''}."
                 )
                 receive_stream.close(error)
             self.sock.close()
             self.stopped.set()
+            log.debug(f"connection terminated {self}")
 
     def run_forever(self):
         """Event loop."""
+        log.debug(f"connection initiated {self}")
         self.conn.initiate_connection()
 
         with self.cleanup_on_exit():
@@ -107,6 +133,9 @@ class ConnectionManager:
             while self.run:
 
                 self.on_iteration()
+
+                if not self.run:
+                    break
 
                 self.sock.sendall(self.conn.data_to_send())
                 ready = select.select([self.sock], [], [], SELECT_TIMEOUT)
@@ -142,8 +171,10 @@ class ConnectionManager:
                         self.connection_terminated(event)
 
     def stop(self):
-        self.run = False
-        self.stopped.wait()
+        self.conn.close_connection()
+        self.terminating = True
+        log.debug("waiting for connection to terminate (Timeout 5s)")
+        self.stopped.wait(5)
 
     def on_iteration(self):
         """Called on every iteration of the event loop.
@@ -154,6 +185,16 @@ class ConnectionManager:
         for stream_id in list(self.send_streams.keys()):
             self.send_headers(stream_id)
             self.send_data(stream_id)
+
+        if self.terminating:
+            send_streams_closed = all(
+                stream.exhausted for stream in self.send_streams.values()
+            )
+            receive_streams_closed = all(
+                stream.exhausted for stream in self.receive_streams.values()
+            )
+            if send_streams_closed and receive_streams_closed:
+                self.run = False
 
     def request_received(self, event):
         """Called when a request is received on a stream.
@@ -199,6 +240,7 @@ class ConnectionManager:
         Any data waiting to be sent on the stream may fit in the window now.
         """
         log.debug("window updated, stream %s", event.stream_id)
+        self.send_headers(event.stream_id)
         self.send_data(event.stream_id)
 
     def stream_ended(self, event):
@@ -238,9 +280,22 @@ class ConnectionManager:
 
         receive_stream.trailers.set(*event.headers, from_wire=True)
 
-    def connection_terminated(self, event):
-        log.debug("connection terminated")
-        self.run = False
+    def connection_terminated(self, event: ConnectionTerminated):
+        """H2 signals a connection terminated event after receiving a GOAWAY frame
+
+        If no error has occurred, flag termination and initiate a graceful termination
+        allowing existing streams to finish sending/receiving.
+
+        If an error has occurred then close down immediately.
+        """
+        log.debug(f"received GOAWAY with error code {event.error_code}")
+        if event.error_code not in (ErrorCodes.NO_ERROR, ErrorCodes.ENHANCE_YOUR_CALM):
+            log.debug("connection terminating immediately")
+            self.terminating = True
+            self.run = False
+        else:
+            log.debug("connection terminating")
+            self.terminating = True
 
     def send_headers(self, stream_id, immediate=False):
         """Attempt to send any headers on a stream.
@@ -271,6 +326,13 @@ class ConnectionManager:
             # window updates trigger sending of data, but can happen after a stream
             # has been completely sent
             return
+
+        # When a stream is closed, a STREAM_END item or ERROR is placed in the queue.
+        # If we never read from the stream again, these are not consumed, and the
+        # stream is never exhausted which prevents a graceful termination.
+        # Because we return early if headers haven't been sent, we need to manually
+        # flush the queue (an operation that would otherwise occur during `stream.read`)
+        send_stream.flush_queue_to_buffer()
 
         if not send_stream.headers_sent:
             # don't attempt to send any data until the headers have been sent
@@ -334,7 +396,20 @@ class ClientConnectionManager(ConnectionManager):
         over the response.
 
         Invocations are queued and sent on the next iteration of the event loop.
+
+        raises ConnectionTerminatingError if connection is terminating. Check
+         connection .is_alive() before initiating send_request
+
+        Note:
+            We are handling termination and raising TerminatingError here as the
+            underlying library H2 doesn't do this. If H2 ever begins handling graceful
+            shutdowns, this logic will need altering.
+            https://github.com/python-hyper/h2/issues/1181
         """
+        if self.terminating:
+            raise ConnectionTerminatingError(
+                "Connection is terminating. No new streams can be initiated"
+            )
         stream_id = next(self.counter)
 
         request_stream = SendStream(stream_id)

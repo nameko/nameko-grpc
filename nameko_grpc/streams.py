@@ -72,7 +72,7 @@ class StreamBase:
         in race conditions between timeout threads, connection teardown, and the
         natural termination of streams.
 
-        SendStreams have an additional race condition beteen the end of the iterator
+        SendStreams have an additional race condition between the end of the iterator
         and the StreamEnded event received from the remote side.
 
         An error is only raised if the first invocation happened due to an error.
@@ -168,7 +168,7 @@ class SendStream(StreamBase):
         if self.headers_sent or len(self.headers) == 0:
             return False
 
-        if defer_until_data and self.queue.empty():
+        if defer_until_data and self.queue.empty() and self.buffer.empty():
             return False
 
         self.headers_sent = True
