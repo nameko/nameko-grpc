@@ -14,7 +14,7 @@ with open(os.path.join(here, "README.md"), "r", "utf-8") as handle:
 
 setup(
     name="nameko-grpc",
-    version="1.2.0rc4",
+    version="1.3.0",
     description="Nameko gRPC extensions",
     long_description=readme,
     long_description_content_type="text/markdown",
@@ -34,6 +34,7 @@ setup(
             "coverage",
             "pytest",
             "pytest-timeout",
+            "grpcio<1.50",
             "grpcio-tools",
             "grpcio-status",
             "googleapis-common-protos",
