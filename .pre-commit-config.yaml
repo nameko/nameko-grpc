@@ -1,5 +1,5 @@
 repos:
--   repo: git://github.com/pre-commit/pre-commit-hooks
+-   repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v1.3.0
     hooks:
     -   id: trailing-whitespace
@@ -7,11 +7,13 @@ repos:
     -   id: check-merge-conflict
     -   id: fix-encoding-pragma
     -   id: flake8
--   repo: https://github.com/mattbennett/mirrors-isort.git
-    rev: master
+-   repo: https://github.com/PyCQA/isort
+    rev: 4.3.21
     hooks:
     - id: isort
 -   repo: https://github.com/ambv/black
     rev: 19.10b0
     hooks:
     - id: black
+      # TODO remove this when black is updated
+      additional_dependencies: [ 'click==8.0.4' ]

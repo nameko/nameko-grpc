@@ -129,6 +129,7 @@ class ClientBase:
         self.compression_level = compression_level  # NOTE not used
         self.ssl = SslConfig(ssl)
         self.lazy = lazy
+        self._channel_creation_lock = threading.Lock()
         self._channel = None
 
     def spawn_thread(self, target, args=(), kwargs=None, name=None):
@@ -145,9 +146,10 @@ class ClientBase:
             self._channel = self._get_channel()
 
     def _get_channel(self):
-        channel = ClientChannel(self.target, self.ssl, self.spawn_thread)
-        channel.start()
-        return channel
+        with self._channel_creation_lock:
+            channel = ClientChannel(self.target, self.ssl, self.spawn_thread)
+            channel.start()
+            return channel
 
     def stop(self):
         self._channel.stop()
