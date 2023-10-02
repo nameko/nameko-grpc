@@ -121,12 +121,15 @@ class ClientBase:
         compression_algorithm="none",
         compression_level="high",
         ssl=False,
+        lazy=False,
     ):
         self.target = target
         self.stub = stub
         self.compression_algorithm = compression_algorithm
         self.compression_level = compression_level  # NOTE not used
         self.ssl = SslConfig(ssl)
+        self.lazy = lazy
+        self._channel = None
 
     def spawn_thread(self, target, args=(), kwargs=None, name=None):
         raise NotImplementedError
@@ -138,11 +141,22 @@ class ClientBase:
         return "identity"
 
     def start(self):
-        self.channel = ClientChannel(self.target, self.ssl, self.spawn_thread)
-        self.channel.start()
+        if not self.lazy:
+            self._channel = self._get_channel()
+
+    def _get_channel(self):
+        channel = ClientChannel(self.target, self.ssl, self.spawn_thread)
+        channel.start()
+        return channel
 
     def stop(self):
-        self.channel.stop()
+        self._channel.stop()
+
+    @property
+    def channel(self):
+        if self._channel is None:
+            self._channel = self._get_channel()
+        return self._channel
 
     def timeout(self, send_stream, response_stream, deadline):
         start = time.time()
