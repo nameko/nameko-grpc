@@ -352,6 +352,8 @@ def start_nameko_client(request, load_stubs, spec_dir, grpc_port):
         proto_name=None,
         compression_algorithm="none",
         compression_level="high",
+        lazy=False,
+        service_url="//localhost:{}".format(grpc_port),
     ):
         if proto_name is None:
             proto_name = service_name
@@ -359,11 +361,12 @@ def start_nameko_client(request, load_stubs, spec_dir, grpc_port):
         stubs = load_stubs(proto_name)
         stub_cls = getattr(stubs, "{}Stub".format(service_name))
         client = Client(
-            "//localhost:{}".format(grpc_port),
+            service_url,
             stub_cls,
             compression_algorithm,
             compression_level,
             ssl_options,
+            lazy=lazy,
         )
         clients.append(client)
         return client.start()

@@ -152,7 +152,9 @@ class ClientBase:
             return channel
 
     def stop(self):
-        self._channel.stop()
+        if self._channel is not None:
+            self._channel.stop()
+            self._channel = None
 
     @property
     def channel(self):
