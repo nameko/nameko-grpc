@@ -143,13 +143,14 @@ class ClientBase:
 
     def start(self):
         if not self.lazy:
-            self._channel = self._get_channel()
+            self._start_channel()
 
-    def _get_channel(self):
+    def _start_channel(self):
         with self._channel_creation_lock:
-            channel = ClientChannel(self.target, self.ssl, self.spawn_thread)
-            channel.start()
-            return channel
+            if self._channel is None:
+                channel = ClientChannel(self.target, self.ssl, self.spawn_thread)
+                channel.start()
+                self._channel = channel
 
     def stop(self):
         if self._channel is not None:
@@ -159,7 +160,7 @@ class ClientBase:
     @property
     def channel(self):
         if self._channel is None:
-            self._channel = self._get_channel()
+            self._start_channel()
         return self._channel
 
     def timeout(self, send_stream, response_stream, deadline):
