@@ -352,7 +352,7 @@ def start_nameko_client(request, load_stubs, spec_dir, grpc_port):
         proto_name=None,
         compression_algorithm="none",
         compression_level="high",
-        lazy=False,
+        lazy_startup=False,
         service_url="//localhost:{}".format(grpc_port),
     ):
         if proto_name is None:
@@ -366,7 +366,7 @@ def start_nameko_client(request, load_stubs, spec_dir, grpc_port):
             compression_algorithm,
             compression_level,
             ssl_options,
-            lazy=lazy,
+            lazy_startup=lazy_startup,
         )
         clients.append(client)
         return client.start()

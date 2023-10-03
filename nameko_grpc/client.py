@@ -121,14 +121,14 @@ class ClientBase:
         compression_algorithm="none",
         compression_level="high",
         ssl=False,
-        lazy=False,
+        lazy_startup=False,
     ):
         self.target = target
         self.stub = stub
         self.compression_algorithm = compression_algorithm
         self.compression_level = compression_level  # NOTE not used
         self.ssl = SslConfig(ssl)
-        self.lazy = lazy
+        self.lazy_startup = lazy_startup
         self._channel_creation_lock = threading.Lock()
         self._channel = None
 
@@ -142,7 +142,7 @@ class ClientBase:
         return "identity"
 
     def start(self):
-        if not self.lazy:
+        if not self.lazy_startup:
             self._start_channel()
 
     def _start_channel(self):
