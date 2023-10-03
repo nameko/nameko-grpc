@@ -27,7 +27,7 @@ class TestCloseSocketOnClientExit:
 
         container = server
         grpc_server = get_extension(container, GrpcServer)
-        connection_ref = grpc_server.channel().conn_pool.connections.queue[0]
+        connection_ref = grpc_server.channel.conn_pool.connections.queue[0]
         connection = connection_ref()
 
         response = proxy.unary_unary(protobufs.ExampleRequest(value="A"))
