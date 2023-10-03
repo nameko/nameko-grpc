@@ -109,3 +109,30 @@ class TestFuture:
             ("A", 1),
             ("B", 2),
         ]
+
+
+class TestLazy:
+    def test_lazy_client(self, start_nameko_client, server, protobufs):
+        client = start_nameko_client("example", lazy_startup=True)
+        response = client.unary_unary(protobufs.ExampleRequest(value="A"))
+        assert response.message == "A"
+
+    # Note lack of server fixture
+    def test_lazy_client_does_not_connect_on_start(
+        self, start_nameko_client, protobufs, start_grpc_server
+    ):
+        client = start_nameko_client("example", lazy_startup=True)
+
+        with pytest.raises(ConnectionRefusedError):
+            client.unary_unary(protobufs.ExampleRequest(value="A"))
+
+        start_grpc_server("example")
+
+        # After starting the server, should now work
+        response = client.unary_unary(protobufs.ExampleRequest(value="A"))
+        assert response.message == "A"
+
+    # Note lack of server fixture
+    def test_nonlazy_client_connects_on_start(self, start_nameko_client, protobufs):
+        with pytest.raises(ConnectionRefusedError):
+            start_nameko_client("example", lazy_startup=False)
