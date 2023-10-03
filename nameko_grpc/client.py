@@ -163,6 +163,7 @@ class ClientBase:
             self._channel.stop()
             self._channel = None
 
+    @property
     def channel(self):
         if self._channel is None:
             self._start_channel()
@@ -184,7 +185,7 @@ class ClientBase:
             time.sleep(0.001)
 
     def invoke(self, request_headers, request, timeout):
-        send_stream, response_stream = self.channel().send_request(request_headers)
+        send_stream, response_stream = self.channel.send_request(request_headers)
         if timeout:
             self.spawn_thread(
                 target=self.timeout,

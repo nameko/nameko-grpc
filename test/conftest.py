@@ -399,6 +399,7 @@ def start_dependency_provider(
             proto_name=None,
             compression_algorithm="none",
             compression_level="high",
+            lazy_startup=False,
         ):
             if proto_name is None:
                 proto_name = service_name
@@ -414,6 +415,7 @@ def start_dependency_provider(
                     stub_cls,
                     compression_algorithm=compression_algorithm,
                     compression_level=compression_level,
+                    lazy_startup=lazy_startup,
                 )
 
                 @dummy

@@ -136,3 +136,17 @@ class TestLazy:
     def test_nonlazy_client_connects_on_start(self, start_nameko_client, protobufs):
         with pytest.raises(ConnectionRefusedError):
             start_nameko_client("example", lazy_startup=False)
+
+    def test_lazy_client_with_with_dependency_provider(
+        self, start_dependency_provider, protobufs, start_grpc_server
+    ):
+        client = start_dependency_provider("example", lazy_startup=True)
+
+        with pytest.raises(ConnectionRefusedError):
+            client.unary_unary(protobufs.ExampleRequest(value="A"))
+
+        start_grpc_server("example")
+
+        # After starting the server, should now work
+        response = client.unary_unary(protobufs.ExampleRequest(value="A"))
+        assert response.message == "A"
