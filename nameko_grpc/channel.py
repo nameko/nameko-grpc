@@ -77,7 +77,10 @@ class ClientConnectionPool:
     def start(self):
         self.run = True
         for target in self.targets:
-            self.connect(urlparse(target))
+            try:
+                self.connect(urlparse(target))
+            except OSError as e:
+                raise type(e)(f"Failed to connect to {target}") from e
 
     def stop(self):
         self.run = False
